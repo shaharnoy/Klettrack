@@ -11,7 +11,7 @@ struct SeedData {
     static func loadIfNeeded(_ context: ModelContext) {
         let count = try? context.fetch(FetchDescriptor<Activity>()).count
         guard (count ?? 0) == 0 else { return } // already seeded
-
+        
         // Activity: Core
         let core = Activity(name: "Core")
         let anterior = TrainingType(name: "Anterior Core")
@@ -36,7 +36,7 @@ struct SeedData {
             Exercise(name: "Barbell Deadlift", repsText: "3 - 6", setsText: "2 - 4"),
         ]
         core.types = [anterior, posterior, totalChain]
-
+        
         // Activity: Antagonist & Stabilizer
         let antago = Activity(name: "Antagonist & Stabilizer")
         let wristForearm = TrainingType(name: "Wrist & Forearm Stabilizers")
@@ -57,16 +57,16 @@ struct SeedData {
             Exercise(name: "Scapular Push-Up", repsText: "15 - 20", setsText: "2"),
             Exercise(name: "Scapular Pull-Up", repsText: "6 - 12", setsText: "2"),
         ]
-        let antagonists = TrainingType(name: "Antagonist (Push) Muscles")
+        let antagonists = TrainingType(name: "Antagonist Push Muscles")
         antagonists.exercises = [
             Exercise(name: "Shoulder Press", repsText: "15 - 20", setsText: "1 - 2"),
             Exercise(name: "Push-Up", repsText: "15 - 25", setsText: "1 - 2"),
         ]
         antago.types = [wristForearm, rotator, antagonists]
-
+        
         // Activity: Climbing-Specific (split by areas/types you gave)
         let climb = Activity(name: "Climbing-Specific Exercises")
-
+        
         // Maximum & Contact Strength – Fingers
         let maxContactFingers = TrainingType(name: "Maximum & Contact Strength — Fingers", area: "Fingers")
         maxContactFingers.exercises = [
@@ -76,7 +76,7 @@ struct SeedData {
             Exercise(name: "FB Max-Weight Hangs 7/53 (14–20mm)", repsText: "see protocol", setsText: "2 - 5"),
             Exercise(name: "Loading pin lifts - repetitions", repsText: "1:50% 2:60% 3:70% 4–7:80%", setsText: "1–3: 8 reps; 4–7: 4 reps"),
         ]
-
+        
         // Maximum & Contact Strength – Pull Muscle
         let maxContactPull = TrainingType(name: "Maximum & Contact Strength — Pull Muscle", area: "Pull")
         maxContactPull.exercises = [
@@ -87,7 +87,7 @@ struct SeedData {
             Exercise(name: "Uneven-Grip Pull-Ups", repsText: "3 - 5 each side", setsText: "2 - 3", restText: "2 min rest"),
             Exercise(name: "One-Arm Lock-Offs", repsText: "2 - 3", setsText: "2 - 3", restText: "2 min rest"),
         ]
-
+        
         // Contact Strength & Power – Fingers
         let contactPowerFingers = TrainingType(name: "Contact Strength & Power — Fingers", area: "Fingers")
         contactPowerFingers.exercises = [
@@ -96,7 +96,7 @@ struct SeedData {
             Exercise(name: "CB Laddering (no skips, small rungs)", repsText: "up only", setsText: "3 - 10", restText: "2–3 min rest"),
             Exercise(name: "Campus Switch hands", repsText: "12 switches", setsText: "2", restText: "2 min rest"),
         ]
-
+        
         // Contact Strength & Power – Pull
         let contactPowerPull = TrainingType(name: "Contact Strength & Power — Pull", area: "Pull")
         contactPowerPull.exercises = [
@@ -104,21 +104,34 @@ struct SeedData {
             Exercise(name: "CB Laddering (larger rungs w/ skips)", repsText: "1-3-5-7", setsText: "3 - 10", restText: "3 min rest"),
             Exercise(name: "Boulder Campusing", repsText: "3 - 8 moves", setsText: "3 - 5", restText: "3 min rest"),
         ]
-
+        
         // Strength-Endurance – Fingers
         let seFingers = TrainingType(name: "Strength-Endurance — Fingers", area: "Fingers")
         seFingers.exercises = [
             Exercise(name: "Short-Duration Fingerboard Repeaters", repsText: "see protocol", setsText: "3 - 5"),
             Exercise(name: "Long-Duration Fingerboard Repeaters", repsText: "see protocol", setsText: "3 - 5"),
         ]
-
+        
         // Strength-Endurance – Pull
         let sePull = TrainingType(name: "Strength-Endurance — Pull", area: "Pull")
         sePull.exercises = [
             Exercise(name: "Pull-Up Intervals", repsText: "see protocol", setsText: "10 - 20"),
             Exercise(name: "Frenchies", repsText: "2 - 6 cycles", setsText: "2 - 4"),
         ]
-
+        
+        
+        climb.types = [maxContactFingers, maxContactPull, contactPowerFingers, contactPowerPull, seFingers, sePull]
+        
+        // Activity: Climbing-Specific (split by areas/types you gave)
+        let actbouldering = Activity(name: "Bouldering")
+        // Strength-Endurance — Bouldering
+        let seBouldering = TrainingType(name: "Strength-Endurance — Bouldering")
+        seBouldering.exercises = [
+            Exercise(name: "Bouldering 4x4s", notes: "see protocol"),
+            Exercise(name: "Big-Holds, Big-Move 4x4s", notes: "see protocol"),
+            Exercise(name: "Combo 3 variants (v0–v5)", notes: "as per your sets/rest blocks"),
+            Exercise(name: "Combo 4: Tension board 3x6", notes: "see protocol"),
+        ]
         // Bouldering — Multiple combinations
         let bouldering = TrainingType(name: "Bouldering — Combinations")
         bouldering.exercises = [
@@ -132,20 +145,25 @@ struct SeedData {
             Exercise(name: "Combo 4: Moon/Kilter", repsText: "45 min", restText: "3 min/attempt"),
             Exercise(name: "Work on 1–3 limit boulders", repsText: "30 min"),
         ]
-
-        // Strength-Endurance — Bouldering
-        let seBouldering = TrainingType(name: "Strength-Endurance — Bouldering")
-        seBouldering.exercises = [
-            Exercise(name: "Bouldering 4x4s", notes: "see protocol"),
-            Exercise(name: "Big-Holds, Big-Move 4x4s", notes: "see protocol"),
-            Exercise(name: "Combo 3 variants (v0–v5)", notes: "as per your sets/rest blocks"),
-            Exercise(name: "Combo 4: Tension board 3x6", notes: "see protocol"),
-        ]
-
-        climb.types = [maxContactFingers, maxContactPull, contactPowerFingers, contactPowerPull, seFingers, sePull, bouldering, seBouldering]
-
+        actbouldering.types = [ seBouldering,bouldering]
+        
         // Save all
-        [core, antago, climb].forEach { context.insert($0) }
+        [core, antago, climb, actbouldering].forEach { context.insert($0) }
         try? context.save()
+    }
+    
+    
+    static func nukeAndReseed(_ context: ModelContext) {
+        // Delete everything
+        try? context.delete(model: Activity.self)
+        try? context.delete(model: TrainingType.self)
+        try? context.delete(model: Exercise.self)
+        try? context.delete(model: Plan.self)
+        try? context.delete(model: PlanDay.self)
+        try? context.delete(model: Session.self)
+        try? context.delete(model: SessionItem.self)
+        try? context.save()
+        // Seed fresh
+        loadIfNeeded(context)
     }
 }

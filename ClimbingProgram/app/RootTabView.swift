@@ -10,23 +10,26 @@ import SwiftData
 
 struct RootTabView: View {
     @Environment(\.modelContext) private var context
-
+    
     var body: some View {
         TabView {
-            TrainingCatalogView()
-                .tabItem { Label("Training", systemImage: "dumbbell") }
-
+            CatalogView()
+                .tabItem { Label("Catalog", systemImage: "square.grid.2x2") }
+            
             PlansListView()
                 .tabItem { Label("Plans", systemImage: "calendar") }
-
+            
             LogView()
                 .tabItem { Label("Log", systemImage: "square.and.pencil") }
-
+            
             ProgressViewScreen()
                 .tabItem { Label("Progress", systemImage: "chart.bar") }
         }
         .task {
             SeedData.loadIfNeeded(context)
+            //SeedData.nukeAndReseed(context)  // <- uncomment, run once, then comment it out
+
         }
     }
+    
 }
