@@ -16,6 +16,9 @@ struct RootTabView: View {
             TrainingCatalogView()
                 .tabItem { Label("Training", systemImage: "dumbbell") }
 
+            PlansListView()
+                .tabItem { Label("Plans", systemImage: "calendar") }
+
             LogView()
                 .tabItem { Label("Log", systemImage: "square.and.pencil") }
 

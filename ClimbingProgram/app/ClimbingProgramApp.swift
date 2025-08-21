@@ -20,6 +20,11 @@ struct ClimbingProgramApp: App {
                     // Seed after model container exists
                 }
         }
-        .modelContainer(for: [Activity.self, TrainingType.self, Exercise.self, Session.self, SessionItem.self])
+        .modelContainer(for: [
+            Activity.self, TrainingType.self, Exercise.self,
+            Session.self, SessionItem.self,
+            Plan.self, PlanDay.self
+        ])
+
     }
 }
