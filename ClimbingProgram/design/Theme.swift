@@ -32,7 +32,7 @@ enum CatalogHue: String {
         case .antagonist:  return .cyan            // matches DayType.antagonist
         case .climbing:    return .green           // matches DayType.climbingFull
         case .other:       return .red
-        case .bouldering:  return .mint
+        case .bouldering:  return .pink
         }
     }
 }

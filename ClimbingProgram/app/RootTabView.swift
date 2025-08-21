@@ -28,7 +28,10 @@ struct RootTabView: View {
         .task {
             SeedData.loadIfNeeded(context)
             //SeedData.nukeAndReseed(context)  // <- uncomment, run once, then comment it out
-
+            // Non-destructive catalog deltas migration (run once per key)
+            runOnce(per: "catalog_2025-08-21_bouldering") {
+                applyCatalogUpdates(context)
+            }
         }
     }
     
