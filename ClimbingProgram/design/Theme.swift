@@ -87,14 +87,14 @@ struct CatalogMiniCard<Content: View>: View {
     let subtitle: String?
     let tint: Color
     @ViewBuilder var content: Content
-
+    
     init(title: String, subtitle: String? = nil, tint: Color, @ViewBuilder content: () -> Content) {
         self.title = title
         self.subtitle = subtitle
         self.tint = tint
         self.content = content()
     }
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
@@ -110,4 +110,8 @@ struct CatalogMiniCard<Content: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(tint.opacity(0.25), lineWidth: 1))
     }
+
+
+
+
 }

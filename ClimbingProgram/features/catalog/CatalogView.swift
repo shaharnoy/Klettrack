@@ -2,8 +2,6 @@
 //  CatalogView.swift
 //  ClimbingProgram
 //
-//  Created by Shahar Private on 21.08.25.
-//
 
 import SwiftUI
 import SwiftData
@@ -16,6 +14,7 @@ struct CatalogView: View {
 
     @State private var showingNewActivity = false
     @State private var draftActivityName = ""
+    @State private var renamingActivity: Activity?
 
     var body: some View {
         NavigationStack {
@@ -37,8 +36,14 @@ struct CatalogView: View {
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
-                            Button("Rename") { draftActivityName = activity.name; showingRenamePrompt = activity }
-                            Button(role: .destructive, action: { context.delete(activity); try? context.save() }) {
+                            Button("Rename") {
+                                draftActivityName = activity.name
+                                renamingActivity = activity
+                            }
+                            Button(role: .destructive) {
+                                context.delete(activity)
+                                try? context.save()
+                            } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
@@ -59,36 +64,26 @@ struct CatalogView: View {
                 .padding(.vertical, 12)
             }
             .navigationTitle("Catalog")
+
+            // New Category
             .sheet(isPresented: $showingNewActivity) {
-                NameEditSheet(
-                    title: "New Category",
-                    placeholder: "e.g. Core, Antagonist & Stabilizer…",
-                    name: $draftActivityName
-                ) {
+                NameOnlySheet(title: "New Category", placeholder: "e.g. Core, Antagonist & Stabilizer…", name: $draftActivityName) {
                     guard !draftActivityName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                     let a = Activity(name: draftActivityName.trimmingCharacters(in: .whitespaces))
                     context.insert(a)
                     try? context.save()
                 }
             }
-            .sheet(item: $showingRenamePrompt) { toRename in
-                NameEditSheet(
-                    title: "Rename Category",
-                    placeholder: "New name",
-                    name: Binding(
-                        get: { draftActivityName },
-                        set: { draftActivityName = $0 }
-                    )
-                ) {
+
+            // Rename Category
+            .sheet(item: $renamingActivity) { toRename in
+                NameOnlySheet(title: "Rename Category", placeholder: "New name", name: $draftActivityName) {
                     toRename.name = draftActivityName.trimmingCharacters(in: .whitespaces)
                     try? context.save()
                 }
             }
         }
     }
-
-    // rename support
-    @State private var showingRenamePrompt: Activity?
 }
 
 // MARK: - Activity detail (Training Types)
@@ -100,6 +95,8 @@ struct ActivityDetailView: View {
     @State private var showingNewType = false
     @State private var draftTypeName = ""
     @State private var draftArea = ""
+    @State private var draftTypeDesc = ""
+    @State private var renamingType: TrainingType?
 
     var body: some View {
         List {
@@ -116,9 +113,15 @@ struct ActivityDetailView: View {
                         }
                     }
                     .contextMenu {
-                        Button("Rename") { draftTypeName = t.name; draftArea = t.area ?? ""; renamingType = t }
+                        Button("Rename") {
+                            draftTypeName = t.name
+                            draftArea = t.area ?? ""
+                            draftTypeDesc = t.typeDescription ?? ""
+                            renamingType = t
+                        }
                         Button(role: .destructive) {
-                            context.delete(t); try? context.save()
+                            context.delete(t)
+                            try? context.save()
                         } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
@@ -128,7 +131,7 @@ struct ActivityDetailView: View {
                 }
 
                 Button {
-                    draftTypeName = ""; draftArea = ""
+                    draftTypeName = ""; draftArea = ""; draftTypeDesc = ""
                     showingNewType = true
                 } label: {
                     Label("Add Training Type", systemImage: "plus")
@@ -137,111 +140,148 @@ struct ActivityDetailView: View {
                 Text("Training Types")
             }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle(activity.name)
-        .toolbar { EditButton() }
-        // Create
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                EditButton()
+            }
+        }
+
+        // Create Type
         .sheet(isPresented: $showingNewType) {
             TrainingTypeEditSheet(
                 title: "New Training Type",
                 name: $draftTypeName,
-                area: $draftArea
+                area: $draftArea,
+                typeDescription: $draftTypeDesc
             ) {
-                let t = TrainingType(name: draftTypeName.trimmingCharacters(in: .whitespaces),
-                                     area: draftArea.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftArea)
+                let t = TrainingType(
+                    name: draftTypeName.trimmingCharacters(in: .whitespaces),
+                    area: draftArea.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftArea,
+                    typeDescription: draftTypeDesc.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftTypeDesc
+                )
                 activity.types.append(t)
                 try? context.save()
             }
         }
-        // Rename
+
+        // Rename/Edit Type
         .sheet(item: $renamingType) { tt in
             TrainingTypeEditSheet(
                 title: "Rename Training Type",
-                name: Binding(get: { draftTypeName }, set: { draftTypeName = $0 }),
-                area: Binding(get: { draftArea }, set: { draftArea = $0 })
+                name: $draftTypeName,
+                area: $draftArea,
+                typeDescription: $draftTypeDesc
             ) {
                 tt.name = draftTypeName.trimmingCharacters(in: .whitespaces)
                 tt.area = draftArea.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftArea
+                tt.typeDescription = draftTypeDesc.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftTypeDesc
                 try? context.save()
             }
         }
     }
-
-    @State private var renamingType: TrainingType?
 }
 
-// MARK: - Type detail (Exercises)
+// MARK: - Type detail (Exercises or Bouldering combinations)
 
 struct TrainingTypeDetailView: View {
     @Environment(\.modelContext) private var context
     @Bindable var trainingType: TrainingType
     let tint: Color
 
-    // New vs Edit state
     @State private var showingNewExercise = false
-    @State private var editingExercise: Exercise? = nil
+    @State private var editingExercise: Exercise?
 
-    // Draft fields shared by the sheets
+    // Drafts
     @State private var draftExName = ""
     @State private var draftReps = ""
     @State private var draftSets = ""
     @State private var draftRest = ""
     @State private var draftNotes = ""
+    @State private var draftDescription = ""
+    @State private var showingEditAbout = false
+    @State private var draftAbout = ""
+
 
     var body: some View {
         List {
-            Section {
-                ForEach(trainingType.exercises) { ex in
-                    ExerciseRow(ex: ex, tint: tint)
-                        .contentShape(Rectangle())
-                        // Tap row to edit this exact exercise
-                        .onTapGesture {
-                            openEditor(for: ex)
-                        }
-                        // Swipe: Edit / Delete
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("Edit") { openEditor(for: ex) }
-                                .tint(.blue)
-                            Button(role: .destructive) {
-                                context.delete(ex)
-                                try? context.save()
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                        // Long-press: Edit / Delete
-                        .contextMenu {
-                            Button("Edit") { openEditor(for: ex) }
-                            Button(role: .destructive) {
-                                context.delete(ex); try? context.save()
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                }
-                .onDelete { idx in
-                    idx.map { trainingType.exercises[$0] }.forEach { context.delete($0) }
-                    try? context.save()
-                }
+            if let d = trainingType.typeDescription, !d.isEmpty {
+                Section("About") { Text(d)
+                    .textCase(nil)}
+            }
 
-                // Add new exercise
-                Button {
-                    draftExName = ""
-                    draftReps = ""
-                    draftSets = ""
-                    draftRest = ""
-                    draftNotes = ""
-                    showingNewExercise = true
-                } label: {
-                    Label("Add Exercise", systemImage: "plus")
+            if !trainingType.combinations.isEmpty {
+                Section("Combinations") {
+                    ForEach(trainingType.combinations) { combo in
+                        NavigationLink {
+                            CombinationDetailView(combo: combo, tint: tint)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(combo.name).font(.headline)
+                                if let cd = combo.comboDescription, !cd.isEmpty {
+                                    Text(cd).font(.footnote).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .textCase(nil)
                 }
-            } header: {
-                Text("Exercises")
+            } else {
+                Section("Exercises") {
+                    ForEach(trainingType.exercises) { ex in
+                        ExerciseRow(ex: ex, tint: tint)
+                            .contentShape(Rectangle())
+                            .onTapGesture { openEditor(for: ex) }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button("Edit") { openEditor(for: ex) }.tint(.blue)
+                                Button(role: .destructive) {
+                                    context.delete(ex); try? context.save()
+                                } label: { Label("Delete", systemImage: "trash") }
+                            }
+                            .contextMenu {
+                                Button("Edit") { openEditor(for: ex) }
+                                Button(role: .destructive) {
+                                    context.delete(ex); try? context.save()
+                                } label: { Label("Delete", systemImage: "trash") }
+                            }
+                    }
+                    .onDelete { idx in
+                        idx.map { trainingType.exercises[$0] }.forEach { context.delete($0) }
+                        try? context.save()
+                    }
+
+                    Button { startNewExercise() } label: {
+                        Label("Add Exercise", systemImage: "plus")
+                    }
+                    .textCase(nil)
+                }
             }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle(trainingType.name)
-        .toolbar { EditButton() }
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                EditButton()
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Edit About") {
+                    draftAbout = trainingType.typeDescription ?? ""
+                    showingEditAbout = true
+                }
+            }
+        }
 
-        // NEW exercise sheet (creates and inserts)
+        .sheet(isPresented: $showingEditAbout) {
+            AboutEditSheet(title: "About \(trainingType.name)",
+                           text: $draftAbout) {
+                let trimmed = draftAbout.trimmingCharacters(in: .whitespacesAndNewlines)
+                trainingType.typeDescription = trimmed.isEmpty ? nil : trimmed
+                try? context.save()
+            }
+        }
+
+        // NEW exercise
         .sheet(isPresented: $showingNewExercise) {
             ExerciseEditSheet(
                 title: "New Exercise",
@@ -249,10 +289,12 @@ struct TrainingTypeDetailView: View {
                 reps: $draftReps,
                 sets: $draftSets,
                 rest: $draftRest,
-                notes: $draftNotes
+                notes: $draftNotes,
+                description: $draftDescription
             ) {
                 let ex = Exercise(
                     name: draftExName.trimmingCharacters(in: .whitespaces),
+                    exerciseDescription: draftDescription.isEmpty ? nil : draftDescription,
                     repsText: draftReps.isEmpty ? nil : draftReps,
                     setsText: draftSets.isEmpty ? nil : draftSets,
                     restText: draftRest.isEmpty ? nil : draftRest,
@@ -263,18 +305,19 @@ struct TrainingTypeDetailView: View {
             }
         }
 
-        // EDIT exercise sheet (updates existing; does NOT insert)
+        // EDIT exercise
         .sheet(item: $editingExercise) { ex in
             ExerciseEditSheet(
                 title: "Edit Exercise",
-                name: Binding(get: { draftExName }, set: { draftExName = $0 }),
-                reps: Binding(get: { draftReps }, set: { draftReps = $0 }),
-                sets: Binding(get: { draftSets }, set: { draftSets = $0 }),
-                rest: Binding(get: { draftRest }, set: { draftRest = $0 }),
-                notes: Binding(get: { draftNotes }, set: { draftNotes = $0 })
+                name: $draftExName,
+                reps: $draftReps,
+                sets: $draftSets,
+                rest: $draftRest,
+                notes: $draftNotes,
+                description: $draftDescription
             ) {
-                // mutate the existing model
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
+                ex.exerciseDescription = draftDescription.isEmpty ? nil : draftDescription
                 ex.repsText = draftReps.isEmpty ? nil : draftReps
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
                 ex.restText = draftRest.isEmpty ? nil : draftRest
@@ -284,19 +327,183 @@ struct TrainingTypeDetailView: View {
         }
     }
 
-    // Prefill the drafts and present the edit sheet
+    private func startNewExercise() {
+        draftExName = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""
+        showingNewExercise = true
+    }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name
-        draftReps   = ex.repsText ?? ""
-        draftSets   = ex.setsText ?? ""
-        draftRest   = ex.restText ?? ""
-        draftNotes  = ex.notes ?? ""
+        draftDescription = ex.exerciseDescription ?? ""
+        draftReps = ex.repsText ?? ""
+        draftSets = ex.setsText ?? ""
+        draftRest = ex.restText ?? ""
+        draftNotes = ex.notes ?? ""
         editingExercise = ex
     }
 }
 
+// MARK: - Combination detail (Bouldering)
 
-// MARK: - Rows & Sheets
+struct CombinationDetailView: View {
+    @Environment(\.modelContext) private var context
+    @Bindable var combo: BoulderCombination
+    let tint: Color
+
+    @State private var editingExercise: Exercise?
+    @State private var showingNew = false
+
+    @State private var draftExName = ""
+    @State private var draftReps = ""
+    @State private var draftSets = ""
+    @State private var draftRest = ""
+    @State private var draftNotes = ""
+    @State private var draftDesc = ""
+    @State private var showingEditAbout = false
+    @State private var draftAbout = ""
+
+
+    var body: some View {
+        List {
+            if let about = combo.comboDescription, !about.isEmpty {
+                Section("About") { Text(about) }
+            }
+            Section("Exercises") {
+                ForEach(combo.exercises) { ex in
+                    ExerciseRow(ex: ex, tint: tint)
+                        .contentShape(Rectangle())
+                        .onTapGesture { openEditor(for: ex) }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Edit") { openEditor(for: ex) }.tint(.blue)
+                            Button(role: .destructive) {
+                                context.delete(ex); try? context.save()
+                            } label: { Label("Delete", systemImage: "trash") }
+                        }
+                        .contextMenu {
+                            Button("Edit") { openEditor(for: ex) }
+                            Button(role: .destructive) { context.delete(ex); try? context.save() } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                }
+                .onDelete { idx in
+                    idx.map { combo.exercises[$0] }.forEach { context.delete($0) }
+                    try? context.save()
+                }
+
+                Button { startNewExercise() } label: {
+                    Label("Add Exercise", systemImage: "plus")
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(combo.name)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                EditButton()
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Edit About") {
+                    draftAbout = combo.comboDescription ?? ""
+                    showingEditAbout = true
+                }
+            }
+        }
+        .sheet(isPresented: $showingEditAbout) {
+            AboutEditSheet(title: "About \(combo.name)",
+                           text: $draftAbout) {
+                let trimmed = draftAbout.trimmingCharacters(in: .whitespacesAndNewlines)
+                combo.comboDescription = trimmed.isEmpty ? nil : trimmed
+                try? context.save()
+            }
+        }
+
+
+        // New
+        .sheet(isPresented: $showingNew) {
+            ExerciseEditSheet(
+                title: "New Exercise",
+                name: $draftExName,
+                reps: $draftReps,
+                sets: $draftSets,
+                rest: $draftRest,
+                notes: $draftNotes,
+                description: $draftDesc
+            ) {
+                let ex = Exercise(
+                    name: draftExName.trimmingCharacters(in: .whitespaces),
+                    exerciseDescription: draftDesc.isEmpty ? nil : draftDesc,
+                    repsText: draftReps.isEmpty ? nil : draftReps,
+                    setsText: draftSets.isEmpty ? nil : draftSets,
+                    restText: draftRest.isEmpty ? nil : draftRest,
+                    notes: draftNotes.isEmpty ? nil : draftNotes
+                )
+                combo.exercises.append(ex)
+                try? context.save()
+            }
+        }
+
+        // Edit
+        .sheet(item: $editingExercise) { ex in
+            ExerciseEditSheet(
+                title: "Edit Exercise",
+                name: $draftExName,
+                reps: $draftReps,
+                sets: $draftSets,
+                rest: $draftRest,
+                notes: $draftNotes,
+                description: $draftDesc
+            ) {
+                ex.name = draftExName.trimmingCharacters(in: .whitespaces)
+                ex.exerciseDescription = draftDesc.isEmpty ? nil : draftDesc
+                ex.repsText = draftReps.isEmpty ? nil : draftReps
+                ex.setsText = draftSets.isEmpty ? nil : draftSets
+                ex.restText = draftRest.isEmpty ? nil : draftRest
+                ex.notes = draftNotes.isEmpty ? nil : draftNotes
+                try? context.save()
+            }
+        }
+    }
+
+    private func startNewExercise() {
+        draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDesc = ""
+        showingNew = true
+    }
+    private func openEditor(for ex: Exercise) {
+        draftExName = ex.name
+        draftDesc = ex.exerciseDescription ?? ""
+        draftReps = ex.repsText ?? ""
+        draftSets = ex.setsText ?? ""
+        draftRest = ex.restText ?? ""
+        draftNotes = ex.notes ?? ""
+        editingExercise = ex
+    }
+}
+
+// MARK: - Shared UI bits
+
+private struct MetricRow: View {
+    let reps: String?
+    let sets: String?
+    let rest: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            metric("Reps", reps)
+            metric("Sets", sets)
+            metric("Rest", rest)
+        }
+        .font(.caption.monospacedDigit())          // 👈 monospaced digits
+        .foregroundStyle(.primary)
+    }
+
+    @ViewBuilder
+    private func metric(_ label: String, _ value: String?) -> some View {
+        HStack(spacing: 4) {
+            Text(label).bold().foregroundStyle(.secondary)
+            Text(value ?? "—")
+        }
+    }
+}
 
 private struct ExerciseRow: View {
     @Bindable var ex: Exercise
@@ -305,34 +512,29 @@ private struct ExerciseRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Circle().fill(tint).frame(width: 8, height: 8)
-                Text(ex.name).font(.headline)
+                Circle().fill(tint.gradient)        // 👈 subtle gradient, Dark Mode safe
+                    .frame(width: 8, height: 8)
+                Text(ex.name)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.9)
             }
-            HStack {
-                labelValue("REPS", ex.repsText)
-                Spacer(minLength: 12)
-                labelValue("SETS/REST", ex.setsText ?? ex.restText)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            if let notes = ex.notes, !notes.isEmpty {
+            MetricRow(reps: ex.repsText, sets: ex.setsText, rest: ex.restText)
+            if let desc = ex.exerciseDescription, !desc.isEmpty {
+                Text(desc).font(.footnote)
+            } else if let notes = ex.notes, !notes.isEmpty {
                 Text(notes).font(.footnote).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
-    }
-
-    @ViewBuilder
-    private func labelValue(_ label: String, _ value: String?) -> some View {
-        HStack(spacing: 4) {
-            Text(label).bold()
-            Text(value ?? "—")
-        }
+        .contentShape(Rectangle())                 // 👈 larger tap target
     }
 }
 
-// Generic small name sheet (for Activity)
-private struct NameEditSheet: View {
+
+// MARK: - Sheets
+
+struct NameOnlySheet: View {
     let title: String
     let placeholder: String
     @Binding var name: String
@@ -359,11 +561,11 @@ private struct NameEditSheet: View {
     }
 }
 
-// Training Type edit sheet
-private struct TrainingTypeEditSheet: View {
+struct TrainingTypeEditSheet: View {
     let title: String
     @Binding var name: String
     @Binding var area: String
+    @Binding var typeDescription: String
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -372,6 +574,7 @@ private struct TrainingTypeEditSheet: View {
             Form {
                 TextField("Name", text: $name)
                 TextField("Area (optional)", text: $area)
+                TextField("Description (optional)", text: $typeDescription)
             }
             .navigationTitle(title)
             .toolbar {
@@ -387,42 +590,108 @@ private struct TrainingTypeEditSheet: View {
     }
 }
 
-// Exercise edit sheet
-private struct ExerciseEditSheet: View {
+struct ExerciseEditSheet: View {
     let title: String
     @Binding var name: String
     @Binding var reps: String
     @Binding var sets: String
     @Binding var rest: String
     @Binding var notes: String
+    @Binding var description: String
+    
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
-
+    
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     TextField("Exercise name", text: $name)
+                        .textInputAutocapitalization(.words)
+                    TextField("Description (optional)", text: $description)
+                        .textCase(nil)
                 }
-                Section("Display Fields (free text)") {
-                    TextField("REPS (display text)", text: $reps)
-                    TextField("SETS (display text)", text: $sets)
-                    TextField("REST (display text)", text: $rest)
+                
+                Section {
+                    LabeledContent {
+                        TextField("e.g. 15–25 / 10s", text: $reps)
+                            .keyboardType(.numbersAndPunctuation)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Label("Reps / Time", systemImage: "repeat")
+                        }
+                    
+                    LabeledContent {
+                        TextField("e.g. 2–3", text: $sets)
+                            .keyboardType(.numbersAndPunctuation)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Label("Sets", systemImage: "square.grid.3x3")
+                    }
+                    
+                    LabeledContent {
+                        TextField("e.g. 3 min", text: $rest)
+                            .keyboardType(.numbersAndPunctuation)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Label("Rest", systemImage: "hourglass")
+                    }
+                    .textCase(nil)
+                } header: {
+                    Text("DISPLAY FIELDS")
+                } footer: {
+                    Text("These are display strings (e.g., “6–10”, “45 sec”, “3 min”). Analytics come from your logs.")
                 }
+                
+                Section("Preview") {
+                    MetricRow(reps: reps.isEmpty ? nil : reps,
+                              sets: sets.isEmpty ? nil : sets,
+                              rest: rest.isEmpty ? nil : rest)
+                }
+                
                 Section("Notes") {
-                    TextField("Notes (optional)", text: $notes)
+                    TextField("Notes (optional)", text: $notes, axis: .vertical)
+                        .lineLimit(1...3)
                 }
             }
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        onSave(); dismiss()
-                    }
+                    Button("Save") { onSave(); dismiss() }
                 }
             }
         }
     }
 }
+// MARK: - Reusable About editor
+struct AboutEditSheet: View {
+    let title: String
+    @Binding var text: String
+    let onSave: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextEditor(text: $text)
+                    .frame(minHeight: 160)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(.quaternary)
+                    )
+            }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave(); dismiss() }
+                }
+            }
+        }
+    }
+    }
+    
+

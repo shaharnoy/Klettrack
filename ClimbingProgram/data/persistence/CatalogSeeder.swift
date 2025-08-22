@@ -41,16 +41,14 @@ struct CatalogSeeder {
         rest: String? = nil,
         notes: String? = nil
     ) {
-        if let e = type.exercises.first(where: { $0.name == name }) {
-            // If you want to ship text corrections later, uncomment:
-            // e.repsText = reps ?? e.repsText
-            // e.setsText = sets ?? e.setsText
-            // e.restText = rest ?? e.restText
-            // e.notes    = notes ?? e.notes
+        // If an exercise with this name already exists, do nothing.
+        if type.exercises.contains(where: { $0.name == name }) {
             return
         }
+        // Otherwise insert it.
         type.exercises.append(
             Exercise(name: name, repsText: reps, setsText: sets, restText: rest, notes: notes)
         )
     }
+
 }

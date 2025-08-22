@@ -1,0 +1,419 @@
+//
+//  LogCSV.swift
+//  ClimbingProgram
+//
+
+import Foundation
+import SwiftUI
+import SwiftData
+import UniformTypeIdentifiers
+
+// MARK: - CSV FileDocument for export/share
+
+struct LogCSVDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.commaSeparatedText] }
+    static var writableContentTypes: [UTType] { [.commaSeparatedText] }
+
+    var csv: String
+
+    init(csv: String = "") {
+        self.csv = csv
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard
+            let data = configuration.file.regularFileContents,
+            let string = String(data: data, encoding: .utf8)
+        else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.csv = string
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(csv.utf8))
+    }
+}
+
+// MARK: - CSV utilities (export + import)
+
+enum LogCSV {
+
+    /// Build a CSV snapshot from all Sessions + SessionItems in the store.
+    static func makeExportCSV(context: ModelContext) -> LogCSVDocument {
+        // Fetch sessions oldest → newest for nice reading
+        let sessions: [Session] = (try? context.fetch(
+            FetchDescriptor<Session>(sortBy: [SortDescriptor(\.date, order: .forward)])
+        )) ?? []
+
+        var rows: [String] = ["date,exercise,reps,sets,weight_kg,notes"] // header
+
+        let df = ISO8601DateFormatter()
+        df.formatOptions = [.withFullDate] // YYYY-MM-DD
+
+        for s in sessions {
+            let d = df.string(from: s.date)
+            for i in s.items {
+                rows.append([
+                    d,
+                    csvEscape(i.exerciseName),
+                    i.reps.map(String.init) ?? "",
+                    i.sets.map(String.init) ?? "",
+                    i.weightKg.map { String(format: "%.3f", $0) } ?? "",
+                    csvEscape(i.notes ?? "")
+                ].joined(separator: ","))
+            }
+        }
+        return LogCSVDocument(csv: rows.joined(separator: "\n"))
+    }
+
+    /// Import CSV rows into SwiftData. Creates (or merges into) Sessions by date.
+    /// - Parameters:
+    ///   - url: CSV file URL
+    ///   - context: SwiftData context
+    ///   - tag: optional tag applied to each imported item, e.g. "import:2025-08-22"
+    ///   - dedupe: if true, avoids inserting exact-duplicate rows (same day+name+numbers+notes)
+    /// - Returns: number of inserted items
+    @discardableResult
+    static func importCSV(
+        from url: URL,
+        into context: ModelContext,
+        tag: String? = nil,
+        dedupe: Bool = true
+    ) throws -> Int {
+
+        // Security-scoped access for files coming from .fileImporter / document picker
+        var didAccess = false
+        if url.startAccessingSecurityScopedResource() { didAccess = true }
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+
+        let data = try Data(contentsOf: url)
+        guard let text = String(data: data, encoding: .utf8) else { return 0 }
+
+        let lines = text.split(whereSeparator: \.isNewline).map(String.init)
+        guard !lines.isEmpty else { return 0 }
+
+        // Optional header on first line
+        let first = lines[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let startIdx = first.hasPrefix("date,") ? 1 : 0
+
+        let df = ISO8601DateFormatter()
+        df.formatOptions = [.withFullDate] // YYYY-MM-DD
+
+        var inserted = 0
+
+        for idx in startIdx..<lines.count {
+            let parts = parseCSVLine(lines[idx])
+
+            // Expect: date, exercise, reps, sets, weight_kg, notes
+            guard parts.count >= 2 else { continue }
+
+            let dateStr   = parts[safe: 0] ?? ""
+            let name      = parts[safe: 1] ?? ""
+            let repsStr   = parts[safe: 2] ?? ""
+            let setsStr   = parts[safe: 3] ?? ""
+            let weightStr = parts[safe: 4] ?? ""
+            let notes     = parts[safe: 5] ?? ""
+
+            guard
+                let dayDate = df.date(from: dateStr),
+                !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { continue }
+
+            // Find/create session on that day
+            let startOfDay = Calendar.current.startOfDay(for: dayDate)
+            let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
+            let descriptor = FetchDescriptor<Session>(predicate: #Predicate {
+                $0.date >= startOfDay && $0.date < endOfDay
+            })
+            let existing = (try? context.fetch(descriptor)) ?? []
+            let session = existing.first ?? {
+                let s = Session(date: dayDate)
+                context.insert(s)
+                return s
+            }()
+
+            // Parse numeric fields (empty -> nil)
+            let reps = Int(repsStr.trimmingCharacters(in: .whitespacesAndNewlines))
+            let sets = Int(setsStr.trimmingCharacters(in: .whitespacesAndNewlines))
+            let weight = Double(
+                weightStr
+                    .replacingOccurrences(of: ",", with: ".")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+
+            // DEDUPE within this session
+            let existingSigs = Set(session.items.map {
+                itemSignature(date: session.date,
+                              name: $0.exerciseName,
+                              reps: $0.reps,
+                              sets: $0.sets,
+                              weight: $0.weightKg,
+                              notes: $0.notes)
+            })
+            let sig = itemSignature(date: session.date,
+                                    name: name,
+                                    reps: reps,
+                                    sets: sets,
+                                    weight: weight,
+                                    notes: notes)
+
+            if dedupe && existingSigs.contains(sig) {
+                continue
+            }
+
+            // Append & tag
+            let newItem = SessionItem(
+                exerciseName: name,
+                reps: reps,
+                sets: sets,
+                weightKg: weight,
+                notes: notes.isEmpty ? nil : notes
+            )
+            newItem.sourceTag = tag
+            session.items.append(newItem)
+            inserted += 1
+        }
+
+        try context.save()
+        return inserted
+    }
+
+}
+
+// MARK: - Helpers
+
+/// Basic CSV escaping (quote if needed; escape inner quotes)
+private func csvEscape(_ s: String) -> String {
+    if s.contains(",") || s.contains("\"") || s.contains("\n") {
+        let escaped = s.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
+    }
+    return s
+}
+
+/// Parse one CSV line (supports quoted cells with commas/quotes)
+private func parseCSVLine(_ line: String) -> [String] {
+    var out: [String] = []
+    var cur = ""
+    var inQuotes = false
+    let chars = Array(line)
+
+    var i = 0
+    while i < chars.count {
+        let c = chars[i]
+        if c == "\"" {
+            if inQuotes, i + 1 < chars.count, chars[i + 1] == "\"" {
+                cur.append("\"") // escaped quote
+                i += 1
+            } else {
+                inQuotes.toggle()
+            }
+        } else if c == "," && !inQuotes {
+            out.append(cur)
+            cur = ""
+        } else {
+            cur.append(c)
+        }
+        i += 1
+    }
+    out.append(cur)
+    return out
+}
+
+/// Build a dedupe signature for an item row
+private func itemSignature(date: Date,
+                           name: String,
+                           reps: Int?,
+                           sets: Int?,
+                           weight: Double?,
+                           notes: String?) -> String {
+    func norm(_ s: String?) -> String {
+        (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+    let df = ISO8601DateFormatter()
+    df.formatOptions = [.withFullDate]
+    return [
+        df.string(from: date),
+        norm(name),
+        reps.map(String.init) ?? "",
+        sets.map(String.init) ?? "",
+        weight.map { String(format: "%.3f", $0) } ?? "",
+        norm(notes)
+    ].joined(separator: "|")
+}
+
+// Safe indexing helper
+private extension Array {
+    subscript(safe idx: Int) -> Element? {
+        indices.contains(idx) ? self[idx] : nil
+    }
+}
+
+extension LogCSV {
+
+    struct Entry {
+        let date: Date
+        let name: String
+        let reps: Int?
+        let sets: Int?
+        let weight: Double?
+        let notes: String?
+    }
+
+    /// Async importer: parses off-main, then mutates SwiftData on the main actor.
+    @MainActor
+    static func importCSVAsync(
+        from url: URL,
+        into context: ModelContext,
+        tag: String? = nil,
+        dedupe: Bool = true,
+        progress: ((Double) -> Void)? = nil
+    ) async throws -> Int {
+
+        // Start security-scoped access (if needed)
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+
+        // 1) Read + parse OFF-MAIN (no ModelContext captured)
+        let entries: [Entry] = try await Task.detached(priority: .userInitiated) { () -> [Entry] in
+            let data = try Data(contentsOf: url)
+            guard let text = String(data: data, encoding: .utf8) else { return [] }
+
+            let lines = text.split(whereSeparator: \.isNewline).map(String.init)
+            guard !lines.isEmpty else { return [] }
+
+            let first = lines[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let startIdx = first.hasPrefix("date,") ? 1 : 0
+
+            let df = ISO8601DateFormatter()
+            df.formatOptions = [.withFullDate] // YYYY-MM-DD
+
+            var out: [Entry] = []
+            out.reserveCapacity(max(0, lines.count - startIdx))
+
+            for (n, idx) in (startIdx..<lines.count).enumerated() {
+                // brief cooperative yield to keep the system responsive
+                if n % 500 == 0 { await Task.yield() }
+
+                let parts = parseCSVLine(lines[idx])
+                guard parts.count >= 2 else { continue }
+
+                let dateStr   = parts[safe: 0] ?? ""
+                let nameRaw   = parts[safe: 1] ?? ""
+                let repsStr   = parts[safe: 2] ?? ""
+                let setsStr   = parts[safe: 3] ?? ""
+                let weightStr = parts[safe: 4] ?? ""
+                let notesRaw  = parts[safe: 5] ?? ""
+
+                guard
+                    let dayDate = df.date(from: dateStr),
+                    !nameRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { continue }
+
+                let name   = nameRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+                let reps   = Int(repsStr.trimmingCharacters(in: .whitespacesAndNewlines))
+                let sets   = Int(setsStr.trimmingCharacters(in: .whitespacesAndNewlines))
+                let weight = Double(weightStr
+                    .replacingOccurrences(of: ",", with: ".")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+                let notesOpt = notes.isEmpty ? nil : notes
+
+                out.append(Entry(date: dayDate, name: name, reps: reps, sets: sets, weight: weight, notes: notesOpt))
+            }
+
+            return out
+        }.value
+
+        guard !entries.isEmpty else {
+            progress?(1.0)
+            return 0
+        }
+
+        // Optional half-way signal after parse
+        progress?(0.5)
+
+        // 2) Apply ON MAIN (safe for ModelContext) + progressive progress
+        let cal = Calendar.current
+        var inserted = 0
+
+        // Cache sessions per day to avoid repeated fetches
+        var sessionCache: [Date: Session] = [:]
+        sessionCache.reserveCapacity(32)
+
+        // Cache signature sets per session for dedupe
+        var sigCache: [ObjectIdentifier: Set<String>] = [:]
+
+        for (idx, e) in entries.enumerated() {
+            // Progress from 0.5 → 1.0 during application
+            if idx % 50 == 0 {
+                let p = 0.5 + 0.5 * (Double(idx) / Double(entries.count))
+                progress?(min(max(p, 0.5), 1.0))
+            }
+
+            // Find or create session for this day (normalized to startOfDay)
+            let startOfDay = cal.startOfDay(for: e.date)
+            let session: Session
+            if let cached = sessionCache[startOfDay] {
+                session = cached
+            } else {
+                let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay)!
+                let fetch = FetchDescriptor<Session>(predicate: #Predicate {
+                    $0.date >= startOfDay && $0.date < endOfDay
+                })
+                let matches = (try? context.fetch(fetch)) ?? []
+                if let found = matches.first {
+                    session = found
+                } else {
+                    let s = Session(date: startOfDay)
+                    context.insert(s)
+                    session = s
+                }
+                sessionCache[startOfDay] = session
+            }
+
+            // Build/get signature set for dedupe
+            let sid = ObjectIdentifier(session)
+            var existing = sigCache[sid]
+            if existing == nil {
+                existing = Set(session.items.map {
+                    itemSignature(date: session.date,
+                                  name: $0.exerciseName,
+                                  reps: $0.reps,
+                                  sets: $0.sets,
+                                  weight: $0.weightKg,
+                                  notes: $0.notes)
+                })
+            }
+
+            let sig = itemSignature(date: session.date,
+                                    name: e.name,
+                                    reps: e.reps,
+                                    sets: e.sets,
+                                    weight: e.weight,
+                                    notes: e.notes ?? "")
+
+            if !dedupe || !(existing?.contains(sig) ?? false) {
+                let item = SessionItem(
+                    exerciseName: e.name,
+                    reps: e.reps,
+                    sets: e.sets,
+                    weightKg: e.weight,
+                    notes: e.notes
+                )
+                item.sourceTag = tag
+                session.items.append(item)
+                existing?.insert(sig)
+                inserted += 1
+            }
+
+            sigCache[sid] = existing ?? []
+        }
+
+        try? context.save()
+        progress?(1.0)
+        return inserted
+    }
+}
