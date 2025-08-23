@@ -37,8 +37,8 @@ struct RootTabView: View {
     
     @MainActor
     private func initializeData() async {
-        // Small delay to ensure SwiftData container is fully ready
-        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        // Longer delay to ensure SwiftData container is fully ready
+        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
         
         SeedData.loadIfNeeded(context)
         
@@ -50,8 +50,8 @@ struct RootTabView: View {
         // Ensure all changes are committed
         try? context.save()
         
-        // Small additional delay to ensure everything is settled
-        try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
+        // Additional delay to ensure everything is settled
+        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
         
         isDataReady = true
     }

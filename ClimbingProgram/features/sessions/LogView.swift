@@ -386,66 +386,59 @@ struct SessionDetailView: View {
     @Bindable var session: Session
     @State private var showingAddItem = false
     @State private var editingItem: SessionItem? = nil
-    @State private var showingEditSheet = false
 
     var body: some View {
-        List {
-            Section("Exercises") {
-                ForEach(session.items) { item in
-                    SessionItemRow(item: item)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                guard isDataReady else { return }
-                                if let index = session.items.firstIndex(where: { $0.id == item.id }) {
-                                    session.items.remove(at: index)
-                                    try? context.save()
+        NavigationStack {
+            List {
+                Section("Exercises") {
+                    ForEach(session.items) { item in
+                        SessionItemRow(item: item)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    guard isDataReady else { return }
+                                    if let index = session.items.firstIndex(where: { $0.id == item.id }) {
+                                        session.items.remove(at: index)
+                                        try? context.save()
+                                    }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+                                
+                                NavigationLink {
+                                    EditSessionItemView(item: item)
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
                             }
-                            
-                            Button {
-                                guard isDataReady else { return }
-                                editingItem = item
-                                showingEditSheet = true
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
-                            }
-                            .tint(.blue)
-                        }
+                    }
                 }
             }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    guard isDataReady else { return }
-                    showingAddItem = true
-                } label: {
-                    Image(systemName: "plus")
+            .listStyle(.insetGrouped)
+            .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        guard isDataReady else { return }
+                        showingAddItem = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(!isDataReady)
                 }
-                .disabled(!isDataReady)
             }
-        }
-        .sheet(isPresented: $showingAddItem) {
-            AddSessionItemSheet(session: session)
-        }
-        .sheet(isPresented: $showingEditSheet, onDismiss: {
-            editingItem = nil
-        }) {
-            if let editingItem = editingItem {
-                EditSessionItemSheet(item: editingItem)
+            .sheet(isPresented: $showingAddItem) {
+                AddSessionItemSheet(session: session)
             }
         }
     }
 }
 
-// Edit sheet: change selectedCatalogName to String?
-struct EditSessionItemSheet: View {
+// Replace sheet-based editing with NavigationLink-based editing
+struct EditSessionItemView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
     @Bindable var item: SessionItem
 
     @Query(sort: [SortDescriptor(\Plan.startDate)]) private var plans: [Plan]
@@ -457,9 +450,27 @@ struct EditSessionItemSheet: View {
     @State private var inputWeight: String = ""
     @State private var inputNotes: String = ""
     @State private var inputGrade: String = ""
+    @State private var isInitialized = false
 
     var body: some View {
-        NavigationStack {
+        if !isDataReady || !isInitialized {
+            VStack(spacing: 16) {
+                ProgressView()
+                Text("Loading...")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("Edit Exercise")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .task {
+                await initializeView()
+            }
+        } else {
             Form {
                 Button {
                     showingCatalogPicker = true
@@ -497,9 +508,9 @@ struct EditSessionItemSheet: View {
                 }
             }
             .navigationTitle("Edit Exercise")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
                         item.exerciseName = selectedName
@@ -517,18 +528,31 @@ struct EditSessionItemSheet: View {
                 }
             }
         }
-        .onAppear {
-            selectedCatalogName = item.exerciseName
-            // Find the plan if one exists
-            if let planId = item.planSourceId {
-                selectedPlan = plans.first { $0.id == planId }
-            }
-            inputReps = item.reps.map { String($0) } ?? ""
-            inputSets = item.sets.map { String($0) } ?? ""
-            inputWeight = item.weightKg.map { String($0) } ?? ""
-            inputGrade = item.grade ?? ""
-            inputNotes = item.notes ?? ""
+    }
+    
+    @MainActor
+    private func initializeView() async {
+        // Wait for data to be ready
+        while !isDataReady {
+            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
         }
+        
+        // Additional small delay to ensure context is stable
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        
+        // Initialize form fields
+        selectedCatalogName = item.exerciseName
+        // Find the plan if one exists
+        if let planId = item.planSourceId {
+            selectedPlan = plans.first { $0.id == planId }
+        }
+        inputReps = item.reps.map { String($0) } ?? ""
+        inputSets = item.sets.map { String($0) } ?? ""
+        inputWeight = item.weightKg.map { String($0) } ?? ""
+        inputGrade = item.grade ?? ""
+        inputNotes = item.notes ?? ""
+        
+        isInitialized = true
     }
 }
 
