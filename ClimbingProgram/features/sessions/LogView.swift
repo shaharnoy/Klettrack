@@ -8,22 +8,11 @@ import SwiftData
 import UniformTypeIdentifiers
 import UIKit // uses ShareSheet from your Plans module (or provide a local one)
 
-// If you don't have a global ShareSheet, uncomment this:
-// struct ShareSheet: UIViewControllerRepresentable {
-//     let items: [Any]
-//     let completion: (() -> Void)?
-//     func makeUIViewController(context: Context) -> UIActivityViewController {
-//         let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
-//         vc.completionWithItemsHandler = { _,_,_,_ in completion?() }
-//         return vc
-//     }
-//     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
-// }
-
 // MARK: - Log (list of sessions)
 
 struct LogView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
     @Query(sort: [SortDescriptor(\Session.date, order: .reverse)]) private var sessions: [Session]
 
     // New session
@@ -100,9 +89,16 @@ struct LogView: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
+            .disabled(!isDataReady)
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button { showingNew = true } label: { Image(systemName: "plus") }
+            Button {
+                guard isDataReady else { return }
+                showingNew = true
+            } label: {
+                Image(systemName: "plus")
+            }
+            .disabled(!isDataReady)
         }
     }
 
@@ -386,6 +382,7 @@ struct NewSessionSheet: View {
 
 struct SessionDetailView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
     @Bindable var session: Session
     @State private var showingAddItem = false
     @State private var editingItem: SessionItem? = nil
@@ -398,6 +395,7 @@ struct SessionDetailView: View {
                     SessionItemRow(item: item)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
+                                guard isDataReady else { return }
                                 if let index = session.items.firstIndex(where: { $0.id == item.id }) {
                                     session.items.remove(at: index)
                                     try? context.save()
@@ -407,6 +405,7 @@ struct SessionDetailView: View {
                             }
                             
                             Button {
+                                guard isDataReady else { return }
                                 editingItem = item
                                 showingEditSheet = true
                             } label: {
@@ -421,7 +420,13 @@ struct SessionDetailView: View {
         .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingAddItem = true } label: { Image(systemName: "plus") }
+                Button {
+                    guard isDataReady else { return }
+                    showingAddItem = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(!isDataReady)
             }
         }
         .sheet(isPresented: $showingAddItem) {
@@ -431,9 +436,7 @@ struct SessionDetailView: View {
             editingItem = nil
         }) {
             if let editingItem = editingItem {
-                NavigationStack {
-                    EditSessionItemSheet(item: editingItem)
-                }
+                EditSessionItemSheet(item: editingItem)
             }
         }
     }

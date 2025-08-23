@@ -10,6 +10,7 @@ import SwiftData
 
 struct CatalogView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
     @Query(sort: \Activity.name) private var activities: [Activity]
 
     @State private var showingNewActivity = false
@@ -37,10 +38,12 @@ struct CatalogView: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button("Rename") {
+                                guard isDataReady else { return }
                                 draftActivityName = activity.name
                                 renamingActivity = activity
                             }
                             Button(role: .destructive) {
+                                guard isDataReady else { return }
                                 context.delete(activity)
                                 try? context.save()
                             } label: {
@@ -50,6 +53,7 @@ struct CatalogView: View {
                     }
 
                     Button {
+                        guard isDataReady else { return }
                         draftActivityName = ""
                         showingNewActivity = true
                     } label: {
@@ -59,6 +63,7 @@ struct CatalogView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.accentColor)
                     .padding(.top, 6)
+                    .disabled(!isDataReady)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -90,6 +95,7 @@ struct CatalogView: View {
 
 struct ActivityDetailView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
     @Bindable var activity: Activity
 
     @State private var showingNewType = false
@@ -114,28 +120,33 @@ struct ActivityDetailView: View {
                     }
                     .contextMenu {
                         Button("Rename") {
+                            guard isDataReady else { return }
                             draftTypeName = t.name
                             draftArea = t.area ?? ""
                             draftTypeDesc = t.typeDescription ?? ""
                             renamingType = t
                         }
                         Button(role: .destructive) {
+                            guard isDataReady else { return }
                             context.delete(t)
                             try? context.save()
                         } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
                 .onDelete { idx in
+                    guard isDataReady else { return }
                     idx.map { activity.types[$0] }.forEach { context.delete($0) }
                     try? context.save()
                 }
 
                 Button {
+                    guard isDataReady else { return }
                     draftTypeName = ""; draftArea = ""; draftTypeDesc = ""
                     showingNewType = true
                 } label: {
                     Label("Add Training Type", systemImage: "plus")
                 }
+                .disabled(!isDataReady)
             } header: {
                 Text("Training Types")
             }

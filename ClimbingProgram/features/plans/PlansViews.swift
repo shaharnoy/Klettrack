@@ -35,6 +35,7 @@ private extension Date {
 // MARK: Plans list
 struct PlansListView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
     // Be explicit with SortDescriptor to help the type checker
     @Query(sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
 
@@ -60,6 +61,7 @@ struct PlansListView: View {
                     }
                 }
                 .onDelete { idx in
+                    guard isDataReady else { return }
                     idx.map { plans[$0] }.forEach(context.delete)
                     try? context.save()
                 }
@@ -72,6 +74,7 @@ struct PlansListView: View {
                     Menu {
                         // Export (save to Files)
                         Button {
+                            guard isDataReady else { return }
                             exportDoc = LogCSV.makeExportCSV(context: context)
                             showExporter = true
                         } label: {
@@ -80,6 +83,7 @@ struct PlansListView: View {
 
                         // Share (Mail / Messages / Files…)
                         Button {
+                            guard isDataReady else { return }
                             let doc = LogCSV.makeExportCSV(context: context)
                             let fn = "climbing-log-\(Date().formatted(.dateTime.year().month().day())).csv"
                             let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
@@ -99,8 +103,9 @@ struct PlansListView: View {
                             Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
                         }
 
-                        // Import
+                        // Import (from Files / cloud storage)
                         Button {
+                            guard isDataReady else { return }
                             showImporter = true
                         } label: {
                             Label("Import logs from CSV", systemImage: "square.and.arrow.down")
@@ -108,14 +113,19 @@ struct PlansListView: View {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
+                    .disabled(!isDataReady)
                 }
 
-                // Keep your + button (unchanged)
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingNew = true } label: { Image(systemName: "plus") }
+                    Button {
+                        guard isDataReady else { return }
+                        showingNew = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(!isDataReady)
                 }
             }
-
             .sheet(isPresented: $showingNew) { NewPlanSheet() }
             // Exporter
             .fileExporter(isPresented: $showExporter,
@@ -238,6 +248,15 @@ struct PlanDetailView: View {
     @State private var weeksToAdd: String = ""
 
     private let cal = Calendar.current
+
+    // Query for all session items that belong to this plan
+    private var planSessionItems: [SessionItem] {
+        let descriptor = FetchDescriptor<SessionItem>(
+            sortBy: [SortDescriptor(\.exerciseName)]
+        )
+        let allItems = (try? context.fetch(descriptor)) ?? []
+        return allItems.filter { $0.planSourceId == plan.id }
+    }
 
     // Break down complex computed property into smaller functions
     private func getWeekStart(for date: Date) -> Date {
@@ -409,13 +428,52 @@ struct PlanDayEditor: View {
     // Quick Progress
     @State private var progressExercise: ExerciseSelection? = nil
     
+    // Query for logged exercises on this day that belong to this plan
+    private var loggedExercisesForDay: [SessionItem] {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day.date)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
+        
+        let sessionDescriptor = FetchDescriptor<Session>(predicate: #Predicate<Session> {
+            $0.date >= dayStart && $0.date < dayEnd
+        })
+        let sessions = (try? context.fetch(sessionDescriptor)) ?? []
+        
+        // Find the plan that contains this day
+        let planDescriptor = FetchDescriptor<Plan>()
+        let plans = (try? context.fetch(planDescriptor)) ?? []
+        let parentPlan = plans.first { plan in
+            plan.days.contains { $0.id == day.id }
+        }
+        
+        // Return session items for this day that belong to this plan
+        return sessions.flatMap { session in
+            session.items.filter { item in
+                item.planSourceId == parentPlan?.id
+            }
+        }
+    }
+    
     // Break down exercise row into its own view builder
     @ViewBuilder
     private func exerciseRow(name: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Text(name)
                 .lineLimit(2)
             Spacer()
+            
+            // Quick Tick (log without details)
+            Button {
+                quickLogExercise(name: name)
+            } label: {
+                Image(systemName: "checkmark.circle")
+            }
+            .labelStyle(.iconOnly)
+            .controlSize(.small)
+            .buttonStyle(.bordered)
+            .foregroundColor(.green)
+            .accessibilityLabel("Quick log \(name)")
+            
             // Quick Progress (icon-only)
             Button {
                 progressExercise = ExerciseSelection(name: name)
@@ -427,7 +485,7 @@ struct PlanDayEditor: View {
             .buttonStyle(.bordered)
             .accessibilityLabel("Show progress for \(name)")
 
-            // Quick Log (icon-only)
+            // Quick Log with details (icon-only)
             Button {
                 loggingExercise = ExerciseSelection(name: name)
                 inputReps = ""; inputSets = ""; inputWeight = ""; inputGrade = ""; inputNotes = ""
@@ -437,68 +495,36 @@ struct PlanDayEditor: View {
             .labelStyle(.iconOnly)
             .controlSize(.small)
             .buttonStyle(.bordered)
-            .accessibilityLabel("Log exercise \(name)")
+            .accessibilityLabel("Log exercise details for \(name)")
         }
     }
     
-    // Break down log form into its own view builder
+    // Row for logged exercises
     @ViewBuilder
-    private func logForm(exerciseName: String) -> some View {
-        Form {
-            Section { Text(exerciseName).font(.headline) }
-
-            Section {
-                LabeledContent {
-                    TextField("e.g. 10", text: $inputReps)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Reps", systemImage: "repeat")
-                }
-
-                LabeledContent {
-                    TextField("e.g. 3", text: $inputSets)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Sets", systemImage: "square.grid.3x3")
-                }
-
-                LabeledContent {
-                    TextField("e.g. 12.5", text: $inputWeight)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Weight (kg)", systemImage: "scalemass")
-                }
-
-                LabeledContent {
-                    TextField("e.g. 6a+", text: $inputGrade)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Grade", systemImage: "star")
-                }
-            } header: {
-                Text("LOG FIELDS").textCase(nil)
-            } footer: {
-                Text("Leave a field empty if it doesn't apply.")
-            }
-
-            Section("Preview") {
+    private func loggedExerciseRow(item: SessionItem) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.exerciseName)
+                    .lineLimit(2)
                 LogMetricRow(
-                    reps: inputReps.isEmpty ? nil : inputReps,
-                    sets: inputSets.isEmpty ? nil : inputSets,
-                    weight: inputWeight.isEmpty ? nil : inputWeight,
-                    grade: inputGrade.isEmpty ? nil : inputGrade
+                    reps: item.reps.map(String.init),
+                    sets: item.sets.map(String.init),
+                    weight: item.weightKg.map { String(format: "%.1f", $0) },
+                    grade: item.grade
                 )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                if let notes = item.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
             }
-
-            Section("Notes") {
-                TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
-                    .lineLimit(1...3)
-            }
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .imageScale(.small)
         }
     }
 
@@ -531,6 +557,17 @@ struct PlanDayEditor: View {
                     Label("Add from Catalog", systemImage: "plus")
                 }
                 .textCase(nil)
+            }
+
+            // Logged exercises section
+            Section("Logged exercises") {
+                if loggedExercisesForDay.isEmpty {
+                    Text("No logs yet for this day").foregroundStyle(.secondary)
+                } else {
+                    ForEach(loggedExercisesForDay) { item in
+                        loggedExerciseRow(item: item)
+                    }
+                }
             }
         }
         .navigationTitle(day.date.formatted(date: .abbreviated, time: .omitted))
@@ -597,6 +634,92 @@ struct PlanDayEditor: View {
         try? context.save()
         saveTick.toggle()
         loggingExercise = nil
+    }
+    
+    // Quick log function for tick button - logs exercise without details
+    private func quickLogExercise(name: String) {
+        let session = findOrCreateSession(for: day.date, in: context)
+        
+        let planDescriptor = FetchDescriptor<Plan>()
+        let plans = (try? context.fetch(planDescriptor)) ?? []
+        let parentPlan = plans.first { plan in
+            plan.days.contains { $0.id == day.id }
+        }
+        
+        // Create a simple log entry without metrics - just capture that it was done
+        session.items.append(SessionItem(
+            exerciseName: name,
+            planSourceId: parentPlan?.id,
+            planName: parentPlan?.name,
+            reps: nil,
+            sets: nil,
+            weightKg: nil,
+            grade: nil,
+            notes: "Quick logged"
+        ))
+        try? context.save()
+        saveTick.toggle()
+    }
+    
+    // Break down log form into its own view builder
+    @ViewBuilder
+    private func logForm(exerciseName: String) -> some View {
+        Form {
+            Section { Text(exerciseName).font(.headline) }
+
+            Section {
+                LabeledContent {
+                    TextField("e.g. 10", text: $inputReps)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Reps", systemImage: "repeat")
+                }
+
+                LabeledContent {
+                    TextField("e.g. 3", text: $inputSets)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Sets", systemImage: "square.grid.3x3")
+                }
+
+                LabeledContent {
+                    TextField("e.g. 12.5", text: $inputWeight)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Weight (kg)", systemImage: "scalemass")
+                }
+
+                LabeledContent {
+                    TextField("e.g. 6a+", text: $inputGrade)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Grade", systemImage: "star")
+                }
+            } header: {
+                Text("LOG FIELDS").textCase(nil)
+            } footer: {
+                Text("Leave a field empty if it doesn't apply.")
+            }
+
+            Section("Preview") {
+                LogMetricRow(
+                    reps: inputReps.isEmpty ? nil : inputReps,
+                    sets: inputSets.isEmpty ? nil : inputSets,
+                    weight: inputWeight.isEmpty ? nil : inputWeight,
+                    grade: inputGrade.isEmpty ? nil : inputGrade
+                )
+            }
+
+            Section("Notes") {
+                TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
+                    .lineLimit(1...3)
+            }
+        }
     }
 }
 
@@ -731,36 +854,46 @@ private struct QuickExerciseProgress: View {
 struct CatalogExercisePicker: View {
     @Binding var selected: [String]
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isDataReady) private var isDataReady
     @Query(sort: \Activity.name) private var activities: [Activity]
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(activities) { activity in
-                    NavigationLink {
-                        TypesList(
-                            activity: activity,
-                            selected: $selected,
-                            tint: activity.hue.color,
-                            onDone: { dismiss() }     // close from any level
-                        )
-                    } label: {
-                        HStack(spacing: 10) {
-                            Circle().fill(activity.hue.color).frame(width: 8, height: 8)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(activity.name).font(.headline)
-                                Text("\(activity.types.count) types")
-                                    .font(.footnote).foregroundStyle(.secondary)
+            if !isDataReady {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Loading catalog...")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(activities) { activity in
+                        NavigationLink {
+                            TypesList(
+                                activity: activity,
+                                selected: $selected,
+                                tint: activity.hue.color,
+                                onDone: { dismiss() }     // close from any level
+                            )
+                        } label: {
+                            HStack(spacing: 10) {
+                                Circle().fill(activity.hue.color).frame(width: 8, height: 8)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(activity.name).font(.headline)
+                                    Text("\(activity.types.count) types")
+                                        .font(.footnote).foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Catalog")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
+        }
+        .navigationTitle("Catalog")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
         }
     }
 }

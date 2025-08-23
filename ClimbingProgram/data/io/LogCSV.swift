@@ -52,7 +52,9 @@ enum LogCSV {
         df.formatOptions = [.withFullDate] // YYYY-MM-DD
 
         for s in sessions {
-            let d = df.string(from: s.date)
+            // Ensure we export with consistent date normalization (start of day)
+            let normalizedDate = Calendar.current.startOfDay(for: s.date)
+            let d = df.string(from: normalizedDate)
             for i in s.items {
                 rows.append([
                     d,
@@ -101,6 +103,7 @@ enum LogCSV {
 
         let df = ISO8601DateFormatter()
         df.formatOptions = [.withFullDate] // YYYY-MM-DD
+        let calendar = Calendar.current
 
         // Track plans we create during import
         var knownPlans: [UUID: Plan] = [:]
@@ -129,15 +132,17 @@ enum LogCSV {
                 !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else { continue }
 
+            // Normalize date to start of day for consistency
+            let startOfDay = calendar.startOfDay(for: dayDate)
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+            
             // Find/create session on that day
-            let startOfDay = Calendar.current.startOfDay(for: dayDate)
-            let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
             let descriptor = FetchDescriptor<Session>(predicate: #Predicate {
                 $0.date >= startOfDay && $0.date < endOfDay
             })
             let existing = (try? context.fetch(descriptor)) ?? []
             let session = existing.first ?? {
-                let s = Session(date: dayDate)
+                let s = Session(date: startOfDay) // Always use normalized date
                 context.insert(s)
                 return s
             }()
@@ -157,7 +162,7 @@ enum LogCSV {
             if !planIdStr.isEmpty {
                 if let uuid = UUID(uuidString: planIdStr) {
                     planId = uuid
-                    planNameToUse = planName
+                    planNameToUse = planName.isEmpty ? nil : planName
                     
                     // Create plan if it doesn't exist
                     if !planName.isEmpty && !knownPlans.keys.contains(uuid) {
@@ -167,7 +172,7 @@ enum LogCSV {
                             knownPlans[uuid] = existing
                         } else {
                             // Create new plan
-                            let plan = Plan(id: uuid, name: planName, kind: .weekly, startDate: dayDate)
+                            let plan = Plan(id: uuid, name: planName, kind: .weekly, startDate: startOfDay)
                             context.insert(plan)
                             knownPlans[uuid] = plan
                         }
@@ -177,10 +182,10 @@ enum LogCSV {
                     if planExercisesByDate[uuid] == nil {
                         planExercisesByDate[uuid] = [:]
                     }
-                    if planExercisesByDate[uuid]![dayDate] == nil {
-                        planExercisesByDate[uuid]![dayDate] = Set()
+                    if planExercisesByDate[uuid]![startOfDay] == nil {
+                        planExercisesByDate[uuid]![startOfDay] = Set()
                     }
-                    planExercisesByDate[uuid]![dayDate]!.insert(name)
+                    planExercisesByDate[uuid]![startOfDay]!.insert(name)
                 }
             }
 
@@ -476,10 +481,21 @@ extension LogCSV {
                     knownPlans[planId] = existing
                 } else {
                     // Create new plan
-                    let plan = Plan(id: planId, name: planName, kind: .weekly, startDate: e.date)
+                    let plan = Plan(id: planId, name: planName, kind: .weekly, startDate: startOfDay)
                     context.insert(plan)
                     knownPlans[planId] = plan
                 }
+            }
+
+            // Track exercises for plan reconstruction if planId exists
+            if let planId = e.planId {
+                if planExercisesByDate[planId] == nil {
+                    planExercisesByDate[planId] = [:]
+                }
+                if planExercisesByDate[planId]![startOfDay] == nil {
+                    planExercisesByDate[planId]![startOfDay] = Set()
+                }
+                planExercisesByDate[planId]![startOfDay]!.insert(e.name)
             }
 
             // Build/get signature set for dedupe
