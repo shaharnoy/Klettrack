@@ -195,6 +195,7 @@ struct TrainingTypeDetailView: View {
 
     // Drafts
     @State private var draftExName = ""
+    @State private var draftArea = ""
     @State private var draftReps = ""
     @State private var draftSets = ""
     @State private var draftRest = ""
@@ -203,12 +204,46 @@ struct TrainingTypeDetailView: View {
     @State private var showingEditAbout = false
     @State private var draftAbout = ""
 
+    private var exercisesByArea: [(String, [Exercise])] {
+        let grouped = Dictionary(grouping: trainingType.exercises) { $0.area ?? "" }
+        if grouped.keys.contains("Fingers") || grouped.keys.contains("Pull") {
+            // For climbing-specific exercises, maintain Fingers/Pull order
+            return ["Fingers", "Pull"].compactMap { area in
+                if let exercises = grouped[area], !exercises.isEmpty {
+                    return (area, exercises)
+                }
+                return nil
+            }
+        } else {
+            // For other types, just group if there are areas
+            return grouped
+                .filter { !$0.key.isEmpty }
+                .map { ($0.key, $0.value) }
+                .sorted(by: { $0.0 < $1.0 })
+        }
+    }
+
+    private var ungroupedExercises: [Exercise] {
+        trainingType.exercises.filter { $0.area == nil }
+    }
+    
+    // Define available areas for climbing exercises
+    private var availableAreas: [String] {
+        // Check if this is a climbing training type by looking at existing exercises
+        let existingAreas = Set(trainingType.exercises.compactMap { $0.area })
+        if existingAreas.contains("Fingers") || existingAreas.contains("Pull") ||
+           trainingType.name.lowercased().contains("climb") {
+            return ["Fingers", "Pull"]
+        }
+        return []
+    }
 
     var body: some View {
         List {
             if let d = trainingType.typeDescription, !d.isEmpty {
-                Section("About") { Text(d)
-                    .textCase(nil)}
+                Section("About") {
+                    Text(d).textCase(nil)
+                }
             }
 
             if !trainingType.combinations.isEmpty {
@@ -228,34 +263,54 @@ struct TrainingTypeDetailView: View {
                     .textCase(nil)
                 }
             } else {
-                Section("Exercises") {
-                    ForEach(trainingType.exercises) { ex in
-                        ExerciseRow(ex: ex, tint: tint)
-                            .contentShape(Rectangle())
-                            .onTapGesture { openEditor(for: ex) }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button("Edit") { openEditor(for: ex) }.tint(.blue)
-                                Button(role: .destructive) {
-                                    context.delete(ex); try? context.save()
-                                } label: { Label("Delete", systemImage: "trash") }
+                // Show exercises grouped by area if there are any groups
+                if !exercisesByArea.isEmpty {
+                    ForEach(exercisesByArea, id: \.0) { area, exercises in
+                        Section(area) {
+                            ForEach(exercises) { ex in
+                                ExerciseRow(ex: ex, tint: tint)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { openEditor(for: ex) }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button("Edit") { openEditor(for: ex) }.tint(.blue)
+                                        Button(role: .destructive) {
+                                            context.delete(ex); try? context.save()
+                                        } label: { Label("Delete", systemImage: "trash") }
+                                    }
                             }
-                            .contextMenu {
-                                Button("Edit") { openEditor(for: ex) }
-                                Button(role: .destructive) {
-                                    context.delete(ex); try? context.save()
-                                } label: { Label("Delete", systemImage: "trash") }
+                            .onDelete { indexes in
+                                indexes.map { exercises[$0] }.forEach { context.delete($0) }
+                                try? context.save()
                             }
+                        }
                     }
-                    .onDelete { idx in
-                        idx.map { trainingType.exercises[$0] }.forEach { context.delete($0) }
-                        try? context.save()
-                    }
-
-                    Button { startNewExercise() } label: {
-                        Label("Add Exercise", systemImage: "plus")
-                    }
-                    .textCase(nil)
                 }
+                
+                // Show ungrouped exercises if any
+                if !ungroupedExercises.isEmpty {
+                    Section("Exercises") {
+                        ForEach(ungroupedExercises) { ex in
+                            ExerciseRow(ex: ex, tint: tint)
+                                .contentShape(Rectangle())
+                                .onTapGesture { openEditor(for: ex) }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button("Edit") { openEditor(for: ex) }.tint(.blue)
+                                    Button(role: .destructive) {
+                                        context.delete(ex); try? context.save()
+                                    } label: { Label("Delete", systemImage: "trash") }
+                                }
+                        }
+                        .onDelete { indexes in
+                            indexes.map { ungroupedExercises[$0] }.forEach { context.delete($0) }
+                            try? context.save()
+                        }
+                    }
+                }
+
+                Button { startNewExercise() } label: {
+                    Label("Add Exercise", systemImage: "plus")
+                }
+                .textCase(nil)
             }
         }
         .listStyle(.insetGrouped)
@@ -286,14 +341,17 @@ struct TrainingTypeDetailView: View {
             ExerciseEditSheet(
                 title: "New Exercise",
                 name: $draftExName,
+                area: $draftArea,
                 reps: $draftReps,
                 sets: $draftSets,
                 rest: $draftRest,
                 notes: $draftNotes,
-                description: $draftDescription
+                description: $draftDescription,
+                availableAreas: availableAreas
             ) {
                 let ex = Exercise(
                     name: draftExName.trimmingCharacters(in: .whitespaces),
+                    area: draftArea.isEmpty ? nil : draftArea,
                     exerciseDescription: draftDescription.isEmpty ? nil : draftDescription,
                     repsText: draftReps.isEmpty ? nil : draftReps,
                     setsText: draftSets.isEmpty ? nil : draftSets,
@@ -310,13 +368,16 @@ struct TrainingTypeDetailView: View {
             ExerciseEditSheet(
                 title: "Edit Exercise",
                 name: $draftExName,
+                area: $draftArea,
                 reps: $draftReps,
                 sets: $draftSets,
                 rest: $draftRest,
                 notes: $draftNotes,
-                description: $draftDescription
+                description: $draftDescription,
+                availableAreas: availableAreas
             ) {
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
+                ex.area = draftArea.isEmpty ? nil : draftArea
                 ex.exerciseDescription = draftDescription.isEmpty ? nil : draftDescription
                 ex.repsText = draftReps.isEmpty ? nil : draftReps
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
@@ -328,11 +389,12 @@ struct TrainingTypeDetailView: View {
     }
 
     private func startNewExercise() {
-        draftExName = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""
+        draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""
         showingNewExercise = true
     }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name
+        draftArea = ex.area ?? ""
         draftDescription = ex.exerciseDescription ?? ""
         draftReps = ex.repsText ?? ""
         draftSets = ex.setsText ?? ""
@@ -353,6 +415,7 @@ struct CombinationDetailView: View {
     @State private var showingNew = false
 
     @State private var draftExName = ""
+    @State private var draftArea = ""
     @State private var draftReps = ""
     @State private var draftSets = ""
     @State private var draftRest = ""
@@ -423,14 +486,17 @@ struct CombinationDetailView: View {
             ExerciseEditSheet(
                 title: "New Exercise",
                 name: $draftExName,
+                area: $draftArea,
                 reps: $draftReps,
                 sets: $draftSets,
                 rest: $draftRest,
                 notes: $draftNotes,
-                description: $draftDesc
+                description: $draftDesc,
+                availableAreas: []
             ) {
                 let ex = Exercise(
                     name: draftExName.trimmingCharacters(in: .whitespaces),
+                    area: draftArea.isEmpty ? nil : draftArea,
                     exerciseDescription: draftDesc.isEmpty ? nil : draftDesc,
                     repsText: draftReps.isEmpty ? nil : draftReps,
                     setsText: draftSets.isEmpty ? nil : draftSets,
@@ -447,13 +513,16 @@ struct CombinationDetailView: View {
             ExerciseEditSheet(
                 title: "Edit Exercise",
                 name: $draftExName,
+                area: $draftArea,
                 reps: $draftReps,
                 sets: $draftSets,
                 rest: $draftRest,
                 notes: $draftNotes,
-                description: $draftDesc
+                description: $draftDesc,
+                availableAreas: []
             ) {
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
+                ex.area = draftArea.isEmpty ? nil : draftArea
                 ex.exerciseDescription = draftDesc.isEmpty ? nil : draftDesc
                 ex.repsText = draftReps.isEmpty ? nil : draftReps
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
@@ -470,6 +539,7 @@ struct CombinationDetailView: View {
     }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name
+        draftArea = ex.area ?? ""
         draftDesc = ex.exerciseDescription ?? ""
         draftReps = ex.repsText ?? ""
         draftSets = ex.setsText ?? ""
@@ -593,12 +663,14 @@ struct TrainingTypeEditSheet: View {
 struct ExerciseEditSheet: View {
     let title: String
     @Binding var name: String
+    @Binding var area: String
     @Binding var reps: String
     @Binding var sets: String
     @Binding var rest: String
     @Binding var notes: String
     @Binding var description: String
     
+    let availableAreas: [String]
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
     
@@ -610,6 +682,23 @@ struct ExerciseEditSheet: View {
                         .textInputAutocapitalization(.words)
                     TextField("Description (optional)", text: $description)
                         .textCase(nil)
+                }
+                
+                // Area selection for climbing exercises
+                if !availableAreas.isEmpty {
+                    Section {
+                        Picker("Area", selection: $area) {
+                            Text("None").tag("")
+                            ForEach(availableAreas, id: \.self) { area in
+                                Text(area).tag(area)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    } header: {
+                        Text("CATEGORY")
+                    } footer: {
+                        Text("Choose the exercise category (e.g., Fingers, Pull).")
+                    }
                 }
                 
                 Section {
@@ -640,7 +729,7 @@ struct ExerciseEditSheet: View {
                 } header: {
                     Text("DISPLAY FIELDS")
                 } footer: {
-                    Text("These are display strings (e.g., “6–10”, “45 sec”, “3 min”). Analytics come from your logs.")
+                    Text("These are display strings (e.g., \"6-10\", \"45 sec\", \"3 min\"). Analytics come from your logs.")
                 }
                 
                 Section("Preview") {
@@ -693,5 +782,3 @@ struct AboutEditSheet: View {
         }
     }
     }
-    
-

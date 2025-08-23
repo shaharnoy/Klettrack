@@ -221,6 +221,122 @@ private struct SessionRow: View {
     }
 }
 
+// MARK: - Session item row
+struct SessionItemRow: View {
+    @Bindable var item: SessionItem
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(item.exerciseName).font(.headline)
+                if let planName = item.planName {
+                    Spacer()
+                    Text("Plan: \(planName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 16) {
+                if let r = item.reps { Text("Reps: \(r)") }
+                if let s = item.sets { Text("Sets: \(s)") }
+                if let w = item.weightKg { Text(String(format: "Wt: %.1f kg", w)) }
+                if let g = item.grade { Text("Grade: \(g)") }
+            }
+            .font(.footnote.monospacedDigit())
+            if let n = item.notes, !n.isEmpty {
+                Text(n).font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Add item to a session
+struct AddSessionItemSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @Bindable var session: Session
+
+    @Query(sort: [SortDescriptor(\Exercise.name)]) private var allExercises: [Exercise]
+    @Query(sort: [SortDescriptor(\Plan.startDate)]) private var plans: [Plan]
+
+    @State private var showingCatalogPicker = false
+    @State private var selectedCatalogName: String? = nil
+    @State private var selectedPlan: Plan? = nil
+    @State private var inputReps: String = ""
+    @State private var inputSets: String = ""
+    @State private var inputWeight: String = ""
+    @State private var inputNotes: String = ""
+    @State private var inputGrade: String = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Button {
+                    showingCatalogPicker = true
+                } label: {
+                    HStack {
+                        Text("Exercise")
+                        Spacer()
+                        if let name = selectedCatalogName, !name.isEmpty {
+                            Text(name).foregroundStyle(.secondary)
+                        } else {
+                            Text("Choose…").foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .sheet(isPresented: $showingCatalogPicker) {
+                    SingleCatalogExercisePicker(selected: $selectedCatalogName)
+                }
+                
+                // Plan selection
+                Picker("Plan (optional)", selection: $selectedPlan) {
+                    Text("No Plan").tag(Optional<Plan>.none)
+                    ForEach(plans) { plan in
+                        Text(plan.name).tag(Optional(plan))
+                    }
+                }
+                
+                Section("Details") {
+                    TextField("Reps (integer)", text: $inputReps).keyboardType(.numberPad)
+                    TextField("Sets (integer)", text: $inputSets).keyboardType(.numberPad)
+                    TextField("Weight (kg)", text: $inputWeight).keyboardType(.decimalPad)
+                    TextField("Grade (e.g., 6a+)", text: $inputGrade)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                    TextField("Notes", text: $inputNotes)
+                }
+            }
+            .navigationTitle("Add Exercise")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
+                        let reps = Int(inputReps.trimmingCharacters(in: .whitespaces))
+                        let sets = Int(inputSets.trimmingCharacters(in: .whitespaces))
+                        let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
+                            .trimmingCharacters(in: .whitespaces))
+                        let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
+                        let item = SessionItem(
+                            exerciseName: selectedName,
+                            planSourceId: selectedPlan?.id,
+                            planName: selectedPlan?.name,
+                            reps: reps,
+                            sets: sets,
+                            weightKg: weight,
+                            grade: grade,
+                            notes: inputNotes.isEmpty ? nil : inputNotes
+                        )
+                        session.items.append(item)
+                        try? context.save()
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Progress overlay
 
 private struct ImportProgressOverlay: View {
@@ -272,102 +388,166 @@ struct SessionDetailView: View {
     @Environment(\.modelContext) private var context
     @Bindable var session: Session
     @State private var showingAddItem = false
+    @State private var editingItem: SessionItem? = nil
+    @State private var showingEditSheet = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Exercises") {
-                    ForEach(session.items) { item in
-                        SessionItemRow(item: item)
-                    }
-                    .onDelete { idx in
-                        idx.map { session.items[$0] }.forEach { context.delete($0) }
-                        try? context.save()
-                    }
+        List {
+            Section("Exercises") {
+                ForEach(session.items) { item in
+                    SessionItemRow(item: item)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                if let index = session.items.firstIndex(where: { $0.id == item.id }) {
+                                    session.items.remove(at: index)
+                                    try? context.save()
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            
+                            Button {
+                                editingItem = item
+                                showingEditSheet = true
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
                 }
             }
-            .listStyle(.insetGrouped)
-            .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingAddItem = true } label: { Image(systemName: "plus") }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingAddItem = true } label: { Image(systemName: "plus") }
+            }
+        }
+        .sheet(isPresented: $showingAddItem) {
+            AddSessionItemSheet(session: session)
+        }
+        .sheet(isPresented: $showingEditSheet, onDismiss: {
+            editingItem = nil
+        }) {
+            if let editingItem = editingItem {
+                NavigationStack {
+                    EditSessionItemSheet(item: editingItem)
                 }
             }
-            .sheet(isPresented: $showingAddItem) { AddSessionItemSheet(session: session) }
         }
     }
 }
 
-private struct SessionItemRow: View {
-    @Bindable var item: SessionItem
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(item.exerciseName).font(.headline)
-            HStack(spacing: 16) {
-                if let r = item.reps { Text("Reps: \(r)") }
-                if let s = item.sets { Text("Sets: \(s)") }
-                if let w = item.weightKg { Text(String(format: "Wt: %.1f kg", w)) }
-            }
-            .font(.footnote.monospacedDigit())
-            if let n = item.notes, !n.isEmpty {
-                Text(n).font(.footnote).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-}
-
-// MARK: - Add item to a session
-
-struct AddSessionItemSheet: View {
+// Edit sheet: change selectedCatalogName to String?
+struct EditSessionItemSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Bindable var session: Session
+    @Bindable var item: SessionItem
 
-    @Query(sort: [SortDescriptor(\Exercise.name)]) private var allExercises: [Exercise]
-
-    @State private var selectedName: String = ""
+    @Query(sort: [SortDescriptor(\Plan.startDate)]) private var plans: [Plan]
+    @State private var showingCatalogPicker = false
+    @State private var selectedCatalogName: String? = nil
+    @State private var selectedPlan: Plan? = nil
     @State private var inputReps: String = ""
     @State private var inputSets: String = ""
     @State private var inputWeight: String = ""
     @State private var inputNotes: String = ""
+    @State private var inputGrade: String = ""
 
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Exercise", selection: $selectedName) {
-                    Text("Choose…").tag("")
-                    ForEach(allExercises.map(\.name), id: \.self) { name in
-                        Text(name).tag(name)
+                Button {
+                    showingCatalogPicker = true
+                } label: {
+                    HStack {
+                        Text("Exercise")
+                        Spacer()
+                        if let name = selectedCatalogName, !name.isEmpty {
+                            Text(name).foregroundStyle(.secondary)
+                        } else {
+                            Text("Choose…").foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .sheet(isPresented: $showingCatalogPicker) {
+                    SingleCatalogExercisePicker(selected: $selectedCatalogName)
+                }
+                
+                // Plan selection
+                Picker("Plan (optional)", selection: $selectedPlan) {
+                    Text("No Plan").tag(Optional<Plan>.none)
+                    ForEach(plans) { plan in
+                        Text(plan.name).tag(Optional(plan))
+                    }
+                }
+                
                 Section("Details") {
                     TextField("Reps (integer)", text: $inputReps).keyboardType(.numberPad)
                     TextField("Sets (integer)", text: $inputSets).keyboardType(.numberPad)
                     TextField("Weight (kg)", text: $inputWeight).keyboardType(.decimalPad)
+                    TextField("Grade (e.g., 6a+)", text: $inputGrade)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
                     TextField("Notes", text: $inputNotes)
                 }
             }
-            .navigationTitle("Add Exercise")
+            .navigationTitle("Edit Exercise")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        guard !selectedName.isEmpty else { return }
-                        let reps = Int(inputReps.trimmingCharacters(in: .whitespaces))
-                        let sets = Int(inputSets.trimmingCharacters(in: .whitespaces))
-                        let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
+                    Button("Save") {
+                        guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
+                        item.exerciseName = selectedName
+                        item.planSourceId = selectedPlan?.id
+                        item.planName = selectedPlan?.name
+                        item.reps = Int(inputReps.trimmingCharacters(in: .whitespaces))
+                        item.sets = Int(inputSets.trimmingCharacters(in: .whitespaces))
+                        item.weightKg = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
-                        let item = SessionItem(
-                            exerciseName: selectedName,
-                            reps: reps, sets: sets, weightKg: weight,
-                            notes: inputNotes.isEmpty ? nil : inputNotes
-                        )
-                        session.items.append(item)
+                        item.grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
+                        item.notes = inputNotes.isEmpty ? nil : inputNotes
                         try? context.save()
                         dismiss()
                     }
                 }
+            }
+        }
+        .onAppear {
+            selectedCatalogName = item.exerciseName
+            // Find the plan if one exists
+            if let planId = item.planSourceId {
+                selectedPlan = plans.first { $0.id == planId }
+            }
+            inputReps = item.reps.map { String($0) } ?? ""
+            inputSets = item.sets.map { String($0) } ?? ""
+            inputWeight = item.weightKg.map { String($0) } ?? ""
+            inputGrade = item.grade ?? ""
+            inputNotes = item.notes ?? ""
+        }
+    }
+}
+
+// Single-selection wrapper for CatalogExercisePicker
+struct SingleCatalogExercisePicker: View {
+    @Binding var selected: String?
+    @Environment(\.dismiss) private var dismiss
+    @State private var internalSelection: [String] = []
+
+    var body: some View {
+        CatalogExercisePicker(selected: Binding(
+            get: { internalSelection },
+            set: { newValue in
+                // Only keep the last selected item
+                internalSelection = newValue.suffix(1)
+                selected = internalSelection.first
+                dismiss()
+            }
+        ))
+        .onAppear {
+            if let selected = selected {
+                internalSelection = [selected]
             }
         }
     }

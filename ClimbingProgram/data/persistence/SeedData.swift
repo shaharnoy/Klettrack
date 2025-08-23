@@ -74,54 +74,45 @@ struct SeedData {
                 // ========== CLIMBING-SPECIFIC (non-bouldering) ==========
                 let climb = Activity(name: "Climbing-Specific Exercises")
 
-                let maxF = TrainingType(name: "Maximum & Contact Strength", area: "Fingers", typeDescription: "TBD")
-                maxF.exercises = [
-                    Exercise(name: "Bouldering", repsText: "3 ascents", setsText: "3–10 problems", restText: "2 min/asc"),
-                    Exercise(name: "FB “Minimum Edge” Hangs", exerciseDescription: "Smallest edge you can hold ~12s.", repsText: "see protocol", setsText: "2–5"),
-                    Exercise(name: "FB Max-Weight Hangs (10s, 14–20mm)", repsText: "see protocol", setsText: "2–5"),
-                    Exercise(name: "FB Max-Weight Hangs (7/53, 14–20mm)", repsText: "see protocol", setsText: "2–5"),
-                    Exercise(name: "Loading Pin Lifts — repetitions", repsText: "1:50% 2:60% 3:70% 4–7:80%", setsText: "8 reps (1–3); 4 reps (4–7)")
+                let maxStrength = TrainingType(
+                    name: "Maximum & Contact Strength",
+                    typeDescription: "Maximum strength and contact strength for fingers and pulling."
+                )
+                maxStrength.exercises = [
+                    Exercise(name: "Bouldering", area: "Fingers", repsText: "3 ascents", setsText: "3–10 problems", restText: "2 min/asc"),
+                    Exercise(name: "FB \"Minimum Edge\" Hangs", area: "Fingers", exerciseDescription: "Smallest edge you can hold ~12s.", repsText: "see protocol", setsText: "2–5"),
+                    Exercise(name: "FB Max-Weight Hangs (10s, 14–20mm)", area: "Fingers", repsText: "see protocol", setsText: "2–5"),
+                    Exercise(name: "FB Max-Weight Hangs (7/53, 14–20mm)", area: "Fingers", repsText: "see protocol", setsText: "2–5"),
+                    Exercise(name: "Loading Pin Lifts — repetitions", area: "Fingers", repsText: "1:50% 2:60% 3:70% 4–7:80%", setsText: "8 reps (1–3); 4 reps (4–7)"),
+                    Exercise(name: "Weighted Pull-Ups", area: "Pull", repsText: "5", setsText: "3–6", restText: "3 min"),
+                    Exercise(name: "Square Pull-Ups", area: "Pull", repsText: "3–6", setsText: "1–2", restText: "3 min"),
+                    Exercise(name: "System Wall Isolation", area: "Pull", repsText: "3–5 each side", setsText: "2–5", restText: "3 min"),
+                    Exercise(name: "Steep Wall Lock-Offs", area: "Pull", repsText: "4–6 each side", setsText: "2–5", restText: "brief"),
+                    Exercise(name: "Uneven-Grip Pull-Ups", area: "Pull", repsText: "3–5 each side", setsText: "2–3", restText: "2 min"),
+                    Exercise(name: "One-Arm Lock-Offs", area: "Pull", repsText: "2–3", setsText: "2–3", restText: "2 min")
                 ]
 
-                let maxP = TrainingType(name: "Maximum & Contact Strength", area: "Pull", typeDescription: "Max pulling force and lockoffs.")
-                maxP.exercises = [
-                    Exercise(name: "Weighted Pull-Ups", repsText: "5", setsText: "3–6", restText: "3 min"),
-                    Exercise(name: "Square Pull-Ups", repsText: "3–6", setsText: "1–2", restText: "3 min"),
-                    Exercise(name: "System Wall Isolation", repsText: "3–5 each side", setsText: "2–5", restText: "3 min"),
-                    Exercise(name: "Steep Wall Lock-Offs", repsText: "4–6 each side", setsText: "2–5", restText: "brief"),
-                    Exercise(name: "Uneven-Grip Pull-Ups", repsText: "3–5 each side", setsText: "2–3", restText: "2 min"),
-                    Exercise(name: "One-Arm Lock-Offs", repsText: "2–3", setsText: "2–3", restText: "2 min")
+                let contactPower = TrainingType(name: "Contact Strength & Power", typeDescription: "Contact strength, explosive recruitment, and pulling power.")
+                contactPower.exercises = [
+                    Exercise(name: "One-Arm Lunging", area: "Fingers", repsText: "6–12 moves", setsText: "2–3", restText: "minimal"),
+                    Exercise(name: "Campus Board Bumps", area: "Fingers", repsText: "2–4 sets each side", restText: "2 min"),
+                    Exercise(name: "CB Laddering (no skips, small rungs)", area: "Fingers", repsText: "up only", setsText: "3–10", restText: "2–3 min"),
+                    Exercise(name: "Campus Switch Hands", area: "Fingers", repsText: "12 switches", setsText: "2", restText: "2 min"),
+                    Exercise(name: "Big-Move Boulder Problems", area: "Pull", repsText: "6–10 moves", setsText: "5 sends", restText: "3 min"),
+                    Exercise(name: "CB Laddering (larger rungs w/ skips)", area: "Pull", repsText: "1–3–5–7", setsText: "3–10", restText: "3 min"),
+                    Exercise(name: "Boulder Campusing", area: "Pull", repsText: "3–8 moves", setsText: "3–5", restText: "3 min")
                 ]
 
-                let cpF = TrainingType(name: "Contact Strength & Power", area: "Fingers", typeDescription: "Contact strength and explosive recruitment.")
-                cpF.exercises = [
-                    Exercise(name: "One-Arm Lunging", repsText: "6–12 moves", setsText: "2–3", restText: "minimal"),
-                    Exercise(name: "Campus Board Bumps", repsText: "2–4 sets each side", restText: "2 min"),
-                    Exercise(name: "CB Laddering (no skips, small rungs)", repsText: "up only", setsText: "3–10", restText: "2–3 min"),
-                    Exercise(name: "Campus Switch Hands", repsText: "12 switches", setsText: "2", restText: "2 min")
+                let strengthEndurance = TrainingType(name: "Strength-Endurance", typeDescription: "Capacity work for fingers and pulling patterns.")
+                strengthEndurance.exercises = [
+                    Exercise(name: "Short-Duration Fingerboard Repeaters", area: "Fingers", repsText: "see protocol", setsText: "3–5"),
+                    Exercise(name: "Long-Duration Fingerboard Repeaters", area: "Fingers", repsText: "see protocol", setsText: "3–5"),
+                    Exercise(name: "Pull-Up Intervals", area: "Pull", repsText: "see protocol", setsText: "10–20"),
+                    Exercise(name: "Frenchies", area: "Pull", repsText: "2–6 cycles", setsText: "2–4")
                 ]
 
-                let cpP = TrainingType(name: "Contact Strength & Power", area: "Pull", typeDescription: "Explosive pulling power.")
-                cpP.exercises = [
-                    Exercise(name: "Big-Move Boulder Problems", repsText: "6–10 moves", setsText: "5 sends", restText: "3 min"),
-                    Exercise(name: "CB Laddering (larger rungs w/ skips)", repsText: "1–3–5–7", setsText: "3–10", restText: "3 min"),
-                    Exercise(name: "Boulder Campusing", repsText: "3–8 moves", setsText: "3–5", restText: "3 min")
-                ]
-
-                let seF = TrainingType(name: "Strength-Endurance", area: "Fingers", typeDescription: "Capacity on edges with repeaters.")
-                seF.exercises = [
-                    Exercise(name: "Short-Duration Fingerboard Repeaters", repsText: "see protocol", setsText: "3–5"),
-                    Exercise(name: "Long-Duration Fingerboard Repeaters", repsText: "see protocol", setsText: "3–5")
-                ]
-
-                let seP = TrainingType(name: "Strength-Endurance", area: "Pull", typeDescription: "SE for pulling patterns.")
-                seP.exercises = [
-                    Exercise(name: "Pull-Up Intervals", repsText: "see protocol", setsText: "10–20"),
-                    Exercise(name: "Frenchies", repsText: "2–6 cycles", setsText: "2–4")
-                ]
-
-                climb.types = [maxF, maxP, cpF, cpP, seF, seP]
-
+                climb.types = [maxStrength, contactPower, strengthEndurance]
+                
                 // ========== BOULDERING with COMBINATIONS ==========
                 let boulder = Activity(name: "Bouldering")
 
@@ -195,6 +186,3 @@ struct SeedData {
     }
 
         }
-
-
-

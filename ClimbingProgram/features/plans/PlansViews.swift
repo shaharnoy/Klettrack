@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 import Charts
 import UniformTypeIdentifiers
-// MARK: Plans list
+
 import UIKit
 
 struct SharePayload: Identifiable {
@@ -17,11 +17,26 @@ struct SharePayload: Identifiable {
     let url: URL
 }
 
+// Date formatting helpers
+private extension Date {
+    var shortFormat: String {
+        formatted(date: .abbreviated, time: .omitted)
+    }
+    
+    var monthYearFormat: String {
+        formatted(.dateTime.year().month())
+    }
+    
+    var dayMonthFormat: String {
+        formatted(.dateTime.weekday(.abbreviated).month().day())
+    }
+}
+
 // MARK: Plans list
 struct PlansListView: View {
     @Environment(\.modelContext) private var context
     // Be explicit with SortDescriptor to help the type checker
-    @Query(sort: [SortDescriptor(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
+    @Query(sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
 
     @State private var showingNew = false
 
@@ -213,134 +228,151 @@ struct PlanDetailView: View {
     @Environment(\.modelContext) private var context
     @State var plan: Plan
 
-    @State private var viewMode: Int = 0            // 0 = Weekly, 1 = Monthly
+    private enum ViewMode: Int {
+        case weekly = 0
+        case monthly = 1
+    }
+    @State private var viewMode: ViewMode = .weekly
+    
     @State private var showingDupPrompt = false
     @State private var weeksToAdd: String = ""
 
     private let cal = Calendar.current
 
-    private var groupedByWeek: [(weekStart: Date, days: [PlanDay])] {
-        let days = plan.days.sorted { $0.date < $1.date }
+    // Break down complex computed property into smaller functions
+    private func getWeekStart(for date: Date) -> Date {
+        cal.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+    }
+
+    private func groupDaysByWeek(_ days: [PlanDay]) -> [(weekStart: Date, days: [PlanDay])] {
         guard !days.isEmpty else { return [] }
-
+        
+        let sortedDays = days.sorted { $0.date < $1.date }
         var result: [(Date, [PlanDay])] = []
-        var currentWeekStart: Date = cal.dateInterval(of: .weekOfYear, for: days[0].date)!.start
+        var currentWeekStart = getWeekStart(for: sortedDays[0].date)
         var bucket: [PlanDay] = []
-
-        for d in days {
-            let ws = cal.dateInterval(of: .weekOfYear, for: d.date)!.start
-            if ws != currentWeekStart {
+        
+        for day in sortedDays {
+            let weekStart = getWeekStart(for: day.date)
+            if weekStart != currentWeekStart {
                 result.append((currentWeekStart, bucket))
-                currentWeekStart = ws
-                bucket = [d]
+                currentWeekStart = weekStart
+                bucket = [day]
             } else {
-                bucket.append(d)
+                bucket.append(day)
             }
         }
-        if !bucket.isEmpty { result.append((currentWeekStart, bucket)) }
+        
+        if !bucket.isEmpty {
+            result.append((currentWeekStart, bucket))
+        }
+        
         return result
+    }
+
+    private var groupedByWeek: [(weekStart: Date, days: [PlanDay])] {
+        groupDaysByWeek(plan.days)
+    }
+
+    private func getMonthComponents(for date: Date) -> DateComponents {
+        cal.dateComponents([.year, .month], from: date)
+    }
+
+    private func groupDaysByMonth(_ days: [PlanDay], calendar: Calendar) -> [(components: DateComponents, days: [PlanDay])] {
+        // Group days by year and month
+        let grouped = Dictionary(grouping: days) { getMonthComponents(for: $0.date) }
+        
+        // Convert to array and sort by date
+        return grouped.map { ($0.key, $0.value.sorted { $0.date < $1.date }) }
+            .sorted { pair1, pair2 in
+                let date1 = calendar.date(from: pair1.components) ?? .distantPast
+                let date2 = calendar.date(from: pair2.components) ?? .distantPast
+                return date1 < date2
+            }
+    }
+    
+    // Break down toolbar into smaller components
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if plan.kind == .weekly {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Add 4 more weeks") {
+                        PlanFactory.appendWeeks(to: plan, count: 4)
+                        try? context.save()
+                    }
+                    Button("Add 8 more weeks") {
+                        PlanFactory.appendWeeks(to: plan, count: 8)
+                        try? context.save()
+                    }
+                    Button("Custom…") {
+                        weeksToAdd = ""
+                        showingDupPrompt = true
+                    }
+                } label: {
+                    Label("Duplicate weeks", systemImage: "plus.square.on.square")
+                }
+            }
+        }
+    }
+    
+    // Break down the main content into smaller views
+    @ViewBuilder
+    private var weeklyContent: some View {
+        List {
+            ForEach(groupedByWeek, id: \.weekStart) { group in
+                Section(header: Text("Week of \(group.weekStart.formatted(date: .abbreviated, time: .omitted))")) {
+                    ForEach(group.days) { day in
+                        NavigationLink {
+                            PlanDayEditor(day: day)
+                        } label: {
+                            HStack {
+                                Circle().fill(day.type.color).frame(width: 10, height: 10)
+                                Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
+                                Spacer()
+                                Text(day.type.rawValue).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder
+    private var monthlyContent: some View {
+        ScrollView {
+            let monthGroups = groupDaysByMonth(plan.days, calendar: cal)
+            MonthlyGridView(groups: monthGroups, calendar: cal)
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             // View mode switch
             Picker("View", selection: $viewMode) {
-                Text("Weekly").tag(0)
-                Text("Monthly").tag(1)
+                Text("Weekly").tag(ViewMode.weekly)
+                Text("Monthly").tag(ViewMode.monthly)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
 
-            if viewMode == 0 {
-                // Weekly LIST grouped by week
-                List {
-                    ForEach(groupedByWeek, id: \.weekStart) { group in
-                        Section(header: Text("Week of \(group.weekStart.formatted(date: .abbreviated, time: .omitted))")) {
-                            ForEach(group.days) { day in
-                                NavigationLink {
-                                    PlanDayEditor(day: day)
-                                } label: {
-                                    HStack {
-                                        Circle().fill(day.type.color).frame(width: 10, height: 10)
-                                        Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
-                                        Spacer()
-                                        Text(day.type.rawValue).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                .listStyle(.insetGrouped)
+            if viewMode == .weekly {
+                weeklyContent
             } else {
-                // Monthly GRID
-                ScrollView {
-                    let days = plan.days.sorted { $0.date < $1.date }
-                    let months = Dictionary(grouping: days) { cal.dateComponents([.year, .month], from: $0.date) }
-
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        ForEach(months.keys.sorted(by: { a, b in
-                            let da = cal.date(from: a) ?? .distantPast
-                            let db = cal.date(from: b) ?? .distantPast
-                            return da < db
-                        }), id: \.self) { comps in
-                            let monthDate = cal.date(from: comps) ?? Date()
-                            Text(monthDate.formatted(.dateTime.year().month()))
-                                .font(.headline)
-                                .padding(.horizontal)
-
-                            let monthDays = (months[comps] ?? []).sorted { $0.date < $1.date }
-                            let cols = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
-
-                            LazyVGrid(columns: cols, spacing: 6) {
-                                ForEach(monthDays) { day in
-                                    NavigationLink {
-                                        PlanDayEditor(day: day)
-                                    } label: {
-                                        VStack(spacing: 4) {
-                                            Text("\(cal.component(.day, from: day.date))")
-                                                .font(.caption)
-                                            Circle().fill(day.type.color).frame(width: 8, height: 8)
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding(6)
-                                        .background(.thinMaterial)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    }
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                    }
-                }
+                monthlyContent
             }
         }
         .navigationTitle(plan.name)
-        .toolbar {
-            if plan.kind == .weekly {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Add 4 more weeks") {
-                            PlanFactory.appendWeeks(to: plan, count: 4); try? context.save()
-                        }
-                        Button("Add 8 more weeks") {
-                            PlanFactory.appendWeeks(to: plan, count: 8); try? context.save()
-                        }
-                        Button("Custom…") {
-                            weeksToAdd = ""; showingDupPrompt = true
-                        }
-                    } label: {
-                        Label("Duplicate weeks", systemImage: "plus.square.on.square")
-                    }
-                }
-            }
-        }
+        .toolbar { toolbarContent }
         .alert("Add weeks", isPresented: $showingDupPrompt) {
             TextField("Number of weeks", text: $weeksToAdd)
                 .keyboardType(.numberPad)
             Button("Add") {
                 if let n = Int(weeksToAdd), n > 0 {
-                    PlanFactory.appendWeeks(to: plan, count: n); try? context.save()
+                    PlanFactory.appendWeeks(to: plan, count: n)
+                    try? context.save()
                 }
                 weeksToAdd = ""
             }
@@ -370,12 +402,105 @@ struct PlanDayEditor: View {
     @State private var inputReps: String = ""
     @State private var inputSets: String = ""
     @State private var inputWeight: String = ""
+    @State private var inputGrade: String = ""
     @State private var inputNotes: String = ""
     @State private var saveTick = false
 
-
     // Quick Progress
     @State private var progressExercise: ExerciseSelection? = nil
+    
+    // Break down exercise row into its own view builder
+    @ViewBuilder
+    private func exerciseRow(name: String) -> some View {
+        HStack(spacing: 10) {
+            Text(name)
+                .lineLimit(2)
+            Spacer()
+            // Quick Progress (icon-only)
+            Button {
+                progressExercise = ExerciseSelection(name: name)
+            } label: {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+            }
+            .labelStyle(.iconOnly)
+            .controlSize(.small)
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Show progress for \(name)")
+
+            // Quick Log (icon-only)
+            Button {
+                loggingExercise = ExerciseSelection(name: name)
+                inputReps = ""; inputSets = ""; inputWeight = ""; inputGrade = ""; inputNotes = ""
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .labelStyle(.iconOnly)
+            .controlSize(.small)
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Log exercise \(name)")
+        }
+    }
+    
+    // Break down log form into its own view builder
+    @ViewBuilder
+    private func logForm(exerciseName: String) -> some View {
+        Form {
+            Section { Text(exerciseName).font(.headline) }
+
+            Section {
+                LabeledContent {
+                    TextField("e.g. 10", text: $inputReps)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Reps", systemImage: "repeat")
+                }
+
+                LabeledContent {
+                    TextField("e.g. 3", text: $inputSets)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Sets", systemImage: "square.grid.3x3")
+                }
+
+                LabeledContent {
+                    TextField("e.g. 12.5", text: $inputWeight)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Weight (kg)", systemImage: "scalemass")
+                }
+
+                LabeledContent {
+                    TextField("e.g. 6a+", text: $inputGrade)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Grade", systemImage: "star")
+                }
+            } header: {
+                Text("LOG FIELDS").textCase(nil)
+            } footer: {
+                Text("Leave a field empty if it doesn't apply.")
+            }
+
+            Section("Preview") {
+                LogMetricRow(
+                    reps: inputReps.isEmpty ? nil : inputReps,
+                    sets: inputSets.isEmpty ? nil : inputSets,
+                    weight: inputWeight.isEmpty ? nil : inputWeight,
+                    grade: inputGrade.isEmpty ? nil : inputGrade
+                )
+            }
+
+            Section("Notes") {
+                TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
+                    .lineLimit(1...3)
+            }
+        }
+    }
 
     var body: some View {
         Form {
@@ -388,33 +513,7 @@ struct PlanDayEditor: View {
                     Text("No activities yet").foregroundStyle(.secondary)
                 } else {
                     ForEach(day.chosenExercises, id: \.self) { name in
-                        HStack(spacing: 10) {
-                            Text(name)
-                                .lineLimit(2)
-                            Spacer()
-                            // Quick Progress (icon-only)
-                            Button {
-                                progressExercise = ExerciseSelection(name: name)
-                            } label: {
-                                Image(systemName: "chart.line.uptrend.xyaxis")
-                            }
-                            .labelStyle(.iconOnly)
-                            .controlSize(.small)                                // 👈 better size
-                            .buttonStyle(.bordered)
-                            .accessibilityLabel("Show progress for \(name)")
-
-                            // Quick Log (icon-only)
-                            Button {
-                                loggingExercise = ExerciseSelection(name: name)
-                                inputReps = ""; inputSets = ""; inputWeight = ""; inputNotes = ""
-                            } label: {
-                                Image(systemName: "square.and.pencil")
-                            }
-                            .labelStyle(.iconOnly)
-                            .controlSize(.small)                                // 👈 better size
-                            .buttonStyle(.bordered)
-                            .accessibilityLabel("Log exercise \(name)")
-                        }
+                        exerciseRow(name: name)
                     }
                     .onMove { indices, newOffset in
                         day.chosenExercises.move(fromOffsets: indices, toOffset: newOffset)
@@ -443,102 +542,61 @@ struct PlanDayEditor: View {
         .sheet(isPresented: $showingPicker) {
             CatalogExercisePicker(selected: $day.chosenExercises)
         }
-
-        // Quick Log sheet (item-based so name is instant)
+        // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in
             NavigationStack {
-                Form {
-                    Section { Text(sel.name).font(.headline) }
-
-                    // ✅ NICE, LABELED LOG FIELDS (icons + right-aligned)
-                    Section {
-                        LabeledContent {
-                            TextField("e.g. 10", text: $inputReps)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                        } label: {
-                            Label("Reps", systemImage: "repeat")
-                        }
-
-                        LabeledContent {
-                            TextField("e.g. 3", text: $inputSets)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                        } label: {
-                            Label("Sets", systemImage: "square.grid.3x3")
-                        }
-
-                        LabeledContent {
-                            TextField("e.g. 12.5", text: $inputWeight)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                        } label: {
-                            Label("Weight (kg)", systemImage: "scalemass")
-                        }
-                    } header: {
-                        Text("LOG FIELDS").textCase(nil)
-                    } footer: {
-                        Text("Leave a field empty if it doesn't apply.")
-                    }
-
-                    // ✅ Live preview of what you’re about to save
-                    Section("Preview") {
-                        LogMetricRow(
-                            reps: inputReps.isEmpty ? nil : inputReps,
-                            sets: inputSets.isEmpty ? nil : inputSets,
-                            weight: inputWeight.isEmpty ? nil : inputWeight
-                        )
-                    }
-
-                    // Notes (kept simple)
-                    Section("Notes") {
-                        TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
-                            .lineLimit(1...3)
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .navigationTitle("Quick Log")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { loggingExercise = nil } }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            let reps = Int(inputReps.trimmingCharacters(in: .whitespaces))
-                            let sets = Int(inputSets.trimmingCharacters(in: .whitespaces))
-                            let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
-
-                            // find/create session for this day
-                            let startOfDay = Calendar.current.startOfDay(for: day.date)
-                            let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
-                            let descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.date >= startOfDay && $0.date < endOfDay })
-                            let existing = (try? context.fetch(descriptor)) ?? []
-                            let session = existing.first ?? {
-                                let s = Session(date: day.date)
-                                context.insert(s)
-                                return s
-                            }()
-
-                            session.items.append(SessionItem(
-                                exerciseName: sel.name,
-                                reps: reps,
-                                sets: sets,
-                                weightKg: weight,
-                                notes: inputNotes.isEmpty ? nil : inputNotes
-                            ))
-                            try? context.save()
-                            saveTick.toggle()
-                            loggingExercise = nil
+                logForm(exerciseName: sel.name)
+                    .listStyle(.insetGrouped)
+                    .navigationTitle("Quick Log")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { loggingExercise = nil } }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                saveLogEntry(exerciseName: sel.name)
+                            }
                         }
                     }
-                }
-                .sensoryFeedback(.success, trigger: saveTick)
+                    .sensoryFeedback(.success, trigger: saveTick)
             }
         }
-
-
         // Quick Progress sheet
         .sheet(item: $progressExercise) { sel in
             QuickExerciseProgress(exerciseName: sel.name)
         }
+    }
+    
+    private func saveLogEntry(exerciseName: String) {
+        let reps = Int(inputReps.trimmingCharacters(in: .whitespaces))
+        let sets = Int(inputSets.trimmingCharacters(in: .whitespaces))
+        let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+        let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
+
+        let session = findOrCreateSession(for: day.date, in: context)
+        
+        // Using a date range predicate instead of relationship query
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day.date)
+        let _ = calendar.date(byAdding: .day, value: 1, to: dayStart)!
+        
+        let planDescriptor = FetchDescriptor<Plan>()
+        let plans = (try? context.fetch(planDescriptor)) ?? []
+        let parentPlan = plans.first { plan in
+            plan.days.contains { $0.id == day.id }
+        }
+        
+        session.items.append(SessionItem(
+            exerciseName: exerciseName,
+            planSourceId: parentPlan?.id,
+            planName: parentPlan?.name,
+            reps: reps,
+            sets: sets,
+            weightKg: weight,
+            grade: grade,
+            notes: inputNotes.isEmpty ? nil : inputNotes
+        ))
+        try? context.save()
+        saveTick.toggle()
+        loggingExercise = nil
     }
 }
 
@@ -557,6 +615,64 @@ private struct QuickExerciseProgress: View {
 
     enum Metric: String, CaseIterable, Identifiable { case reps = "Reps", sets = "Sets", weight = "Weight (kg)"; var id: String { rawValue } }
     @State private var metric: Metric = .reps
+    
+    // Break down complex view hierarchy into smaller components
+    @ViewBuilder
+    private func recentLogsSection(recent: [(date: Date, reps: Int?, sets: Int?, weight: Double?)]) -> some View {
+        Section {
+            if recent.isEmpty {
+                Text("No logs yet for this exercise").foregroundStyle(.secondary)
+            } else {
+                ForEach(recent.reversed(), id: \.date) { r in
+                    HStack {
+                        Text(r.date.formatted(date: .abbreviated, time: .omitted))
+                        Spacer()
+                        LogMetricRow(
+                            reps: r.reps.map(String.init),
+                            sets: r.sets.map(String.init),
+                            weight: r.weight.map { String(format: "%.1f", $0) },
+                            grade: nil
+                        )
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Recent logs")
+        }
+    }
+    
+    @ViewBuilder
+    private func chartSection(pts: [DataPoint]) -> some View {
+        Section("Chart") {
+            Picker("Metric", selection: $metric) {
+                ForEach(Metric.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+
+            if pts.isEmpty {
+                Text("No numeric data for \(metric.rawValue) yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                Chart(pts) { p in
+                    LineMark(
+                        x: .value("Date", p.date),
+                        y: .value(metric.rawValue, p.value)
+                    )
+                    PointMark(
+                        x: .value("Date", p.date),
+                        y: .value(metric.rawValue, p.value)
+                    )
+                }
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 3))
+                }
+                .frame(minHeight: 220)
+                .accessibilityLabel("Progress chart")
+                .accessibilityValue("\(metric.rawValue) over time")
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -564,47 +680,11 @@ private struct QuickExerciseProgress: View {
                 Section {
                     Text(exerciseName).font(.headline)
                 }
-                Section("Recent logs") {
-                    let recent = rows().suffix(10)
-                    if recent.isEmpty {
-                        Text("No logs yet for this exercise").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(recent.reversed(), id: \.date) { r in
-                            HStack {
-                                Text(r.date.formatted(date: .abbreviated, time: .omitted))
-                                Spacer()
-                                LogMetricRow(
-                                    reps: r.reps.map(String.init),
-                                    sets: r.sets.map(String.init),
-                                    weight: r.weight.map { String(format: "%.1f", $0) }
-                                )
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-
-                    }
-                }
-                Section("Chart") {
-                    Picker("Metric", selection: $metric) {
-                        ForEach(Metric.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-
-                    let pts = series(for: metric)
-                    if pts.isEmpty {
-                        Text("No numeric data for \(metric.rawValue) yet.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Chart(pts) { p in
-                            LineMark(x: .value("Date", p.date), y: .value(metric.rawValue, p.value))
-                            PointMark(x: .value("Date", p.date), y: .value(metric.rawValue, p.value))
-                        }
-                        .frame(minHeight: 220)
-                        .accessibilityLabel("Progress chart")
-                        .accessibilityValue("\(metric.rawValue) over time")
-
-                    }
-                }
+                
+                // Use extracted view components
+                let recent = rows().suffix(10)
+                recentLogsSection(recent: Array(recent))
+                chartSection(pts: series(for: metric))
             }
             .navigationTitle("Progress")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -614,19 +694,17 @@ private struct QuickExerciseProgress: View {
 
     // Build recent rows quickly from all sessions
     private func rows() -> [(date: Date, reps: Int?, sets: Int?, weight: Double?)] {
-        let sessions = (try? context.fetch(
-            FetchDescriptor<Session>(sortBy: [SortDescriptor(\.date, order: .reverse)])
-        )) ?? []
-
-        var out: [(Date, Int?, Int?, Double?)] = []
-        for s in sessions {
-            for i in s.items where i.exerciseName == exerciseName {
-                out.append((s.date, i.reps, i.sets, i.weightKg))
-            }
-        }
-        return out.sorted { $0.0 < $1.0 }
+        let descriptor = FetchDescriptor<Session>(
+            sortBy: [SortDescriptor<Session>(\.date, order: .reverse)]
+        )
+        let sessions = (try? context.fetch(descriptor)) ?? []
+        
+        return sessions.flatMap { session in
+            session.items
+                .filter { $0.exerciseName == exerciseName }
+                .map { (session.date, $0.reps, $0.sets, $0.weightKg) }
+        }.sorted { $0.date < $1.date }
     }
-
 
     private func series(for metric: Metric) -> [DataPoint] {
         switch metric {
@@ -642,12 +720,10 @@ private struct QuickExerciseProgress: View {
         pointsWeight = rows.compactMap { (d, _, _, w) in w.map { DataPoint(date: d, value: $0) } }
     }
 
-
     private func load() async {
         let r = rows()
-        loadSeries(from: r)   // unchanged name, updated type
+        loadSeries(from: r)
     }
-
 }
 
 // MARK: Catalog picker (Activity → TrainingType → [Combinations] → Exercises)
@@ -878,14 +954,16 @@ private struct LogMetricRow: View {
     let reps: String?
     let sets: String?
     let weight: String?
+    let grade: String?
 
     var body: some View {
         HStack(spacing: 12) {
             metric("Reps", reps)
             metric("Sets", sets)
             metric("Weight", weight.map { "\($0) kg" })
+            metric("Grade", grade)
         }
-        .font(.caption.monospacedDigit())           // 👈 monospaced digits
+        .font(.caption.monospacedDigit())
     }
 
     @ViewBuilder
@@ -897,5 +975,63 @@ private struct LogMetricRow: View {
     }
 }
 
+// Helper function to find or create a session for a given date
+private func findOrCreateSession(for date: Date, in context: ModelContext) -> Session {
+    let calendar = Calendar.current
+    let startOfDay = calendar.startOfDay(for: date)
+    let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+    
+    let descriptor = FetchDescriptor<Session>(
+        sortBy: [SortDescriptor(\Session.date)]
+    )
+    let existingSessions = (try? context.fetch(descriptor)) ?? []
+    let existing = existingSessions.first { session in
+        session.date >= startOfDay && session.date < endOfDay
+    }
+    
+    if let existing = existing {
+        return existing
+    }
+    
+    let newSession = Session(date: date)
+    context.insert(newSession)
+    return newSession
+}
 
+private struct MonthlyGridView: View {
+    let groups: [(components: DateComponents, days: [PlanDay])]
+    let calendar: Calendar
 
+    var body: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+        LazyVGrid(columns: columns, spacing: 6) {
+            ForEach(groups, id: \.components) { group in
+                let monthDate = calendar.date(from: group.components) ?? Date()
+                Section {
+                    ForEach(group.days) { day in
+                        NavigationLink {
+                            PlanDayEditor(day: day)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Text("\(calendar.component(.day, from: day.date))")
+                                    .font(.caption)
+                                Circle()
+                                    .fill(day.type.color)
+                                    .frame(width: 8, height: 8)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(6)
+                            .background(.thinMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                } header: {
+                    Text(monthDate.formatted(.dateTime.year().month()))
+                        .font(.headline)
+                        .padding(.horizontal)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+}

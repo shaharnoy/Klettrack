@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		53229DCE2E573C2200D1A229 /* ClimbingProgram.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClimbingProgram.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		53229E1A2E58CC4D00D1A229 /* howtocompile.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = howtocompile.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -47,6 +48,7 @@
 			children = (
 				53229DD02E573C2200D1A229 /* ClimbingProgram */,
 				53229DCF2E573C2200D1A229 /* Products */,
+				53229E1A2E58CC4D00D1A229 /* howtocompile.md */,
 			);
 			sourceTree = "<group>";
 		};

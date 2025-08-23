@@ -46,7 +46,7 @@ enum LogCSV {
             FetchDescriptor<Session>(sortBy: [SortDescriptor(\.date, order: .forward)])
         )) ?? []
 
-        var rows: [String] = ["date,exercise,reps,sets,weight_kg,notes"] // header
+        var rows: [String] = ["date,exercise,reps,sets,weight_kg,plan_id,plan_name,notes"] // header
 
         let df = ISO8601DateFormatter()
         df.formatOptions = [.withFullDate] // YYYY-MM-DD
@@ -60,6 +60,8 @@ enum LogCSV {
                     i.reps.map(String.init) ?? "",
                     i.sets.map(String.init) ?? "",
                     i.weightKg.map { String(format: "%.3f", $0) } ?? "",
+                    i.planSourceId?.uuidString ?? "",
+                    csvEscape(i.planName ?? ""),
                     csvEscape(i.notes ?? "")
                 ].joined(separator: ","))
             }
@@ -100,12 +102,17 @@ enum LogCSV {
         let df = ISO8601DateFormatter()
         df.formatOptions = [.withFullDate] // YYYY-MM-DD
 
+        // Track plans we create during import
+        var knownPlans: [UUID: Plan] = [:]
+        // Track exercises by date for each plan to reconstruct plan structure
+        var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
+        
         var inserted = 0
 
         for idx in startIdx..<lines.count {
             let parts = parseCSVLine(lines[idx])
 
-            // Expect: date, exercise, reps, sets, weight_kg, notes
+            // Expect: date,exercise,reps,sets,weight_kg,plan_id,plan_name,notes
             guard parts.count >= 2 else { continue }
 
             let dateStr   = parts[safe: 0] ?? ""
@@ -113,7 +120,9 @@ enum LogCSV {
             let repsStr   = parts[safe: 2] ?? ""
             let setsStr   = parts[safe: 3] ?? ""
             let weightStr = parts[safe: 4] ?? ""
-            let notes     = parts[safe: 5] ?? ""
+            let planIdStr = parts[safe: 5] ?? ""
+            let planName  = parts[safe: 6] ?? ""
+            let notes     = parts[safe: 7] ?? ""
 
             guard
                 let dayDate = df.date(from: dateStr),
@@ -141,6 +150,39 @@ enum LogCSV {
                     .replacingOccurrences(of: ",", with: ".")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             )
+            
+            // Handle plan reference
+            var planId: UUID?
+            var planNameToUse: String?
+            if !planIdStr.isEmpty {
+                if let uuid = UUID(uuidString: planIdStr) {
+                    planId = uuid
+                    planNameToUse = planName
+                    
+                    // Create plan if it doesn't exist
+                    if !planName.isEmpty && !knownPlans.keys.contains(uuid) {
+                        // Check if plan already exists in DB
+                        let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == uuid })
+                        if let existing = try? context.fetch(planDescriptor).first {
+                            knownPlans[uuid] = existing
+                        } else {
+                            // Create new plan
+                            let plan = Plan(id: uuid, name: planName, kind: .weekly, startDate: dayDate)
+                            context.insert(plan)
+                            knownPlans[uuid] = plan
+                        }
+                    }
+                    
+                    // Track exercises for this plan and date to reconstruct plan structure
+                    if planExercisesByDate[uuid] == nil {
+                        planExercisesByDate[uuid] = [:]
+                    }
+                    if planExercisesByDate[uuid]![dayDate] == nil {
+                        planExercisesByDate[uuid]![dayDate] = Set()
+                    }
+                    planExercisesByDate[uuid]![dayDate]!.insert(name)
+                }
+            }
 
             // DEDUPE within this session
             let existingSigs = Set(session.items.map {
@@ -149,6 +191,8 @@ enum LogCSV {
                               reps: $0.reps,
                               sets: $0.sets,
                               weight: $0.weightKg,
+                              planId: $0.planSourceId,
+                              planName: $0.planName,
                               notes: $0.notes)
             })
             let sig = itemSignature(date: session.date,
@@ -156,6 +200,8 @@ enum LogCSV {
                                     reps: reps,
                                     sets: sets,
                                     weight: weight,
+                                    planId: planId,
+                                    planName: planNameToUse,
                                     notes: notes)
 
             if dedupe && existingSigs.contains(sig) {
@@ -165,6 +211,8 @@ enum LogCSV {
             // Append & tag
             let newItem = SessionItem(
                 exerciseName: name,
+                planSourceId: planId,
+                planName: planNameToUse,
                 reps: reps,
                 sets: sets,
                 weightKg: weight,
@@ -173,6 +221,28 @@ enum LogCSV {
             newItem.sourceTag = tag
             session.items.append(newItem)
             inserted += 1
+        }
+
+        // After processing all rows, populate the plans with their days and exercises
+        for (planId, exercisesByDate) in planExercisesByDate {
+            guard let plan = knownPlans[planId] else { continue }
+            
+            // Only populate if the plan doesn't already have days (avoid overwriting existing plans)
+            if plan.days.isEmpty {
+                let sortedDates = Array(exercisesByDate.keys).sorted()
+                
+                for date in sortedDates {
+                    let exercises = Array(exercisesByDate[date] ?? [])
+                    if !exercises.isEmpty {
+                        let planDay = PlanDay(
+                            date: date,
+                            type: .climbingFull // Default type for imported days
+                        )
+                        planDay.chosenExercises = exercises
+                        plan.days.append(planDay)
+                    }
+                }
+            }
         }
 
         try context.save()
@@ -227,6 +297,8 @@ private func itemSignature(date: Date,
                            reps: Int?,
                            sets: Int?,
                            weight: Double?,
+                           planId: UUID?,
+                           planName: String?,
                            notes: String?) -> String {
     func norm(_ s: String?) -> String {
         (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -239,6 +311,8 @@ private func itemSignature(date: Date,
         reps.map(String.init) ?? "",
         sets.map(String.init) ?? "",
         weight.map { String(format: "%.3f", $0) } ?? "",
+        planId?.uuidString ?? "",
+        norm(planName),
         norm(notes)
     ].joined(separator: "|")
 }
@@ -258,6 +332,8 @@ extension LogCSV {
         let reps: Int?
         let sets: Int?
         let weight: Double?
+        let planId: UUID?
+        let planName: String?
         let notes: String?
     }
 
@@ -304,7 +380,9 @@ extension LogCSV {
                 let repsStr   = parts[safe: 2] ?? ""
                 let setsStr   = parts[safe: 3] ?? ""
                 let weightStr = parts[safe: 4] ?? ""
-                let notesRaw  = parts[safe: 5] ?? ""
+                let planIdStr = parts[safe: 5] ?? ""
+                let planName  = parts[safe: 6] ?? ""
+                let notesRaw  = parts[safe: 7] ?? ""
 
                 guard
                     let dayDate = df.date(from: dateStr),
@@ -318,10 +396,20 @@ extension LogCSV {
                     .replacingOccurrences(of: ",", with: ".")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 )
+                let planId = UUID(uuidString: planIdStr)
                 let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
                 let notesOpt = notes.isEmpty ? nil : notes
 
-                out.append(Entry(date: dayDate, name: name, reps: reps, sets: sets, weight: weight, notes: notesOpt))
+                out.append(Entry(
+                    date: dayDate,
+                    name: name,
+                    reps: reps,
+                    sets: sets,
+                    weight: weight,
+                    planId: planId,
+                    planName: planName.isEmpty ? nil : planName,
+                    notes: notesOpt
+                ))
             }
 
             return out
@@ -342,9 +430,15 @@ extension LogCSV {
         // Cache sessions per day to avoid repeated fetches
         var sessionCache: [Date: Session] = [:]
         sessionCache.reserveCapacity(32)
+        
+        // Cache plans we create/find during import
+        var knownPlans: [UUID: Plan] = [:]
 
         // Cache signature sets per session for dedupe
         var sigCache: [ObjectIdentifier: Set<String>] = [:]
+
+        // Track exercises by date for each plan to reconstruct plan structure
+        var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
 
         for (idx, e) in entries.enumerated() {
             // Progress from 0.5 → 1.0 during application
@@ -373,6 +467,20 @@ extension LogCSV {
                 }
                 sessionCache[startOfDay] = session
             }
+            
+            // Handle plan reference if present
+            if let planId = e.planId, !knownPlans.keys.contains(planId), let planName = e.planName {
+                // Check if plan already exists in DB
+                let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == planId })
+                if let existing = try? context.fetch(planDescriptor).first {
+                    knownPlans[planId] = existing
+                } else {
+                    // Create new plan
+                    let plan = Plan(id: planId, name: planName, kind: .weekly, startDate: e.date)
+                    context.insert(plan)
+                    knownPlans[planId] = plan
+                }
+            }
 
             // Build/get signature set for dedupe
             let sid = ObjectIdentifier(session)
@@ -384,6 +492,8 @@ extension LogCSV {
                                   reps: $0.reps,
                                   sets: $0.sets,
                                   weight: $0.weightKg,
+                                  planId: $0.planSourceId,
+                                  planName: $0.planName,
                                   notes: $0.notes)
                 })
             }
@@ -393,11 +503,15 @@ extension LogCSV {
                                     reps: e.reps,
                                     sets: e.sets,
                                     weight: e.weight,
-                                    notes: e.notes ?? "")
+                                    planId: e.planId,
+                                    planName: e.planName,
+                                    notes: e.notes)
 
             if !dedupe || !(existing?.contains(sig) ?? false) {
                 let item = SessionItem(
                     exerciseName: e.name,
+                    planSourceId: e.planId,
+                    planName: e.planName,
                     reps: e.reps,
                     sets: e.sets,
                     weightKg: e.weight,
@@ -410,6 +524,28 @@ extension LogCSV {
             }
 
             sigCache[sid] = existing ?? []
+        }
+
+        // RECONSTRUCT PLAN STRUCTURE: assign exercises to plan days
+        for (planId, dateGroups) in planExercisesByDate {
+            guard let plan = knownPlans[planId] else { continue }
+
+            // Only populate if the plan doesn't already have days (avoid overwriting existing plans)
+            if plan.days.isEmpty {
+                let sortedDates = Array(dateGroups.keys).sorted()
+                
+                for date in sortedDates {
+                    let exercises = Array(dateGroups[date] ?? [])
+                    if !exercises.isEmpty {
+                        let planDay = PlanDay(
+                            date: date,
+                            type: .climbingFull // Default type for imported days
+                        )
+                        planDay.chosenExercises = exercises
+                        plan.days.append(planDay)
+                    }
+                }
+            }
         }
 
         try? context.save()
