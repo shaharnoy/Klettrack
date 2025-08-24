@@ -48,13 +48,14 @@ enum LogCSV {
 
         var rows: [String] = ["date,exercise,reps,sets,weight_kg,plan_id,plan_name,notes"] // header
 
-        let df = ISO8601DateFormatter()
-        df.formatOptions = [.withFullDate] // YYYY-MM-DD
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.timeZone = TimeZone.current // Use current timezone consistently
+        df.locale = Locale(identifier: "en_US_POSIX") // Ensure consistent formatting
 
         for s in sessions {
-            // Ensure we export with consistent date normalization (start of day)
-            let normalizedDate = Calendar.current.startOfDay(for: s.date)
-            let d = df.string(from: normalizedDate)
+            // Use the session date directly without normalization to avoid timezone issues
+            let d = df.string(from: s.date)
             for i in s.items {
                 rows.append([
                     d,
