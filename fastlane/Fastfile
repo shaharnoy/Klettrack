@@ -1,0 +1,32 @@
+# fastlane/Fastfile
+default_platform(:ios)
+
+platform :ios do
+  desc "Re-sign and install a dev build on connected iPhone (preserves app data)."
+  lane :refresh_dev do |options|
+    # Config (override via options if needed)
+    scheme        = options[:scheme]        || "ClimbingProgram"
+    configuration = options[:configuration] || "Debug"
+    workspace     = options[:workspace]     # e.g. "ClimbingProgram.xcworkspace"
+    project       = options[:project]       || "./ClimbingProgram.xcodeproj"
+    device_id     = options[:device_id]     || ENV['IOS_DEVICE_ID'] # optional UDID
+
+    UI.message("Building scheme: #{scheme} (#{configuration})")
+
+    ipa_path = build_app(
+      scheme: scheme,
+      configuration: configuration,
+      export_method: "development",
+      workspace: workspace,
+      project: project,
+      xcargs: "-allowProvisioningUpdates"
+    )
+
+    # IMPORTANT: No 'devices:' param here.
+    params = { ipa: ipa_path }
+    params[:device_id] = device_id if device_id && !device_id.empty?
+    install_on_device(**params)
+
+    UI.success("✅ Installed dev build without wiping app data.")
+  end
+end
