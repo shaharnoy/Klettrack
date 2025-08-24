@@ -93,14 +93,23 @@ enum LogCSV {
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
 
         let data = try Data(contentsOf: url)
-        guard let text = String(data: data, encoding: .utf8) else { return 0 }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
 
         let lines = text.split(whereSeparator: \.isNewline).map(String.init)
-        guard !lines.isEmpty else { return 0 }
+        guard !lines.isEmpty else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
 
         // Optional header on first line
         let first = lines[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let startIdx = first.hasPrefix("date,") ? 1 : 0
+
+        // Validate we have data rows
+        if startIdx >= lines.count {
+            throw CocoaError(.fileReadCorruptFile)
+        }
 
         let df = ISO8601DateFormatter()
         df.formatOptions = [.withFullDate] // YYYY-MM-DD
@@ -112,12 +121,23 @@ enum LogCSV {
         var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
         
         var inserted = 0
+        var hasValidRows = false
 
         for idx in startIdx..<lines.count {
             let parts = parseCSVLine(lines[idx])
+            
+            // Skip empty lines
+            if parts.isEmpty || parts.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                continue
+            }
 
             // Expect: date,exercise,reps,sets,weight_kg,plan_id,plan_name,notes
-            guard parts.count >= 2 else { continue }
+            guard parts.count >= 2 else {
+                if !hasValidRows {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                continue
+            }
 
             let dateStr   = parts[safe: 0] ?? ""
             let name      = parts[safe: 1] ?? ""
@@ -131,7 +151,14 @@ enum LogCSV {
             guard
                 let dayDate = df.date(from: dateStr),
                 !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else { continue }
+            else {
+                if !hasValidRows {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                continue
+            }
+            
+            hasValidRows = true
 
             // Normalize date to start of day for consistency
             let startOfDay = calendar.startOfDay(for: dayDate)
@@ -190,28 +217,33 @@ enum LogCSV {
                 }
             }
 
-            // DEDUPE within this session
-            let existingSigs = Set(session.items.map {
-                itemSignature(date: session.date,
-                              name: $0.exerciseName,
-                              reps: $0.reps,
-                              sets: $0.sets,
-                              weight: $0.weightKg,
-                              planId: $0.planSourceId,
-                              planName: $0.planName,
-                              notes: $0.notes)
-            })
-            let sig = itemSignature(date: session.date,
-                                    name: name,
-                                    reps: reps,
-                                    sets: sets,
-                                    weight: weight,
-                                    planId: planId,
-                                    planName: planNameToUse,
-                                    notes: notes)
-
-            if dedupe && existingSigs.contains(sig) {
-                continue
+            // DEDUPE within this session and globally if enabled
+            if dedupe {
+                let sig = itemSignature(date: session.date,
+                                        name: name,
+                                        reps: reps,
+                                        sets: sets,
+                                        weight: weight,
+                                        planId: planId,
+                                        planName: planNameToUse,
+                                        notes: notes)
+                
+                // Check for exact duplicate in current session
+                let existingItem = session.items.first { item in
+                    let itemSig = itemSignature(date: session.date,
+                                              name: item.exerciseName,
+                                              reps: item.reps,
+                                              sets: item.sets,
+                                              weight: item.weightKg,
+                                              planId: item.planSourceId,
+                                              planName: item.planName,
+                                              notes: item.notes)
+                    return itemSig == sig
+                }
+                
+                if existingItem != nil {
+                    continue // Skip duplicate
+                }
             }
 
             // Append & tag
@@ -227,6 +259,11 @@ enum LogCSV {
             newItem.sourceTag = tag
             session.items.append(newItem)
             inserted += 1
+        }
+
+        // If no valid rows were found, throw an error
+        if !hasValidRows {
+            throw CocoaError(.fileReadCorruptFile)
         }
 
         // After processing all rows, populate the plans with their days and exercises
@@ -311,6 +348,7 @@ private func itemSignature(date: Date,
     }
     let df = ISO8601DateFormatter()
     df.formatOptions = [.withFullDate]
+    // Exclude notes from deduplication signature since notes can vary for the same exercise
     return [
         df.string(from: date),
         norm(name),
@@ -318,8 +356,8 @@ private func itemSignature(date: Date,
         sets.map(String.init) ?? "",
         weight.map { String(format: "%.3f", $0) } ?? "",
         planId?.uuidString ?? "",
-        norm(planName),
-        norm(notes)
+        norm(planName)
+        // Notes intentionally excluded from deduplication
     ].joined(separator: "|")
 }
 
@@ -379,6 +417,12 @@ extension LogCSV {
                 if n % 500 == 0 { await Task.yield() }
 
                 let parts = parseCSVLine(lines[idx])
+                
+                // Skip empty lines
+                if parts.isEmpty || parts.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                    continue
+                }
+                
                 guard parts.count >= 2 else { continue }
 
                 let dateStr   = parts[safe: 0] ?? ""

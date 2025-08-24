@@ -27,12 +27,47 @@ struct PlanFactory {
             }
         }()
 
-        // Default: rest days; user edits day types.
-        plan.days = (0..<dayCount).map { i in PlanDay(date: addDays(i), type: .rest) }
+        // Create proper pyramid structure for pyramid plans
+        if kind == .threeTwoOne || kind == .fourThreeTwoOne {
+            plan.days = createPyramidStructure(dayCount: dayCount, start: start, calendar: cal)
+        } else {
+            // Default: rest days for weekly plans; user edits day types.
+            plan.days = (0..<dayCount).map { i in PlanDay(date: addDays(i), type: .rest) }
+        }
 
         context.insert(plan)
         try? context.save()
         return plan
+    }
+    
+    private static func createPyramidStructure(dayCount: Int, start: Date, calendar: Calendar) -> [PlanDay] {
+        var days: [PlanDay] = []
+        let weeksCount = dayCount / 7
+        
+        for week in 0..<weeksCount {
+            let weekStart = calendar.date(byAdding: .day, value: week * 7, to: start)!
+            
+            // Create a varied pyramid structure
+            let weekPattern: [DayType] = {
+                switch week % 3 {
+                case 0: // Heavy week
+                    return [.climbingFull, .rest, .climbingFull, .rest, .climbingSmall, .rest, .rest]
+                case 1: // Medium week
+                    return [.climbingSmall, .rest, .climbingFull, .rest, .climbingSmall, .rest, .rest]
+                case 2: // Light week
+                    return [.climbingSmall, .rest, .climbingSmall, .rest, .rest, .rest, .rest]
+                default:
+                    return [.rest, .rest, .rest, .rest, .rest, .rest, .rest]
+                }
+            }()
+            
+            for (dayIndex, dayType) in weekPattern.enumerated() {
+                let dayDate = calendar.date(byAdding: .day, value: dayIndex, to: weekStart)!
+                days.append(PlanDay(date: dayDate, type: dayType))
+            }
+        }
+        
+        return days
     }
     
     static func appendWeeks(to plan: Plan, count: Int) {
@@ -49,5 +84,4 @@ struct PlanFactory {
             }
         }
     }
-
 }

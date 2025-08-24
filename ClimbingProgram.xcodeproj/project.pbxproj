@@ -6,8 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		536190DB2E5B1211008A8555 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 53229DC62E573C2200D1A229 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 53229DCD2E573C2200D1A229;
+			remoteInfo = ClimbingProgram;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		53229DCE2E573C2200D1A229 /* ClimbingProgram.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClimbingProgram.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		536190D72E5B1211008A8555 /* ClimbingProgramTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClimbingProgramTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -41,10 +52,22 @@
 			path = ClimbingProgram;
 			sourceTree = "<group>";
 		};
+		536190D82E5B1211008A8555 /* ClimbingProgramTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ClimbingProgramTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		53229DCB2E573C2200D1A229 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		536190D42E5B1211008A8555 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -58,6 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				53229DD02E573C2200D1A229 /* ClimbingProgram */,
+				536190D82E5B1211008A8555 /* ClimbingProgramTests */,
 				53229DCF2E573C2200D1A229 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -66,6 +90,7 @@
 			isa = PBXGroup;
 			children = (
 				53229DCE2E573C2200D1A229 /* ClimbingProgram.app */,
+				536190D72E5B1211008A8555 /* ClimbingProgramTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,6 +120,29 @@
 			productReference = 53229DCE2E573C2200D1A229 /* ClimbingProgram.app */;
 			productType = "com.apple.product-type.application";
 		};
+		536190D62E5B1211008A8555 /* ClimbingProgramTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 536190DD2E5B1211008A8555 /* Build configuration list for PBXNativeTarget "ClimbingProgramTests" */;
+			buildPhases = (
+				536190D32E5B1211008A8555 /* Sources */,
+				536190D42E5B1211008A8555 /* Frameworks */,
+				536190D52E5B1211008A8555 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				536190DC2E5B1211008A8555 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				536190D82E5B1211008A8555 /* ClimbingProgramTests */,
+			);
+			name = ClimbingProgramTests;
+			packageProductDependencies = (
+			);
+			productName = ClimbingProgramTests;
+			productReference = 536190D72E5B1211008A8555 /* ClimbingProgramTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -107,6 +155,10 @@
 				TargetAttributes = {
 					53229DCD2E573C2200D1A229 = {
 						CreatedOnToolsVersion = 16.4;
+					};
+					536190D62E5B1211008A8555 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 53229DCD2E573C2200D1A229;
 					};
 				};
 			};
@@ -125,12 +177,20 @@
 			projectRoot = "";
 			targets = (
 				53229DCD2E573C2200D1A229 /* ClimbingProgram */,
+				536190D62E5B1211008A8555 /* ClimbingProgramTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		53229DCC2E573C2200D1A229 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		536190D52E5B1211008A8555 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -147,7 +207,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		536190D32E5B1211008A8555 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		536190DC2E5B1211008A8555 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
+			targetProxy = 536190DB2E5B1211008A8555 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		53229DDD2E573C2400D1A229 /* Debug */ = {
@@ -341,6 +416,42 @@
 			};
 			name = Release;
 		};
+		536190DE2E5B1211008A8555 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YG8D87B9SL;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = somenoys.ClimbingProgramTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClimbingProgram.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ClimbingProgram";
+			};
+			name = Debug;
+		};
+		536190DF2E5B1211008A8555 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YG8D87B9SL;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = somenoys.ClimbingProgramTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClimbingProgram.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ClimbingProgram";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -358,6 +469,15 @@
 			buildConfigurations = (
 				53229DDD2E573C2400D1A229 /* Debug */,
 				53229DDE2E573C2400D1A229 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		536190DD2E5B1211008A8555 /* Build configuration list for PBXNativeTarget "ClimbingProgramTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				536190DE2E5B1211008A8555 /* Debug */,
+				536190DF2E5B1211008A8555 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

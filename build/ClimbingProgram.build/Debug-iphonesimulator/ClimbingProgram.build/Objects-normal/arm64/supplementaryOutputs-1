@@ -1,0 +1,18 @@
+"/Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/app/RootTabView.swift":
+  const-values: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RootTabView.swiftconstvalues"
+  dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RootTabView.d"
+  swift-dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RootTabView.swiftdeps"
+  object: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RootTabView.o"
+  diagnostics: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RootTabView.dia"
+"/Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/features/sessions/LogView.swift":
+  diagnostics: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/LogView.dia"
+  const-values: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/LogView.swiftconstvalues"
+  dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/LogView.d"
+  object: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/LogView.o"
+  swift-dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/LogView.swiftdeps"
+"/Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/app/RunOnce.swift":
+  const-values: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RunOnce.swiftconstvalues"
+  dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RunOnce.d"
+  swift-dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RunOnce.swiftdeps"
+  diagnostics: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RunOnce.dia"
+  object: "/Users/shahar/Desktop/code/ClimbingProgram/build/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/RunOnce.o"
