@@ -1,0 +1,424 @@
+{
+  "source": "/Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/features/timer/TimerViews.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Timer",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 60
+        }
+      },
+      {
+        "comment": "",
+        "key": "Stop & Reset",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 52
+        }
+      },
+      {
+        "comment": "",
+        "key": "Close",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 64
+        }
+      },
+      {
+        "comment": "",
+        "key": "Load Template",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 71
+        }
+      },
+      {
+        "comment": "",
+        "key": "All Templates",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 74
+        }
+      },
+      {
+        "comment": "",
+        "key": "Custom Timer",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 77
+        }
+      },
+      {
+        "comment": "",
+        "key": "Remaining: %@",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 124
+        }
+      },
+      {
+        "comment": "",
+        "key": "(%@)",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 139
+        }
+      },
+      {
+        "comment": "",
+        "key": "Work",
+        "location": {
+          "startingColumn": 63,
+          "startingLine": 135
+        }
+      },
+      {
+        "comment": "",
+        "key": "Rest",
+        "location": {
+          "startingColumn": 72,
+          "startingLine": 135
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%% Complete",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 159
+        }
+      },
+      {
+        "comment": "",
+        "key": "Interval %lld of %lld",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 166
+        }
+      },
+      {
+        "comment": "",
+        "key": "Rep %lld of %lld",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 170
+        }
+      },
+      {
+        "comment": "",
+        "key": "Current: %@",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 184
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld reps",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 196
+        }
+      },
+      {
+        "comment": "",
+        "key": "Work: %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 189
+        }
+      },
+      {
+        "comment": "",
+        "key": "Rest: %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 190
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 211
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pause",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 223
+        }
+      },
+      {
+        "comment": "",
+        "key": "Lap",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 228
+        }
+      },
+      {
+        "comment": "",
+        "key": "Resume",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 237
+        }
+      },
+      {
+        "comment": "",
+        "key": "Lap",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 242
+        }
+      },
+      {
+        "comment": "",
+        "key": "Laps (%lld)",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 269
+        }
+      },
+      {
+        "comment": "",
+        "key": "#%lld",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 342
+        }
+      },
+      {
+        "comment": "",
+        "key": "Timer Setup",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 512
+        }
+      },
+      {
+        "comment": "",
+        "key": "Setup Type",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 470
+        }
+      },
+      {
+        "comment": "",
+        "key": "Templates",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 471
+        }
+      },
+      {
+        "comment": "",
+        "key": "Custom",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 472
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 516
+        }
+      },
+      {
+        "comment": "",
+        "key": "Create your first timer template to get started",
+        "location": {
+          "startingColumn": 39,
+          "startingLine": 536
+        }
+      },
+      {
+        "comment": "",
+        "key": "No Timer Templates",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 534
+        }
+      },
+      {
+        "comment": "",
+        "key": "Last used: %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 595
+        }
+      },
+      {
+        "comment": "",
+        "key": "Used %lld times",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 565
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld intervals",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 584
+        }
+      },
+      {
+        "comment": "",
+        "key": "Repeats %lldx",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 588
+        }
+      },
+      {
+        "comment": "",
+        "key": "Timer Type",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 652
+        }
+      },
+      {
+        "comment": "",
+        "key": "Type",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 653
+        }
+      },
+      {
+        "comment": "",
+        "key": "Total Time",
+        "location": {
+          "startingColumn": 17,
+          "startingLine": 695
+        }
+      },
+      {
+        "comment": "",
+        "key": "Intervals",
+        "location": {
+          "startingColumn": 17,
+          "startingLine": 715
+        }
+      },
+      {
+        "comment": "",
+        "key": "Repeat",
+        "location": {
+          "startingColumn": 17,
+          "startingLine": 732
+        }
+      },
+      {
+        "comment": "",
+        "key": "Template Details",
+        "location": {
+          "startingColumn": 17,
+          "startingLine": 742
+        }
+      },
+      {
+        "comment": "",
+        "key": "Save as template",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 678
+        }
+      },
+      {
+        "comment": "",
+        "key": "Load Configuration",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 680
+        }
+      },
+      {
+        "comment": "",
+        "key": "Minutes",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 697
+        }
+      },
+      {
+        "comment": "",
+        "key": "Seconds",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 704
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld min",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 699
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld sec",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 706
+        }
+      },
+      {
+        "comment": "",
+        "key": "Add Interval",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 725
+        }
+      },
+      {
+        "comment": "",
+        "key": "Repeat intervals",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 733
+        }
+      },
+      {
+        "comment": "",
+        "key": "Repeat %lld times",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 736
+        }
+      },
+      {
+        "comment": "",
+        "key": "Template name",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 743
+        }
+      },
+      {
+        "comment": "",
+        "key": "Description (optional)",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 744
+        }
+      }
+    ]
+  },
+  "version": 1
+}

@@ -29,9 +29,14 @@ struct RootTabView: View {
             ProgressViewScreen()
                 .tabItem { Label("Progress", systemImage: "chart.bar") }
                 .environment(\.isDataReady, isDataReady)
+            
+            TimerView(planDay: nil)
+                .tabItem { Label("Timer", systemImage: "timer") }
+                .environment(\.isDataReady, isDataReady)
         }
         .task {
             await initializeData()
+            //SeedData.nukeAndReseed(context) // Uncomment this line to reset data during development
         }
     }
     

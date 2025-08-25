@@ -1,0 +1,18 @@
+"/Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/data/persistence/CatalogUpdates.swift":
+  dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/CatalogUpdates.d"
+  diagnostics: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/CatalogUpdates.dia"
+  object: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/CatalogUpdates.o"
+  const-values: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/CatalogUpdates.swiftconstvalues"
+  swift-dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/CatalogUpdates.swiftdeps"
+"/Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/data/persistence/DevTools.swift":
+  dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/DevTools.d"
+  diagnostics: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/DevTools.dia"
+  const-values: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/DevTools.swiftconstvalues"
+  swift-dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/DevTools.swiftdeps"
+  object: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/DevTools.o"
+"/Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/data/persistence/PlanFactory.swift":
+  const-values: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/PlanFactory.swiftconstvalues"
+  dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/PlanFactory.d"
+  object: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/PlanFactory.o"
+  diagnostics: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/PlanFactory.dia"
+  swift-dependencies: "/Users/shahar/Desktop/code/ClimbingProgram/build/Build/Intermediates.noindex/ClimbingProgram.build/Debug-iphonesimulator/ClimbingProgram.build/Objects-normal/arm64/PlanFactory.swiftdeps"

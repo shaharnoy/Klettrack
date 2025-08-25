@@ -17,39 +17,25 @@ struct CatalogView: View {
     @State private var draftActivityName = ""
     @State private var renamingActivity: Activity?
 
+    // Helper function to count total exercises in an activity
+    private func totalExerciseCount(for activity: Activity) -> Int {
+        var count = 0
+        for trainingType in activity.types {
+            count += trainingType.exercises.count
+            // Also count exercises in bouldering combinations
+            for combination in trainingType.combinations {
+                count += combination.exercises.count
+            }
+        }
+        return count
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 12) {
                     ForEach(activities) { activity in
-                        NavigationLink {
-                            ActivityDetailView(activity: activity)
-                        } label: {
-                            CatalogCard(
-                                title: activity.name,
-                                subtitle: "\(activity.types.count) training type\(activity.types.count == 1 ? "" : "s")",
-                                tint: activity.hue.color
-                            ) {
-                                Text("Tap to view & edit")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button("Rename") {
-                                guard isDataReady else { return }
-                                draftActivityName = activity.name
-                                renamingActivity = activity
-                            }
-                            Button(role: .destructive) {
-                                guard isDataReady else { return }
-                                context.delete(activity)
-                                try? context.save()
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
+                        activityCard(for: activity)
                     }
 
                     Button {
@@ -86,6 +72,38 @@ struct CatalogView: View {
                     toRename.name = draftActivityName.trimmingCharacters(in: .whitespaces)
                     try? context.save()
                 }
+            }
+        }
+    }
+    
+    private func activityCard(for activity: Activity) -> some View {
+        NavigationLink {
+            ActivityDetailView(activity: activity)
+        } label: {
+            let exerciseCount = totalExerciseCount(for: activity)
+            let typeCountText = "\(activity.types.count) training type\(activity.types.count == 1 ? "" : "s")"
+            let exerciseCountText = "\(exerciseCount) available exercise\(exerciseCount == 1 ? "" : "s")"
+            CatalogCard(
+                title: activity.name,
+                subtitle: "\(typeCountText)\n\(exerciseCountText)",
+                tint: activity.hue.color
+            ) {
+                EmptyView()
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Rename") {
+                guard isDataReady else { return }
+                draftActivityName = activity.name
+                renamingActivity = activity
+            }
+            Button(role: .destructive) {
+                guard isDataReady else { return }
+                context.delete(activity)
+                try? context.save()
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }
@@ -221,7 +239,7 @@ struct TrainingTypeDetailView: View {
             // For climbing-specific exercises, maintain Fingers/Pull order
             return ["Fingers", "Pull"].compactMap { area in
                 if let exercises = grouped[area], !exercises.isEmpty {
-                    return (area, exercises)
+                    return (area, exercises.sorted { $0.order < $1.order })
                 }
                 return nil
             }
@@ -229,13 +247,13 @@ struct TrainingTypeDetailView: View {
             // For other types, just group if there are areas
             return grouped
                 .filter { !$0.key.isEmpty }
-                .map { ($0.key, $0.value) }
+                .map { ($0.key, $0.value.sorted { $0.order < $1.order }) }
                 .sorted(by: { $0.0 < $1.0 })
         }
     }
 
     private var ungroupedExercises: [Exercise] {
-        trainingType.exercises.filter { $0.area == nil }
+        trainingType.exercises.filter { $0.area == nil }.sorted { $0.order < $1.order }
     }
     
     // Define available areas for climbing exercises
@@ -360,9 +378,11 @@ struct TrainingTypeDetailView: View {
                 description: $draftDescription,
                 availableAreas: availableAreas
             ) {
+                let nextOrder = (trainingType.exercises.map { $0.order }.max() ?? 0) + 1
                 let ex = Exercise(
                     name: draftExName.trimmingCharacters(in: .whitespaces),
                     area: draftArea.isEmpty ? nil : draftArea,
+                    order: nextOrder,
                     exerciseDescription: draftDescription.isEmpty ? nil : draftDescription,
                     repsText: draftReps.isEmpty ? nil : draftReps,
                     setsText: draftSets.isEmpty ? nil : draftSets,
@@ -442,7 +462,7 @@ struct CombinationDetailView: View {
                 Section("About") { Text(about) }
             }
             Section("Exercises") {
-                ForEach(combo.exercises) { ex in
+                ForEach(combo.exercises.sorted { $0.order < $1.order }) { ex in
                     ExerciseRow(ex: ex, tint: tint)
                         .contentShape(Rectangle())
                         .onTapGesture { openEditor(for: ex) }
@@ -460,7 +480,8 @@ struct CombinationDetailView: View {
                         }
                 }
                 .onDelete { idx in
-                    idx.map { combo.exercises[$0] }.forEach { context.delete($0) }
+                    let sortedExercises = combo.exercises.sorted { $0.order < $1.order }
+                    idx.map { sortedExercises[$0] }.forEach { context.delete($0) }
                     try? context.save()
                 }
 
@@ -505,9 +526,11 @@ struct CombinationDetailView: View {
                 description: $draftDesc,
                 availableAreas: []
             ) {
+                let nextOrder = (combo.exercises.map { $0.order }.max() ?? 0) + 1
                 let ex = Exercise(
                     name: draftExName.trimmingCharacters(in: .whitespaces),
                     area: draftArea.isEmpty ? nil : draftArea,
+                    order: nextOrder,
                     exerciseDescription: draftDesc.isEmpty ? nil : draftDesc,
                     repsText: draftReps.isEmpty ? nil : draftReps,
                     setsText: draftSets.isEmpty ? nil : draftSets,
@@ -770,7 +793,7 @@ struct AboutEditSheet: View {
     @Binding var text: String
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
-
+    
     var body: some View {
         NavigationStack {
             Form {
@@ -792,4 +815,4 @@ struct AboutEditSheet: View {
             }
         }
     }
-    }
+}

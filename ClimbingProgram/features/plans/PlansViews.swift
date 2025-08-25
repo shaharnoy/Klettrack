@@ -428,6 +428,9 @@ struct PlanDayEditor: View {
     // Quick Progress
     @State private var progressExercise: ExerciseSelection? = nil
     
+    // Timer
+    @State private var showingTimer = false
+
     // Query for logged exercises on this day that belong to this plan
     private var loggedExercisesForDay: [SessionItem] {
         let calendar = Calendar.current
@@ -454,6 +457,31 @@ struct PlanDayEditor: View {
         }
     }
     
+    // Helper to get exercises sorted by their catalog order
+    private func sortedChosenExercises() -> [String] {
+        // Get all exercises from the catalog
+        let descriptor = FetchDescriptor<Exercise>()
+        let allExercises = (try? context.fetch(descriptor)) ?? []
+        
+        // Create a map of exercise names to their order values, handling duplicates
+        var exerciseOrderMap: [String: Int] = [:]
+        for exercise in allExercises {
+            // If we encounter a duplicate name, keep the lower order value
+            if let existingOrder = exerciseOrderMap[exercise.name] {
+                exerciseOrderMap[exercise.name] = min(existingOrder, exercise.order)
+            } else {
+                exerciseOrderMap[exercise.name] = exercise.order
+            }
+        }
+        
+        // Sort chosen exercises by their catalog order
+        return day.chosenExercises.sorted { name1, name2 in
+            let order1 = exerciseOrderMap[name1] ?? Int.max
+            let order2 = exerciseOrderMap[name2] ?? Int.max
+            return order1 < order2
+        }
+    }
+
     // Break down exercise row into its own view builder
     @ViewBuilder
     private func exerciseRow(name: String) -> some View {
@@ -538,15 +566,37 @@ struct PlanDayEditor: View {
                 if day.chosenExercises.isEmpty {
                     Text("No activities yet").foregroundStyle(.secondary)
                 } else {
-                    ForEach(day.chosenExercises, id: \.self) { name in
+                    let sortedExercises = sortedChosenExercises()
+                    ForEach(sortedExercises, id: \.self) { name in
                         exerciseRow(name: name)
                     }
                     .onMove { indices, newOffset in
-                        day.chosenExercises.move(fromOffsets: indices, toOffset: newOffset)
+                        // Convert indices from sorted array to original array
+                        var updatedExercises = day.chosenExercises
+                        let itemsToMove = indices.map { sortedExercises[$0] }
+                        
+                        // Remove items from original positions
+                        for item in itemsToMove {
+                            if let originalIndex = updatedExercises.firstIndex(of: item) {
+                                updatedExercises.remove(at: originalIndex)
+                            }
+                        }
+                        
+                        // Insert at new position (adjust for already removed items)
+                        let adjustedOffset = min(newOffset, updatedExercises.count)
+                        for (i, item) in itemsToMove.enumerated() {
+                            updatedExercises.insert(item, at: adjustedOffset + i)
+                        }
+                        
+                        day.chosenExercises = updatedExercises
                         try? context.save()
                     }
                     .onDelete { idx in
-                        day.chosenExercises.remove(atOffsets: idx)
+                        // Convert indices from sorted array to original array
+                        let itemsToDelete = idx.map { sortedExercises[$0] }
+                        day.chosenExercises.removeAll { item in
+                            itemsToDelete.contains(item)
+                        }
                         try? context.save()
                     }
                 }
@@ -575,9 +625,26 @@ struct PlanDayEditor: View {
         .onChange(of: day.type) {
             try? context.save()
         }
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { EditButton() } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack {
+                    // Timer button
+                    Button {
+                        showingTimer = true
+                    } label: {
+                        Image(systemName: "timer")
+                    }
+                    
+                    EditButton()
+                }
+            }
+        }
         .sheet(isPresented: $showingPicker) {
             CatalogExercisePicker(selected: $day.chosenExercises)
+        }
+        // Timer sheet
+        .sheet(isPresented: $showingTimer) {
+            TimerView(planDay: day)
         }
         // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in
@@ -964,7 +1031,7 @@ struct ComboExercisesList: View {
 
     var body: some View {
         List {
-            ForEach(combo.exercises) { ex in
+            ForEach(combo.exercises.sorted { $0.order < $1.order }) { ex in
                 ExercisePickRow(
                     name: ex.name,
                     subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,

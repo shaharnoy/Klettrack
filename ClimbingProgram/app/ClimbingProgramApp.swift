@@ -23,7 +23,8 @@ struct ClimbingProgramApp: App {
         .modelContainer(for: [
             Activity.self, TrainingType.self, Exercise.self,
             Session.self, SessionItem.self,
-            Plan.self, PlanDay.self
+            Plan.self, PlanDay.self,
+            TimerTemplate.self, TimerInterval.self, TimerSession.self, TimerLap.self
         ])
 
     }

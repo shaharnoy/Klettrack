@@ -25,29 +25,17 @@
 		53229DDB2E573C2400D1A229 /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				docs/READMEforAI.MD,
 				Info.plist,
 			);
 			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		53618FDB2E5A34B1008A8555 /* Exceptions for "ClimbingProgram" folder in "Compile Sources" phase from "ClimbingProgram" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = 53229DCA2E573C2200D1A229 /* Sources */;
-			membershipExceptions = (
-				docs/READMEforAI.MD,
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		53229DD02E573C2200D1A229 /* ClimbingProgram */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				53229DDB2E573C2400D1A229 /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */,
-				53618FDB2E5A34B1008A8555 /* Exceptions for "ClimbingProgram" folder in "Compile Sources" phase from "ClimbingProgram" target */,
 			);
 			path = ClimbingProgram;
 			sourceTree = "<group>";

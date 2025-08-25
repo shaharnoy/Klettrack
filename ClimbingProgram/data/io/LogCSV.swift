@@ -46,7 +46,10 @@ enum LogCSV {
             FetchDescriptor<Session>(sortBy: [SortDescriptor(\.date, order: .forward)])
         )) ?? []
 
-        var rows: [String] = ["date,exercise,reps,sets,weight_kg,plan_id,plan_name,notes"] // header
+        // Fetch all plans to look up day types
+        let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
+        
+        var rows: [String] = ["date,exercise,reps,sets,weight_kg,plan_id,plan_name,day_type,notes"] // header with day_type
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -57,6 +60,19 @@ enum LogCSV {
             // Use the session date directly without normalization to avoid timezone issues
             let d = df.string(from: s.date)
             for i in s.items {
+                // Find the day type for this session item
+                var dayType = ""
+                if let planId = i.planSourceId {
+                    // Find the plan and the corresponding day
+                    if let plan = plans.first(where: { $0.id == planId }) {
+                        let calendar = Calendar.current
+                        let sessionStartOfDay = calendar.startOfDay(for: s.date)
+                        if let planDay = plan.days.first(where: { calendar.startOfDay(for: $0.date) == sessionStartOfDay }) {
+                            dayType = planDay.type.rawValue
+                        }
+                    }
+                }
+                
                 rows.append([
                     d,
                     csvEscape(i.exerciseName),
@@ -65,6 +81,7 @@ enum LogCSV {
                     i.weightKg.map { String(format: "%.3f", $0) } ?? "",
                     i.planSourceId?.uuidString ?? "",
                     csvEscape(i.planName ?? ""),
+                    csvEscape(dayType),
                     csvEscape(i.notes ?? "")
                 ].joined(separator: ","))
             }
@@ -119,6 +136,8 @@ enum LogCSV {
         var knownPlans: [UUID: Plan] = [:]
         // Track exercises by date for each plan to reconstruct plan structure
         var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
+        // Track day types by date for each plan to preserve day type information
+        var planDayTypesByDate: [UUID: [Date: DayType]] = [:]
         
         var inserted = 0
         var hasValidRows = false
@@ -131,7 +150,7 @@ enum LogCSV {
                 continue
             }
 
-            // Expect: date,exercise,reps,sets,weight_kg,plan_id,plan_name,notes
+            // Expect: date,exercise,reps,sets,weight_kg,plan_id,plan_name,day_type,notes (updated format)
             guard parts.count >= 2 else {
                 if !hasValidRows {
                     throw CocoaError(.fileReadCorruptFile)
@@ -146,7 +165,8 @@ enum LogCSV {
             let weightStr = parts[safe: 4] ?? ""
             let planIdStr = parts[safe: 5] ?? ""
             let planName  = parts[safe: 6] ?? ""
-            let notes     = parts[safe: 7] ?? ""
+            let dayTypeStr = parts[safe: 7] ?? ""  // New day_type field
+            let notes     = parts[safe: 8] ?? ""   // Notes moved to position 8
 
             guard
                 let dayDate = df.date(from: dateStr),
@@ -214,6 +234,14 @@ enum LogCSV {
                         planExercisesByDate[uuid]![startOfDay] = Set()
                     }
                     planExercisesByDate[uuid]![startOfDay]!.insert(name)
+                    
+                    // Track day type for this date if present
+                    if !dayTypeStr.isEmpty, let dayType = DayType(rawValue: dayTypeStr) {
+                        if planDayTypesByDate[uuid] == nil {
+                            planDayTypesByDate[uuid] = [:]
+                        }
+                        planDayTypesByDate[uuid]![startOfDay] = dayType
+                    }
                 }
             }
 
@@ -277,9 +305,11 @@ enum LogCSV {
                 for date in sortedDates {
                     let exercises = Array(exercisesByDate[date] ?? [])
                     if !exercises.isEmpty {
+                        // Use the imported day type if available, otherwise default to climbingFull
+                        let dayType = planDayTypesByDate[planId]?[date] ?? .climbingFull
                         let planDay = PlanDay(
                             date: date,
-                            type: .climbingFull // Default type for imported days
+                            type: dayType
                         )
                         planDay.chosenExercises = exercises
                         plan.days.append(planDay)
@@ -378,6 +408,7 @@ extension LogCSV {
         let weight: Double?
         let planId: UUID?
         let planName: String?
+        let dayType: DayType?
         let notes: String?
     }
 
@@ -432,7 +463,8 @@ extension LogCSV {
                 let weightStr = parts[safe: 4] ?? ""
                 let planIdStr = parts[safe: 5] ?? ""
                 let planName  = parts[safe: 6] ?? ""
-                let notesRaw  = parts[safe: 7] ?? ""
+                let dayTypeStr = parts[safe: 7] ?? ""  // Day type field
+                let notesRaw  = parts[safe: 8] ?? ""   // Notes moved to position 8
 
                 guard
                     let dayDate = df.date(from: dateStr),
@@ -447,6 +479,7 @@ extension LogCSV {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 )
                 let planId = UUID(uuidString: planIdStr)
+                let dayType = !dayTypeStr.isEmpty ? DayType(rawValue: dayTypeStr) : nil
                 let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
                 let notesOpt = notes.isEmpty ? nil : notes
 
@@ -458,6 +491,7 @@ extension LogCSV {
                     weight: weight,
                     planId: planId,
                     planName: planName.isEmpty ? nil : planName,
+                    dayType: dayType,
                     notes: notesOpt
                 ))
             }
@@ -489,6 +523,9 @@ extension LogCSV {
 
         // Track exercises by date for each plan to reconstruct plan structure
         var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
+
+        // Track day types by date for each plan to preserve day type information
+        var planDayTypesByDate: [UUID: [Date: DayType]] = [:]
 
         for (idx, e) in entries.enumerated() {
             // Progress from 0.5 → 1.0 during application
@@ -541,6 +578,14 @@ extension LogCSV {
                     planExercisesByDate[planId]![startOfDay] = Set()
                 }
                 planExercisesByDate[planId]![startOfDay]!.insert(e.name)
+                
+                // Track day type for this date if present
+                if let dayType = e.dayType {
+                    if planDayTypesByDate[planId] == nil {
+                        planDayTypesByDate[planId] = [:]
+                    }
+                    planDayTypesByDate[planId]![startOfDay] = dayType
+                }
             }
 
             // Build/get signature set for dedupe
@@ -587,7 +632,7 @@ extension LogCSV {
             sigCache[sid] = existing ?? []
         }
 
-        // RECONSTRUCT PLAN STRUCTURE: assign exercises to plan days
+        // RECONSTRUCT PLAN STRUCTURE: assign exercises and day types to plan days
         for (planId, dateGroups) in planExercisesByDate {
             guard let plan = knownPlans[planId] else { continue }
 
@@ -598,9 +643,11 @@ extension LogCSV {
                 for date in sortedDates {
                     let exercises = Array(dateGroups[date] ?? [])
                     if !exercises.isEmpty {
+                        // Use the imported day type if available, otherwise default to climbingFull
+                        let dayType = planDayTypesByDate[planId]?[date] ?? .climbingFull
                         let planDay = PlanDay(
                             date: date,
-                            type: .climbingFull // Default type for imported days
+                            type: dayType
                         )
                         planDay.chosenExercises = exercises
                         plan.days.append(planDay)

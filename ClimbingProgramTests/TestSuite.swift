@@ -32,7 +32,11 @@ class ClimbingProgramTestSuite: XCTestCase {
             Session.self,
             SessionItem.self,
             Plan.self,
-            PlanDay.self
+            PlanDay.self,
+            TimerTemplate.self,
+            TimerInterval.self,
+            TimerSession.self,
+            TimerLap.self
         ])
         
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -86,6 +90,36 @@ class ClimbingProgramTestSuite: XCTestCase {
         let combo = BoulderCombination(name: name)
         trainingType.combinations.append(combo)
         return combo
+    }
+    
+    // MARK: - Timer Test Helpers
+    
+    func createTestTimerTemplate(name: String = "Test Timer Template") -> TimerTemplate {
+        let template = TimerTemplate(
+            name: name,
+            templateDescription: "Test template description",
+            isRepeating: false,
+            repeatCount: nil,
+            restTimeBetweenIntervals: nil
+        )
+        
+        let interval = TimerInterval(
+            name: "Test Interval",
+            workTimeSeconds: 30,
+            restTimeSeconds: 15,
+            repetitions: 1,
+            order: 0
+        )
+        template.intervals.append(interval)
+        context.insert(template)
+        
+        do {
+            try context.save()
+        } catch {
+            XCTFail("Failed to save test timer template: \(error)")
+        }
+        
+        return template
     }
     
     // MARK: - Assertion Helpers

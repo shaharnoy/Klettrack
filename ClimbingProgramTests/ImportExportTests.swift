@@ -47,7 +47,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         
         // Verify header
         let header = lines.first!
-        let expectedFields = ["date", "exercise", "reps", "sets", "weight_kg", "plan_id", "plan_name", "notes"]
+        let expectedFields = ["date", "exercise", "reps", "sets", "weight_kg", "plan_id", "plan_name","day_type", "notes"]
         for field in expectedFields {
             XCTAssertTrue(header.contains(field), "Header should contain \(field)")
         }

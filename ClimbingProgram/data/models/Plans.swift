@@ -24,8 +24,8 @@ enum PlanKind: String, Codable, CaseIterable, Identifiable {
 }
 
 enum DayType: String, Codable, CaseIterable, Identifiable {
-    case climbingFull = "Climbing + Full exercise"
-    case climbingSmall = "Climbing + Small exercise"
+    case climbingFull = "Climbing + Full"
+    case climbingSmall = "Climbing + Short"
     case climbingReduced = "Climbing reduced"
     case core = "Core"
     case antagonist = "Antagonist"

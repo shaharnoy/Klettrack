@@ -67,6 +67,7 @@ final class Exercise {
     @Attribute(.unique) var id: UUID
     var name: String
     var area: String?
+    var order: Int = 0  // New field to maintain exercise order
 
     /// NEW: rich description for the exercise
     var exerciseDescription: String?
@@ -81,6 +82,7 @@ final class Exercise {
         id: UUID = UUID(),
         name: String,
         area: String? = nil,
+        order: Int = 0,
         exerciseDescription: String? = nil,
         repsText: String? = nil,
         setsText: String? = nil,
@@ -90,6 +92,7 @@ final class Exercise {
         self.id = id
         self.name = name
         self.area = area
+        self.order = order
         self.exerciseDescription = exerciseDescription
         self.repsText = repsText
         self.setsText = setsText
@@ -144,6 +147,125 @@ final class SessionItem {
         self.sets = sets
         self.weightKg = weightKg
         self.grade = grade
+        self.notes = notes
+    }
+}
+
+// MARK: - Timer Models
+
+@Model
+final class TimerTemplate {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var templateDescription: String?
+    
+    // Timer configuration
+    var totalTimeSeconds: Int?
+    var intervals: [TimerInterval] = []
+    var isRepeating: Bool
+    var repeatCount: Int?
+    var restTimeBetweenIntervals: Int? // Add support for rest between different intervals
+    
+    // Metadata
+    var createdDate: Date
+    var lastUsedDate: Date?
+    var useCount: Int
+    
+    init(
+        id: UUID = UUID(),
+        name: String,
+        templateDescription: String? = nil,
+        totalTimeSeconds: Int? = nil,
+        isRepeating: Bool = false,
+        repeatCount: Int? = nil,
+        restTimeBetweenIntervals: Int? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.templateDescription = templateDescription
+        self.totalTimeSeconds = totalTimeSeconds
+        self.isRepeating = isRepeating
+        self.repeatCount = repeatCount
+        self.restTimeBetweenIntervals = restTimeBetweenIntervals
+        self.createdDate = Date()
+        self.useCount = 0
+    }
+}
+
+@Model
+final class TimerInterval {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var workTimeSeconds: Int
+    var restTimeSeconds: Int
+    var repetitions: Int
+    var order: Int
+    
+    init(
+        id: UUID = UUID(),
+        name: String,
+        workTimeSeconds: Int,
+        restTimeSeconds: Int,
+        repetitions: Int,
+        order: Int = 0
+    ) {
+        self.id = id
+        self.name = name
+        self.workTimeSeconds = workTimeSeconds
+        self.restTimeSeconds = restTimeSeconds
+        self.repetitions = repetitions
+        self.order = order
+    }
+}
+
+@Model
+final class TimerSession {
+    @Attribute(.unique) var id: UUID
+    var startDate: Date
+    var endDate: Date?
+    var templateId: UUID?
+    var templateName: String?
+    var planDayId: UUID?
+    var totalElapsedSeconds: Int
+    var completedIntervals: Int
+    var laps: [TimerLap] = []
+    var wasCompleted: Bool
+    
+    init(
+        id: UUID = UUID(),
+        templateId: UUID? = nil,
+        templateName: String? = nil,
+        planDayId: UUID? = nil
+    ) {
+        self.id = id
+        self.startDate = Date()
+        self.templateId = templateId
+        self.templateName = templateName
+        self.planDayId = planDayId
+        self.totalElapsedSeconds = 0
+        self.completedIntervals = 0
+        self.wasCompleted = false
+    }
+}
+
+@Model
+final class TimerLap {
+    @Attribute(.unique) var id: UUID
+    var lapNumber: Int
+    var timestamp: Date
+    var elapsedSeconds: Int
+    var notes: String?
+    
+    init(
+        id: UUID = UUID(),
+        lapNumber: Int,
+        elapsedSeconds: Int,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.lapNumber = lapNumber
+        self.timestamp = Date()
+        self.elapsedSeconds = elapsedSeconds
         self.notes = notes
     }
 }
