@@ -172,6 +172,8 @@ struct TimerView: View {
                         Text(getPhaseText())
                             .font(.title2.weight(.semibold))
                             .foregroundColor(getPhaseColor())
+                            .frame(minWidth: 240, alignment: .center) // Fixed width to accommodate "Rest Between Iterations"
+                            .multilineTextAlignment(.center)
                     }
                 }
             } else {
@@ -256,11 +258,11 @@ struct TimerView: View {
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
                     GridItem(.flexible())
-                ], spacing: 8) {
+                ], spacing: 12) {
                     // Iteration Card
                     if config.isRepeating, let repeatCount = config.repeatCount, repeatCount > 1 {
                         ProgressCard(
-                            title: "Iteration",
+                            title: "Sets",
                             current: timerManager.currentSequenceRepeat + 1,
                             total: repeatCount,
                             color: .purple,
@@ -269,7 +271,7 @@ struct TimerView: View {
                     }
                     // Rep Card
                     ProgressCard(
-                        title: "Rep",
+                        title: "Reps",
                         current: timerManager.currentRepetition + 1,
                         total: timerManager.currentInterval < config.intervals.count ?
                                config.intervals[timerManager.currentInterval].repetitions : 0,
@@ -279,7 +281,7 @@ struct TimerView: View {
                 }
             }
         }
-        .padding(6)
+        .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.regularMaterial)
@@ -394,7 +396,7 @@ struct TimerView: View {
     
     private func getPhaseText() -> String {
         if timerManager.isInBetweenIntervalRest {
-            return "Rest Between Iterations"
+            return "Rest Between Sets"
         } else {
             return timerManager.currentPhase == .work ? "Work" : "Rest"
         }
@@ -852,7 +854,7 @@ struct CustomTimerSetupTab: View {
                 
                 // Add rest between iterations setting
                 HStack {
-                    Text("Rest between iterations:")
+                    Text("Rest between sets:")
                     Spacer()
                     Stepper("\(restBetweenIterations) sec", value: $restBetweenIterations, in: 0...300, step: 5)
                 }

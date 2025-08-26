@@ -461,7 +461,7 @@ struct CustomTimerSetupWithContext: View {
     }
     
     private var restBetweenIntervalsSection: some View {
-        Section("Rest Between Different Intervals") {
+        Section("Rest Between Sets") {
             HStack {
                 Picker("Minutes", selection: $restBetweenIntervalsMinutes) {
                     ForEach(0...10, id: \.self) { minutes in
@@ -829,7 +829,7 @@ struct TimerTemplateEditor: View {
     }
     
     private var restBetweenIntervalsSection: some View {
-        Section("Rest Between Different Intervals") {
+        Section("Rest Between Sets") {
             HStack {
                 Picker("Minutes", selection: $restBetweenIntervalsMinutes) {
                     ForEach(0...10, id: \.self) { minutes in
