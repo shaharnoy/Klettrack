@@ -51,7 +51,7 @@ class TimerManager: ObservableObject {
     }
     
     var currentPhaseTimeRemaining: Int {
-        // Handle rest between intervals
+        // Handle rest between sequences
         if isInBetweenIntervalRest {
             guard let config = configuration,
                   let restBetween = config.restTimeBetweenIntervals else { return 0 }
@@ -89,12 +89,12 @@ class TimerManager: ObservableObject {
         
         let repeatMultiplier = config.isRepeating ? (config.repeatCount ?? 1) : 1
         var totalProgramTime = totalIntervalTime * repeatMultiplier
-        
-        // Add rest time between sequences (not between intervals within a sequence)
-        if config.isRepeating, let restBetweenIntervals = config.restTimeBetweenIntervals, restBetweenIntervals > 0 {
+
+        // Add rest time between sequences if configured
+        if config.isRepeating, let restBetweenSequences = config.restTimeBetweenIntervals, restBetweenSequences > 0 {
             // Rest between sequences: (repeatCount - 1) * restTime
             let restPeriodsBetweenSequences = max(0, repeatMultiplier - 1)
-            totalProgramTime += restPeriodsBetweenSequences * restBetweenIntervals
+            totalProgramTime += restPeriodsBetweenSequences * restBetweenSequences
         }
         
         return max(0, totalProgramTime - totalElapsedTime)
@@ -111,12 +111,10 @@ class TimerManager: ObservableObject {
             let multiplier = config.isRepeating ? (config.repeatCount ?? 1) : 1
             var calculatedTotalTime = intervalTime * multiplier
             
-            // Add rest time between intervals for repeating sequences (same logic as totalTimeRemaining)
-            if config.isRepeating, let restBetweenIntervals = config.restTimeBetweenIntervals, restBetweenIntervals > 0 {
-                let restPeriodsWithinSequences = max(0, config.intervals.count - 1) * multiplier
+            // Add rest time between sequences
+            if config.isRepeating, let restBetweenSequences = config.restTimeBetweenIntervals, restBetweenSequences > 0 {
                 let restPeriodsBetweenSequences = max(0, multiplier - 1)
-                let totalRestPeriods = restPeriodsWithinSequences + restPeriodsBetweenSequences
-                calculatedTotalTime += totalRestPeriods * restBetweenIntervals
+                calculatedTotalTime += restPeriodsBetweenSequences * restBetweenSequences
             }
             
             totalTime = calculatedTotalTime
@@ -315,14 +313,14 @@ class TimerManager: ObservableObject {
         
         if newRepetition > currentRepetition {
             currentRepetition = newRepetition
-            
-            // Only move to next interval when ALL repetitions are complete
-            if currentRepetition >= interval.repetitions {
-                // Check if we're at the end of a cycle and not in the middle of one
-                let isAtEndOfCycle = (timeInCurrentInterval % cycleTime == 0) && timeInCurrentInterval > 0
-                if isAtEndOfCycle {
-                    moveToNextInterval()
-                }
+        }
+        
+        // Check if we've completed ALL repetitions for this interval
+        if currentRepetition >= interval.repetitions {
+            // Check if we've completed the total time for this interval
+            let totalIntervalTime = interval.totalTimeSeconds
+            if timeInCurrentInterval >= totalIntervalTime {
+                moveToNextInterval()
             }
         }
     }
@@ -332,16 +330,18 @@ class TimerManager: ObservableObject {
         
         var totalPreviousTime = 0
         
-        // Add time from previous sequence repeats
+        // Add time from previous sequence repeats (including rest periods between sequences)
         if currentSequenceRepeat > 0 {
             let timePerSequence = config.intervals.reduce(0) { sum, interval in
                 sum + interval.totalTimeSeconds
             }
-            // Add rest between intervals for each previous sequence
-            let restBetweenIntervalsPerSequence = config.intervals.count > 1 ?
-                (config.intervals.count - 1) * (config.restTimeBetweenIntervals ?? 0) : 0
             
-            totalPreviousTime += currentSequenceRepeat * (timePerSequence + restBetweenIntervalsPerSequence)
+            totalPreviousTime += currentSequenceRepeat * timePerSequence
+            
+            // Add rest time between previous sequences
+            if let restBetweenSequences = config.restTimeBetweenIntervals, restBetweenSequences > 0 {
+                totalPreviousTime += currentSequenceRepeat * restBetweenSequences
+            }
         }
         
         // Add time from all previous intervals in current sequence
@@ -349,11 +349,6 @@ class TimerManager: ObservableObject {
             let prevInterval = config.intervals[i]
             totalPreviousTime += prevInterval.totalTimeSeconds
             
-            // Add rest between intervals if applicable (only if not the last interval)
-            if i < config.intervals.count - 1,
-               let restBetween = config.restTimeBetweenIntervals, restBetween > 0 {
-                totalPreviousTime += restBetween
-            }
         }
         
         return currentTime - totalPreviousTime
@@ -371,35 +366,40 @@ class TimerManager: ObservableObject {
         
         // Check if rest period is complete
         if restElapsed >= restBetween {
-            completeIntervalTransition()
+            // Complete the rest between sequences - start next sequence
+            isInBetweenIntervalRest = false
+            currentPhase = .work
+            lastBeepTime = -1
+            // currentInterval is already set to 0 from checkForCompletion
+            // currentRepetition is already set to 0 from checkForCompletion
         }
     }
     
     private func moveToNextInterval() {
         guard let config = configuration else { return }
         
+        // Check if this is the last interval in the current sequence
         let nextInterval = currentInterval + 1
         
-        // Check if there's a next interval and we need rest between intervals
-        if nextInterval < config.intervals.count,
-           let restBetween = config.restTimeBetweenIntervals,
-           restBetween > 0 {
-            
-            // Start rest between intervals
-            isInBetweenIntervalRest = true
-            betweenIntervalRestStartTime = currentTime
-            currentPhase = .rest
-            playSound(.intervalToInterval)
-            lastBeepTime = -1
+        if nextInterval >= config.intervals.count {
+            // We've completed all intervals in the current sequence
+            // This will trigger the sequence repeat logic in checkForCompletion
+            currentInterval = nextInterval // This will make currentInterval >= totalIntervals
         } else {
-            // Move to next interval immediately
+            // Move to the next interval within the current sequence
             completeIntervalTransition()
         }
     }
     
     private func completeIntervalTransition() {
         isInBetweenIntervalRest = false
-        currentInterval += 1
+        
+        // If we're completing a rest between sequences, don't increment currentInterval
+        // because it was already reset to 0 in checkForCompletion()
+        if !isInBetweenIntervalRest {
+            currentInterval += 1
+        }
+        
         currentRepetition = 0
         
         if currentInterval < configuration?.intervals.count ?? 0 {
@@ -434,6 +434,11 @@ class TimerManager: ObservableObject {
         if config.hasIntervals {
             let totalIntervals = config.intervals.count
             let repeatCount = config.isRepeating ? (config.repeatCount ?? 1) : 1
+            
+            // Don't process completion if we're already in rest between sequences
+            if isInBetweenIntervalRest {
+                return
+            }
             
             // Check if we've completed all intervals in the current sequence
             if currentInterval >= totalIntervals {

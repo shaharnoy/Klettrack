@@ -187,6 +187,13 @@ struct TimerView: View {
             // Interval Progress (if applicable) - Bug Fix 4: Make interval counts bigger
             if let config = timerManager.configuration, config.hasIntervals {
                 VStack(spacing: 8) {
+                    // Show iteration information if repeating is enabled
+                    if config.isRepeating, let repeatCount = config.repeatCount, repeatCount > 1 {
+                        Text("Iteration \(timerManager.currentSequenceRepeat + 1) of \(repeatCount)")
+                            .font(.title2.weight(.semibold))
+                            .foregroundColor(.purple)
+                    }
+                    
                     Text("Interval \(timerManager.currentInterval + 1) of \(config.intervals.count)")
                         .font(.title2.weight(.semibold))
                         .foregroundColor(.primary)
@@ -318,7 +325,7 @@ struct TimerView: View {
     
     private func getPhaseText() -> String {
         if timerManager.isInBetweenIntervalRest {
-            return "Rest Between Intervals"
+            return "Rest Between Iterations"
         } else {
             return timerManager.currentPhase == .work ? "Work" : "Rest"
         }
@@ -532,7 +539,7 @@ struct TimerSetupView: View {
                             intervals: intervals,
                             isRepeating: template.isRepeating,
                             repeatCount: template.repeatCount,
-                            restTimeBetweenIntervals: nil
+                            restTimeBetweenIntervals: template.restTimeBetweenIntervals
                         )
                         
                         onConfigurationReady(config, template)
@@ -669,6 +676,7 @@ struct CustomTimerSetupTab: View {
     @State private var intervals: [IntervalInput] = []
     @State private var isRepeating = false
     @State private var repeatCount = 1
+    @State private var restBetweenIterations = 0 // Add rest between iterations setting
     @State private var saveAsTemplate = false
     @State private var templateName = ""
     @State private var templateDescription = ""
@@ -774,6 +782,13 @@ struct CustomTimerSetupTab: View {
             
             if isRepeating {
                 Stepper("Repeat \(repeatCount) times", value: $repeatCount, in: 1...20)
+                
+                // Add rest between iterations setting
+                HStack {
+                    Text("Rest between iterations:")
+                    Spacer()
+                    Stepper("\(restBetweenIterations) sec", value: $restBetweenIterations, in: 0...300, step: 5)
+                }
             }
         }
     }
@@ -805,12 +820,14 @@ struct CustomTimerSetupTab: View {
         let intervalConfigs: [IntervalConfiguration] = (timerType == .intervals || timerType == .both) ?
             intervals.compactMap { $0.toConfiguration() } : []
         
+        let restBetween = (isRepeating && restBetweenIterations > 0) ? restBetweenIterations : nil
+        
         let configuration = TimerConfiguration(
             totalTimeSeconds: totalTime,
             intervals: intervalConfigs,
             isRepeating: isRepeating,
             repeatCount: isRepeating ? repeatCount : nil,
-            restTimeBetweenIntervals: nil
+            restTimeBetweenIntervals: restBetween
         )
         
         // Save as template if requested
@@ -827,7 +844,8 @@ struct CustomTimerSetupTab: View {
             templateDescription: templateDescription.isEmpty ? nil : templateDescription,
             totalTimeSeconds: config.totalTimeSeconds,
             isRepeating: config.isRepeating,
-            repeatCount: config.repeatCount
+            repeatCount: config.repeatCount,
+            restTimeBetweenIntervals: config.restTimeBetweenIntervals
         )
         
         // Add intervals properly with context access
