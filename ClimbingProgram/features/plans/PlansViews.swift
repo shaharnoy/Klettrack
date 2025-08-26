@@ -474,8 +474,17 @@ struct PlanDayEditor: View {
             }
         }
         
-        // Sort chosen exercises by their catalog order
+        // Sort chosen exercises: not quick-logged first (by catalog order), then quick-logged at bottom
         return day.chosenExercises.sorted { name1, name2 in
+            let isLogged1 = isExerciseQuickLogged(name: name1)
+            let isLogged2 = isExerciseQuickLogged(name: name2)
+            
+            // If one is logged and the other isn't, put the unlogged one first
+            if isLogged1 != isLogged2 {
+                return !isLogged1 // not logged (false) comes before logged (true)
+            }
+            
+            // If both have the same logged status, sort by catalog order
             let order1 = exerciseOrderMap[name1] ?? Int.max
             let order2 = exerciseOrderMap[name2] ?? Int.max
             return order1 < order2
