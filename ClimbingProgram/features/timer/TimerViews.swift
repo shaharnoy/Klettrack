@@ -33,11 +33,6 @@ struct TimerView: View {
                     progressSection
                 }
                 
-                // Current Interval Info
-                if let config = timerManager.currentIntervalConfig {
-                    currentIntervalSection(config)
-                }
-                
                 // Control Buttons (without Stop & Reset)
                 controlButtonsSection
                 
@@ -68,18 +63,27 @@ struct TimerView: View {
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("Load Template") {
-                            showingTemplateSelector = true
+                    HStack(spacing: 16) {
+                        // Main menu
+                        Menu {
+                            Section("Timer Setup") {
+                                Button("Select Template", systemImage: "bolt.fill") {
+                                    showingTemplateSelector = true
+                                }
+                                Button("Custom Timer", systemImage: "gearshape.fill") {
+                                    showingCustomTimer = true
+                                }
+                            }
+                            
+                            Section("Template Management") {
+                                Button("All Templates", systemImage: "folder") {
+                                    showingAllTemplates = true
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
                         }
-                        Button("All Templates") {
-                            showingAllTemplates = true
-                        }
-                        Button("Custom Timer") {
-                            showingCustomTimer = true
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }
@@ -136,100 +140,165 @@ struct TimerView: View {
     
     // MARK: - Timer Display Section
     private var timerDisplaySection: some View {
-        VStack(spacing: 10) {
-            // Main time display
-            Text(timerManager.formatTime(timerManager.totalElapsedTime))
-                .font(.system(size: 60, weight: .light, design: .monospaced))
-                .foregroundColor(timerManager.isRunning ? .primary : .secondary)
-            
-            // Time remaining (if applicable)
-            let remaining = timerManager.totalTimeRemaining
-            if remaining > 0 {
-                Text("Remaining: \(timerManager.formatTime(remaining))")
-                    .font(.title3)
-                    .foregroundColor(.secondary)
+        VStack(spacing: 16) {
+            // Main phase display - this is what users care about most
+            if timerManager.configuration?.hasIntervals == true {
+                VStack(spacing: 8) {
+                    // Phase time remaining (main focus - biggest)
+                    if timerManager.currentPhaseTimeRemaining > 0 {
+                        Text(timerManager.formatTime(timerManager.currentPhaseTimeRemaining))
+                            .font(.system(size: 72, weight: .ultraLight, design: .monospaced))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: timerManager.isRunning ? [getPhaseColor(), getPhaseColor().opacity(0.7)] : [.secondary, .secondary],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .contentTransition(.numericText())
+                    }
+                    
+                    // Phase name below (prominent but smaller)
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(getPhaseColor().opacity(0.2))
+                                .frame(width: 16, height: 16)
+                            Circle()
+                                .fill(getPhaseColor())
+                                .frame(width: 10, height: 10)
+                        }
+                        
+                        Text(getPhaseText())
+                            .font(.title2.weight(.semibold))
+                            .foregroundColor(getPhaseColor())
+                    }
+                }
+            } else {
+                // Fallback to total time if no intervals
+                Text(timerManager.formatTime(timerManager.totalElapsedTime))
+                    .font(.system(size: 72, weight: .ultraLight, design: .monospaced))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: timerManager.isRunning ? [.primary, .white] : [.secondary, .secondary],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .contentTransition(.numericText())
             }
             
-            // Current phase indicator
-            if timerManager.configuration?.hasIntervals == true {
-                HStack {
-                    Circle()
-                        .fill(getPhaseColor())
-                        .frame(width: 12, height: 12)
-                    Text(getPhaseText())
-                        .font(.headline)
-                    
-                    if timerManager.currentPhaseTimeRemaining > 0 {
-                        Text("(\(timerManager.formatTime(timerManager.currentPhaseTimeRemaining)))")
-                            .font(.subheadline)
+            // Secondary information: total elapsed and remaining time (smaller, less prominent)
+            HStack(spacing: 20) {
+                // Total elapsed time
+                VStack(spacing: 2) {
+                    Text("Elapsed")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.secondary)
+                    Text(timerManager.formatTime(timerManager.totalElapsedTime))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                        .contentTransition(.numericText())
+                }
+                
+                // Separator
+                Rectangle()
+                    .fill(.secondary.opacity(0.3))
+                    .frame(width: 1, height: 30)
+                
+                // Total time remaining
+                let remaining = timerManager.totalTimeRemaining
+                if remaining > 0 {
+                    VStack(spacing: 2) {
+                        Text("Remaining")
+                            .font(.caption.weight(.medium))
                             .foregroundColor(.secondary)
+                        Text(timerManager.formatTime(remaining))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.primary)
+                            .contentTransition(.numericText())
                     }
+                    .transition(.opacity.combined(with: .scale))
                 }
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(16)
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.regularMaterial)
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        )
     }
     
     // MARK: - Progress Section
     private var progressSection: some View {
-        VStack(spacing: 12) {
-            // Overall Progress
-            ProgressView(value: timerManager.progressPercentage)
-                .progressViewStyle(.linear)
-                .tint(.blue)
-            
-            Text("\(Int(timerManager.progressPercentage * 100))% Complete")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            // Interval Progress (if applicable) - Bug Fix 4: Make interval counts bigger
-            if let config = timerManager.configuration, config.hasIntervals {
-                VStack(spacing: 8) {
-                    // Show iteration information if repeating is enabled
-                    if config.isRepeating, let repeatCount = config.repeatCount, repeatCount > 1 {
-                        Text("Iteration \(timerManager.currentSequenceRepeat + 1) of \(repeatCount)")
-                            .font(.title2.weight(.semibold))
-                            .foregroundColor(.purple)
-                    }
-                    
-                    Text("Interval \(timerManager.currentInterval + 1) of \(config.intervals.count)")
-                        .font(.title2.weight(.semibold))
+        VStack(spacing: 16) {
+            // Overall Progress with enhanced design
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Overall Progress")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(Int(timerManager.progressPercentage * 100))%")
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(.primary)
-                    
-                    Text("Rep \(timerManager.currentRepetition + 1) of \(timerManager.currentInterval < config.intervals.count ? config.intervals[timerManager.currentInterval].repetitions : 0)")
-                        .font(.title3.weight(.medium))
-                        .foregroundColor(.blue)
                 }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
+                
+                ProgressView(value: timerManager.progressPercentage)
+                    .progressViewStyle(.linear)
+                    .scaleEffect(y: 2.0)
+                    .tint(.blue)
+            }
+            
+            // Enhanced interval progress display
+            if let config = timerManager.configuration, config.hasIntervals {
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 8) {
+                    // Iteration Card
+                    if config.isRepeating, let repeatCount = config.repeatCount, repeatCount > 1 {
+                        ProgressCard(
+                            title: "Iteration",
+                            current: timerManager.currentSequenceRepeat + 1,
+                            total: repeatCount,
+                            color: .purple,
+                            icon: "arrow.clockwise"
+                        )
+                    }
+                    // Rep Card
+                    ProgressCard(
+                        title: "Rep",
+                        current: timerManager.currentRepetition + 1,
+                        total: timerManager.currentInterval < config.intervals.count ?
+                               config.intervals[timerManager.currentInterval].repetitions : 0,
+                        color: .green,
+                        icon: "repeat"
+                    )
+                }
             }
         }
+        .padding(6)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.regularMaterial)
+                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+        )
     }
     
     // MARK: - Current Interval Section
     private func currentIntervalSection(_ config: IntervalConfiguration) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Current: \(config.name)")
-                .font(.headline)
-            
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Work: \(timerManager.formatTime(config.workTimeSeconds))")
-                    Text("Rest: \(timerManager.formatTime(config.restTimeSeconds))")
-                }
-                .font(.subheadline)
-                
-                Spacer()
-                
-                Text("\(config.repetitions) reps")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+        HStack {
+            VStack(alignment: .leading) {
+                Text("Work: \(timerManager.formatTime(config.workTimeSeconds))")
+                Text("Rest: \(timerManager.formatTime(config.restTimeSeconds))")
             }
+            .font(.subheadline)
+            
+            Spacer()
         }
-        .padding()
+        .padding(12)
         .background(Color(.systemGray6))
         .cornerRadius(12)
     }
@@ -863,5 +932,45 @@ struct CustomTimerSetupTab: View {
         
         context.insert(template)
         try? context.save()
+    }
+}
+
+// MARK: - Progress Card View
+struct ProgressCard: View {
+    let title: String
+    let current: Int
+    let total: Int
+    let color: Color
+    let icon: String
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                    .font(.title2)
+                
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("\(current) / \(total)")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            ProgressView(value: Double(current), total: Double(total))
+                .progressViewStyle(LinearProgressViewStyle(tint: color))
+                .scaleEffect(y: 1.5)
+        }
+        .padding(16)
+        .frame(width: 160, height: 80) // Fixed size for consistent appearance
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+        )
     }
 }

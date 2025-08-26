@@ -411,6 +411,7 @@ private struct ExerciseSelection: Identifiable, Equatable {
 
 struct PlanDayEditor: View {
     @Environment(\.modelContext) private var context
+    @EnvironmentObject private var timerAppState: TimerAppState
     @State var day: PlanDay
 
     // Catalog picker
@@ -428,9 +429,6 @@ struct PlanDayEditor: View {
     // Quick Progress
     @State private var progressExercise: ExerciseSelection? = nil
     
-    // Timer
-    @State private var showingTimer = false
-
     // Query for logged exercises on this day that belong to this plan
     private var loggedExercisesForDay: [SessionItem] {
         let calendar = Calendar.current
@@ -763,9 +761,9 @@ struct PlanDayEditor: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack {
-                    // Timer button
+                    // Timer button - now switches to the existing timer tab with plan day context
                     Button {
-                        showingTimer = true
+                        timerAppState.switchToTimer(with: day)
                     } label: {
                         Image(systemName: "timer")
                     }
@@ -776,10 +774,6 @@ struct PlanDayEditor: View {
         }
         .sheet(isPresented: $showingPicker) {
             CatalogExercisePicker(selected: $day.chosenExercises)
-        }
-        // Timer sheet
-        .sheet(isPresented: $showingTimer) {
-            TimerView(planDay: day)
         }
         // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in

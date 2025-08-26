@@ -8,31 +8,53 @@
 import SwiftUI
 import SwiftData
 
+// Shared timer state to ensure only one timer instance
+class TimerAppState: ObservableObject {
+    @Published var selectedTab: Int = 0
+    @Published var currentPlanDay: PlanDay? = nil
+    
+    func switchToTimer(with planDay: PlanDay? = nil) {
+        currentPlanDay = planDay
+        selectedTab = 4 // Timer tab index
+    }
+}
+
 struct RootTabView: View {
     @Environment(\.modelContext) private var context
     @State private var isDataReady = false
+    @StateObject private var timerAppState = TimerAppState()
     
     var body: some View {
-        TabView {
+        TabView(selection: $timerAppState.selectedTab) {
             CatalogView()
                 .tabItem { Label("Catalog", systemImage: "square.grid.2x2") }
                 .environment(\.isDataReady, isDataReady)
+                .environmentObject(timerAppState)
+                .tag(0)
             
             PlansListView()
                 .tabItem { Label("Plans", systemImage: "calendar") }
                 .environment(\.isDataReady, isDataReady)
+                .environmentObject(timerAppState)
+                .tag(1)
             
             LogView()
                 .tabItem { Label("Log", systemImage: "square.and.pencil") }
                 .environment(\.isDataReady, isDataReady)
+                .environmentObject(timerAppState)
+                .tag(2)
             
             ProgressViewScreen()
                 .tabItem { Label("Progress", systemImage: "chart.bar") }
                 .environment(\.isDataReady, isDataReady)
+                .environmentObject(timerAppState)
+                .tag(3)
             
-            TimerView(planDay: nil)
+            TimerView(planDay: timerAppState.currentPlanDay)
                 .tabItem { Label("Timer", systemImage: "timer") }
                 .environment(\.isDataReady, isDataReady)
+                .environmentObject(timerAppState)
+                .tag(4)
         }
         .task {
             await initializeData()

@@ -236,8 +236,7 @@ class TimerManager: ObservableObject {
         
         // Add to session if exists
         session?.laps.append(lap)
-        
-        playSound(.lap)
+
     }
     
     // MARK: - Private Methods
