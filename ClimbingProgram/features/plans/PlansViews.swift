@@ -491,6 +491,86 @@ struct PlanDayEditor: View {
         }
     }
 
+    // Helper to get exercises grouped by activity type
+    private func groupedChosenExercises() -> [(activityName: String, activityColor: Color, exercises: [String])] {
+        // Get all catalog data
+        let activityDescriptor = FetchDescriptor<Activity>()
+        let allActivities = (try? context.fetch(activityDescriptor)) ?? []
+        
+        let exerciseDescriptor = FetchDescriptor<Exercise>()
+        let allExercises = (try? context.fetch(exerciseDescriptor)) ?? []
+        
+        // Create a map of exercise names to their parent activity and order
+        var exerciseToActivityMap: [String: (activity: Activity, order: Int)] = [:]
+        
+        for activity in allActivities {
+            for trainingType in activity.types {
+                // Handle direct exercises
+                for exercise in trainingType.exercises {
+                    if let existing = exerciseToActivityMap[exercise.name] {
+                        // Keep the one with lower order if duplicate names exist
+                        if exercise.order < existing.order {
+                            exerciseToActivityMap[exercise.name] = (activity, exercise.order)
+                        }
+                    } else {
+                        exerciseToActivityMap[exercise.name] = (activity, exercise.order)
+                    }
+                }
+                
+                // Handle combination exercises
+                for combination in trainingType.combinations {
+                    for exercise in combination.exercises {
+                        if let existing = exerciseToActivityMap[exercise.name] {
+                            // Keep the one with lower order if duplicate names exist
+                            if exercise.order < existing.order {
+                                exerciseToActivityMap[exercise.name] = (activity, exercise.order)
+                            }
+                        } else {
+                            exerciseToActivityMap[exercise.name] = (activity, exercise.order)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Group chosen exercises by activity
+        let groupedByActivity = Dictionary(grouping: day.chosenExercises) { exerciseName in
+            exerciseToActivityMap[exerciseName]?.activity.name ?? "Unknown"
+        }
+        
+        // Sort groups and exercises within each group
+        var result: [(String, Color, [String])] = []
+        
+        for (activityName, exerciseNames) in groupedByActivity {
+            // Find the activity color
+            let activity = allActivities.first { $0.name == activityName }
+            let activityColor = activity?.hue.color ?? .gray
+            
+            // Sort exercises within the group: unlogged first (by catalog order), then logged
+            let sortedExercises = exerciseNames.sorted { name1, name2 in
+                let isLogged1 = isExerciseQuickLogged(name: name1)
+                let isLogged2 = isExerciseQuickLogged(name: name2)
+                
+                // If one is logged and the other isn't, put the unlogged one first
+                if isLogged1 != isLogged2 {
+                    return !isLogged1
+                }
+                
+                // If both have the same logged status, sort by catalog order
+                let order1 = exerciseToActivityMap[name1]?.order ?? Int.max
+                let order2 = exerciseToActivityMap[name2]?.order ?? Int.max
+                return order1 < order2
+            }
+            
+            result.append((activityName, activityColor, sortedExercises))
+        }
+        
+        // Sort activities by name for consistent display
+        result.sort { $0.0 < $1.0 }
+        
+        return result
+    }
+    
     // Break down exercise row into its own view builder
     @ViewBuilder
     private func exerciseRow(name: String) -> some View {
@@ -585,38 +665,26 @@ struct PlanDayEditor: View {
                 if day.chosenExercises.isEmpty {
                     Text("No activities yet").foregroundStyle(.secondary)
                 } else {
-                    let sortedExercises = sortedChosenExercises()
-                    ForEach(sortedExercises, id: \.self) { name in
-                        exerciseRow(name: name)
-                    }
-                    .onMove { indices, newOffset in
-                        // Convert indices from sorted array to original array
-                        var updatedExercises = day.chosenExercises
-                        let itemsToMove = indices.map { sortedExercises[$0] }
-                        
-                        // Remove items from original positions
-                        for item in itemsToMove {
-                            if let originalIndex = updatedExercises.firstIndex(of: item) {
-                                updatedExercises.remove(at: originalIndex)
-                            }
+                    let groupedExercises = groupedChosenExercises()
+                    ForEach(groupedExercises, id: \.activityName) { group in
+                        // Activity header
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(group.activityColor)
+                                .frame(width: 12, height: 12)
+                            Text(group.activityName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Spacer()
                         }
+                        .padding(.vertical, 4)
+                        .listRowSeparator(.hidden)
                         
-                        // Insert at new position (adjust for already removed items)
-                        let adjustedOffset = min(newOffset, updatedExercises.count)
-                        for (i, item) in itemsToMove.enumerated() {
-                            updatedExercises.insert(item, at: adjustedOffset + i)
+                        // Exercises in this activity group
+                        ForEach(group.exercises, id: \.self) { name in
+                            exerciseRow(name: name)
                         }
-                        
-                        day.chosenExercises = updatedExercises
-                        try? context.save()
-                    }
-                    .onDelete { idx in
-                        // Convert indices from sorted array to original array
-                        let itemsToDelete = idx.map { sortedExercises[$0] }
-                        day.chosenExercises.removeAll { item in
-                            itemsToDelete.contains(item)
-                        }
-                        try? context.save()
                     }
                 }
 
