@@ -575,48 +575,96 @@ struct PlanDayEditor: View {
     @ViewBuilder
     private func exerciseRow(name: String) -> some View {
         let isQuickLogged = isExerciseQuickLogged(name: name)
+        let exerciseInfo = getExerciseInfo(name: name)
         
-        HStack(spacing: 8) {
-            Text(name)
-                .lineLimit(2)
-            Spacer()
-            
-            // Quick Tick (log without details)
-            Button {
-                quickLogExercise(name: name)
-            } label: {
-                Image(systemName: isQuickLogged ? "checkmark.circle.fill" : "checkmark.circle")
-            }
-            .labelStyle(.iconOnly)
-            .controlSize(.small)
-            .buttonStyle(.bordered)
-            .foregroundColor(isQuickLogged ? .gray : .green)
-            .disabled(isQuickLogged)
-            .accessibilityLabel(isQuickLogged ? "\(name) already logged" : "Quick log \(name)")
-            
-            // Quick Progress (icon-only)
-            Button {
-                progressExercise = ExerciseSelection(name: name)
-            } label: {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-            }
-            .labelStyle(.iconOnly)
-            .controlSize(.small)
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Show progress for \(name)")
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(name)
+                    .lineLimit(2)
+                Spacer()
+                
+                // Quick Tick (log without details)
+                Button {
+                    quickLogExercise(name: name)
+                } label: {
+                    Image(systemName: isQuickLogged ? "checkmark.circle.fill" : "checkmark.circle")
+                }
+                .labelStyle(.iconOnly)
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .foregroundColor(isQuickLogged ? .gray : .green)
+                .disabled(isQuickLogged)
+                .accessibilityLabel(isQuickLogged ? "\(name) already logged" : "Quick log \(name)")
+                
+                // Quick Progress (icon-only)
+                Button {
+                    progressExercise = ExerciseSelection(name: name)
+                } label: {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                }
+                .labelStyle(.iconOnly)
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Show progress for \(name)")
 
-            // Quick Log with details (icon-only)
-            Button {
-                loggingExercise = ExerciseSelection(name: name)
-                inputReps = ""; inputSets = ""; inputWeight = ""; inputGrade = ""; inputNotes = ""
-            } label: {
-                Image(systemName: "square.and.pencil")
+                // Quick Log with details (icon-only)
+                Button {
+                    loggingExercise = ExerciseSelection(name: name)
+                    inputReps = ""; inputSets = ""; inputWeight = ""; inputGrade = ""; inputNotes = ""
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .labelStyle(.iconOnly)
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Log exercise details for \(name)")
             }
-            .labelStyle(.iconOnly)
-            .controlSize(.small)
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Log exercise details for \(name)")
+            
+            // Exercise guidance information
+            if exerciseInfo.hasGuidance {
+                HStack(spacing: 12) {
+                    if let reps = exerciseInfo.repsText {
+                        HStack(spacing: 4) {
+                            Text("Reps").bold().foregroundStyle(.primary)
+                            Text(reps)
+                        }
+                    }
+                    if let sets = exerciseInfo.setsText {
+                        HStack(spacing: 4) {
+                            Text("Sets").bold().foregroundStyle(.primary)
+                            Text(sets)
+                        }
+                    }
+                    if let rest = exerciseInfo.restText {
+                        HStack(spacing: 4) {
+                            Text("Rest").bold().foregroundStyle(.primary)
+                            Text(rest)
+                        }
+                    }
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 4)
+            }
         }
+    }
+    
+    // Helper to get exercise information from catalog
+    private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?, hasGuidance: Bool) {
+        let exerciseDescriptor = FetchDescriptor<Exercise>()
+        let allExercises = (try? context.fetch(exerciseDescriptor)) ?? []
+        
+        // Find the exercise by name
+        let exercise = allExercises.first { $0.name == name }
+        
+        let reps = exercise?.repsText
+        let sets = exercise?.setsText
+        let rest = exercise?.restText
+        let hasGuidance = (reps != nil && !reps!.isEmpty) ||
+                         (sets != nil && !sets!.isEmpty) ||
+                         (rest != nil && !rest!.isEmpty)
+        
+        return (reps, sets, rest, hasGuidance)
     }
     
     // Helper function to check if an exercise has been quick-logged today
