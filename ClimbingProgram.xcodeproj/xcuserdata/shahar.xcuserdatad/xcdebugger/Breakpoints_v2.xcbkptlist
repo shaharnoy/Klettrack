@@ -60,8 +60,8 @@
             filePath = "ClimbingProgram/features/timer/TimerTemplateViews.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "612"
-            endingLineNumber = "612"
+            startingLineNumber = "608"
+            endingLineNumber = "608"
             landmarkName = "IntervalInputRow"
             landmarkType = "14">
          </BreakpointContent>

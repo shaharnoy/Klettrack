@@ -753,13 +753,11 @@ struct CustomTimerSetupTab: View {
     private enum TimerType: CaseIterable {
         case totalTime
         case intervals
-        case both
         
         var title: String {
             switch self {
             case .totalTime: return "Total Time"
             case .intervals: return "Intervals"
-            case .both: return "Both"
             }
         }
     }
@@ -775,15 +773,15 @@ struct CustomTimerSetupTab: View {
                 .pickerStyle(.segmented)
             }
             
-            if timerType == .totalTime || timerType == .both {
+            if timerType == .totalTime {
                 totalTimeSection
             }
             
-            if timerType == .intervals || timerType == .both {
+            if timerType == .intervals {
                 intervalsSection
             }
             
-            if timerType == .intervals || timerType == .both {
+            if timerType == .intervals {
                 repeatSection
             }
             
@@ -872,10 +870,10 @@ struct CustomTimerSetupTab: View {
     
     // MARK: - Helper Properties
     private var isValidConfiguration: Bool {
-        let hasTotalTime = (timerType == .totalTime || timerType == .both) &&
+        let hasTotalTime = (timerType == .totalTime) &&
                           (totalTimeMinutes > 0 || totalTimeSeconds > 0)
         
-        let hasValidIntervals = (timerType == .intervals || timerType == .both) &&
+        let hasValidIntervals = (timerType == .intervals) &&
                                intervals.allSatisfy { $0.isValid }
         
         return hasTotalTime || hasValidIntervals
@@ -883,10 +881,10 @@ struct CustomTimerSetupTab: View {
     
     // MARK: - Actions
     private func createTimer() {
-        let totalTime: Int? = (timerType == .totalTime || timerType == .both) ?
+        let totalTime: Int? = (timerType == .totalTime) ?
                              (totalTimeMinutes * 60 + totalTimeSeconds) : nil
         
-        let intervalConfigs: [IntervalConfiguration] = (timerType == .intervals || timerType == .both) ?
+        let intervalConfigs: [IntervalConfiguration] = (timerType == .intervals) ?
             intervals.compactMap { $0.toConfiguration() } : []
         
         let restBetween = (isRepeating && restBetweenIterations > 0) ? restBetweenIterations : nil

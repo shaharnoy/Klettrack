@@ -153,13 +153,11 @@ struct CustomTimerSetup: View {
     private enum TimerType: CaseIterable {
         case totalTime
         case intervals
-        case both
         
         var title: String {
             switch self {
             case .totalTime: return "Total Time"
             case .intervals: return "Intervals"
-            case .both: return "Both"
             }
         }
     }
@@ -176,15 +174,15 @@ struct CustomTimerSetup: View {
                     .pickerStyle(.segmented)
                 }
                 
-                if timerType == .totalTime || timerType == .both {
+                if timerType == .totalTime  {
                     totalTimeSection
                 }
                 
-                if timerType == .intervals || timerType == .both {
+                if timerType == .intervals {
                     intervalsSection
                 }
                 
-                if timerType == .intervals || timerType == .both {
+                if timerType == .intervals {
                     repeatSection
                 }
                 
@@ -276,10 +274,10 @@ struct CustomTimerSetup: View {
     
     // MARK: - Helper Properties
     private var isValidConfiguration: Bool {
-        let hasTotalTime = (timerType == .totalTime || timerType == .both) &&
+        let hasTotalTime = (timerType == .totalTime ) &&
                           (totalTimeMinutes > 0 || totalTimeSeconds > 0)
         
-        let hasValidIntervals = (timerType == .intervals || timerType == .both) &&
+        let hasValidIntervals = (timerType == .intervals ) &&
                                intervals.allSatisfy { $0.isValid }
         
         return hasTotalTime || hasValidIntervals
@@ -287,10 +285,10 @@ struct CustomTimerSetup: View {
     
     // MARK: - Actions
     private func createTimer() {
-        let totalTime: Int? = (timerType == .totalTime || timerType == .both) ?
+        let totalTime: Int? = (timerType == .totalTime ) ?
                              (totalTimeMinutes * 60 + totalTimeSeconds) : nil
         
-        let intervalConfigs: [IntervalConfiguration] = (timerType == .intervals || timerType == .both) ?
+        let intervalConfigs: [IntervalConfiguration] = (timerType == .intervals ) ?
             intervals.compactMap { $0.toConfiguration() } : []
         
         let configuration = TimerConfiguration(
@@ -360,13 +358,11 @@ struct CustomTimerSetupWithContext: View {
     private enum TimerType: CaseIterable {
         case totalTime
         case intervals
-        case both
         
         var title: String {
             switch self {
             case .totalTime: return "Total Time"
             case .intervals: return "Intervals"
-            case .both: return "Both"
             }
         }
     }
@@ -383,16 +379,16 @@ struct CustomTimerSetupWithContext: View {
                     .pickerStyle(.segmented)
                 }
                 
-                if timerType == .totalTime || timerType == .both {
+                if timerType == .totalTime {
                     totalTimeSection
                 }
                 
-                if timerType == .intervals || timerType == .both {
+                if timerType == .intervals {
                     intervalsSection
                     restBetweenIntervalsSection
                 }
                 
-                if timerType == .intervals || timerType == .both {
+                if timerType == .intervals  {
                     repeatSection
                 }
                 
@@ -508,10 +504,10 @@ struct CustomTimerSetupWithContext: View {
     
     // MARK: - Helper Properties
     private var isValidConfiguration: Bool {
-        let hasTotalTime = (timerType == .totalTime || timerType == .both) &&
+        let hasTotalTime = (timerType == .totalTime) &&
                           (totalTimeMinutes > 0 || totalTimeSeconds > 0)
         
-        let hasValidIntervals = (timerType == .intervals || timerType == .both) &&
+        let hasValidIntervals = (timerType == .intervals) &&
                                intervals.allSatisfy { $0.isValid }
         
         return hasTotalTime || hasValidIntervals
@@ -519,10 +515,10 @@ struct CustomTimerSetupWithContext: View {
     
     // MARK: - Actions
     private func createTimer() {
-        let totalTime: Int? = (timerType == .totalTime || timerType == .both) ?
+        let totalTime: Int? = (timerType == .totalTime ) ?
                              (totalTimeMinutes * 60 + totalTimeSeconds) : nil
         
-        let intervalConfigs: [IntervalConfiguration] = (timerType == .intervals || timerType == .both) ?
+        let intervalConfigs: [IntervalConfiguration] = (timerType == .intervals ) ?
             intervals.compactMap { $0.toConfiguration() } : []
         
         let restBetween = restBetweenIntervalsMinutes * 60 + restBetweenIntervalsSeconds
@@ -574,11 +570,11 @@ struct CustomTimerSetupWithContext: View {
 
 // MARK: - Interval Input
 struct IntervalInput {
-    var workMinutes: Int = 3
+    var workMinutes: Int = 0
     var workSeconds: Int = 0
-    var restMinutes: Int = 1
+    var restMinutes: Int = 0
     var restSeconds: Int = 0
-    var repetitions: Int = 6
+    var repetitions: Int = 2
     
     var workTime: TimeInterval {
         TimeInterval(workMinutes * 60 + workSeconds)
@@ -713,13 +709,11 @@ struct TimerTemplateEditor: View {
     private enum TimerType: CaseIterable {
         case totalTime
         case intervals
-        case both
         
         var title: String {
             switch self {
             case .totalTime: return "Total Time"
             case .intervals: return "Intervals"
-            case .both: return "Both"
             }
         }
     }
@@ -746,16 +740,16 @@ struct TimerTemplateEditor: View {
                     .pickerStyle(.segmented)
                 }
                 
-                if timerType == .totalTime || timerType == .both {
+                if timerType == .totalTime  {
                     totalTimeSection
                 }
                 
-                if timerType == .intervals || timerType == .both {
+                if timerType == .intervals {
                     intervalsSection
                     restBetweenIntervalsSection
                 }
                 
-                if timerType == .intervals || timerType == .both {
+                if timerType == .intervals  {
                     repeatSection
                 }
                 
@@ -872,10 +866,10 @@ struct TimerTemplateEditor: View {
     private var isValidTemplate: Bool {
         guard !templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         
-        let hasTotalTime = (timerType == .totalTime || timerType == .both) &&
+        let hasTotalTime = (timerType == .totalTime ) &&
                           (totalTimeMinutes > 0 || totalTimeSeconds > 0)
         
-        let hasValidIntervals = (timerType == .intervals || timerType == .both) &&
+        let hasValidIntervals = (timerType == .intervals) &&
                                !intervals.isEmpty && intervals.allSatisfy { $0.isValid }
         
         return hasTotalTime || hasValidIntervals
@@ -893,11 +887,8 @@ struct TimerTemplateEditor: View {
             
             // Determine timer type
             let hasTotal = template.totalTimeSeconds != nil
-            let hasIntervals = !template.intervals.isEmpty
             
-            if hasTotal && hasIntervals {
-                timerType = .both
-            } else if hasTotal {
+            if hasTotal {
                 timerType = .totalTime
             } else {
                 timerType = .intervals
@@ -950,7 +941,7 @@ struct TimerTemplateEditor: View {
         template.templateDescription = templateDescription.isEmpty ? nil : templateDescription
         
         // Set total time
-        if timerType == .totalTime || timerType == .both {
+        if timerType == .totalTime {
             template.totalTimeSeconds = totalTimeMinutes * 60 + totalTimeSeconds
         } else {
             template.totalTimeSeconds = nil
@@ -965,7 +956,7 @@ struct TimerTemplateEditor: View {
         template.restTimeBetweenIntervals = restBetween > 0 ? restBetween : nil
         
         // Handle intervals
-        if timerType == .intervals || timerType == .both {
+        if timerType == .intervals {
             // Remove existing intervals if editing
             if existingTemplate != nil {
                 for interval in template.intervals {

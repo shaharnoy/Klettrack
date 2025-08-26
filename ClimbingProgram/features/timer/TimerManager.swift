@@ -369,6 +369,8 @@ class TimerManager: ObservableObject {
             isInBetweenIntervalRest = false
             currentPhase = .work
             lastBeepTime = -1
+            // Play the same sound as when transitioning from rest to work
+            playSound(.restToWork)
             // currentInterval is already set to 0 from checkForCompletion
             // currentRepetition is already set to 0 from checkForCompletion
         }

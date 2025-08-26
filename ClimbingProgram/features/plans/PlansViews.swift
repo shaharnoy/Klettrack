@@ -731,6 +731,15 @@ struct PlanDayEditor: View {
                         ForEach(group.exercises, id: \.self) { name in
                             exerciseRow(name: name)
                         }
+                        .onDelete { indexSet in
+                            for index in indexSet {
+                                let exerciseToRemove = group.exercises[index]
+                                if let dayIndex = day.chosenExercises.firstIndex(of: exerciseToRemove) {
+                                    day.chosenExercises.remove(at: dayIndex)
+                                }
+                            }
+                            try? context.save()
+                        }
                     }
                 }
 
