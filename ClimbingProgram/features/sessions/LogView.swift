@@ -232,8 +232,8 @@ struct SessionItemRow: View {
                 }
             }
             HStack(spacing: 16) {
-                if let r = item.reps { Text("Reps: \(r)") }
-                if let s = item.sets { Text("Sets: \(s)") }
+                if let r = item.reps { Text(String(format: "reps: %.1f", r)) }
+                if let s = item.sets { Text(String(format: "sets: %.1f", s)) }
                 if let w = item.weightKg { Text(String(format: "Wt: %.1f kg", w)) }
                 if let g = item.grade { Text("Grade: \(g)") }
             }
@@ -293,8 +293,8 @@ struct AddSessionItemSheet: View {
                 }
                 
                 Section("Details") {
-                    TextField("Reps (integer)", text: $inputReps).keyboardType(.numberPad)
-                    TextField("Sets (integer)", text: $inputSets).keyboardType(.numberPad)
+                    TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
+                    TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
                     TextField("Weight (kg)", text: $inputWeight).keyboardType(.decimalPad)
                     TextField("Grade (e.g., 6a+)", text: $inputGrade)
                         .autocapitalization(.none)
@@ -308,8 +308,10 @@ struct AddSessionItemSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
-                        let reps = Int(inputReps.trimmingCharacters(in: .whitespaces))
-                        let sets = Int(inputSets.trimmingCharacters(in: .whitespaces))
+                        let reps = Double(inputReps.replacingOccurrences(of: ",", with: ".")
+                            .trimmingCharacters(in: .whitespaces))
+                        let sets = Double(inputSets.replacingOccurrences(of: ",", with: ".")
+                            .trimmingCharacters(in: .whitespaces))
                         let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
                         let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
@@ -498,8 +500,8 @@ struct EditSessionItemView: View {
                 }
                 
                 Section("Details") {
-                    TextField("Reps (integer)", text: $inputReps).keyboardType(.numberPad)
-                    TextField("Sets (integer)", text: $inputSets).keyboardType(.numberPad)
+                    TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
+                    TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
                     TextField("Weight (kg)", text: $inputWeight).keyboardType(.decimalPad)
                     TextField("Grade (e.g., 6a+)", text: $inputGrade)
                         .autocapitalization(.none)
@@ -516,8 +518,10 @@ struct EditSessionItemView: View {
                         item.exerciseName = selectedName
                         item.planSourceId = selectedPlan?.id
                         item.planName = selectedPlan?.name
-                        item.reps = Int(inputReps.trimmingCharacters(in: .whitespaces))
-                        item.sets = Int(inputSets.trimmingCharacters(in: .whitespaces))
+                        item.reps = Double(inputReps.replacingOccurrences(of: ",", with: ".")
+                            .trimmingCharacters(in: .whitespaces))
+                        item.sets = Double(inputSets.replacingOccurrences(of: ",", with: ".")
+                            .trimmingCharacters(in: .whitespaces))
                         item.weightKg = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
                         item.grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)

@@ -202,7 +202,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
                 exerciseName: exerciseName,
                 planSourceId: plan.id,
                 planName: plan.name,
-                reps: Int.random(in: 8...12),
+                reps: Double.random(in: 8...12),
                 sets: 3
             )
             session.items.append(item)
@@ -232,7 +232,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
             Date()
         ]
         
-        let progressData: [(reps: Int, sets: Int, weight: Double)] = [
+        let progressData: [(reps: Double, sets: Double, weight: Double)] = [
             (8, 3, 60.0),
             (10, 3, 65.0),
             (12, 3, 70.0)

@@ -485,6 +485,8 @@ struct PlanDayEditor: View {
     // Break down exercise row into its own view builder
     @ViewBuilder
     private func exerciseRow(name: String) -> some View {
+        let isQuickLogged = isExerciseQuickLogged(name: name)
+        
         HStack(spacing: 8) {
             Text(name)
                 .lineLimit(2)
@@ -494,13 +496,14 @@ struct PlanDayEditor: View {
             Button {
                 quickLogExercise(name: name)
             } label: {
-                Image(systemName: "checkmark.circle")
+                Image(systemName: isQuickLogged ? "checkmark.circle.fill" : "checkmark.circle")
             }
             .labelStyle(.iconOnly)
             .controlSize(.small)
             .buttonStyle(.bordered)
-            .foregroundColor(.green)
-            .accessibilityLabel("Quick log \(name)")
+            .foregroundColor(isQuickLogged ? .gray : .green)
+            .disabled(isQuickLogged)
+            .accessibilityLabel(isQuickLogged ? "\(name) already logged" : "Quick log \(name)")
             
             // Quick Progress (icon-only)
             Button {
@@ -527,6 +530,13 @@ struct PlanDayEditor: View {
         }
     }
     
+    // Helper function to check if an exercise has been quick-logged today
+    private func isExerciseQuickLogged(name: String) -> Bool {
+        return loggedExercisesForDay.contains { item in
+            item.exerciseName == name && item.notes == "Quick logged"
+        }
+    }
+    
     // Row for logged exercises
     @ViewBuilder
     private func loggedExerciseRow(item: SessionItem) -> some View {
@@ -535,8 +545,8 @@ struct PlanDayEditor: View {
                 Text(item.exerciseName)
                     .lineLimit(2)
                 LogMetricRow(
-                    reps: item.reps.map(String.init),
-                    sets: item.sets.map(String.init),
+                    reps: item.reps.map{ String(format: "%.1f", $0) },
+                    sets: item.sets.map{ String(format: "%.1f", $0) },
                     weight: item.weightKg.map { String(format: "%.1f", $0) },
                     grade: item.grade
                 )
@@ -670,8 +680,8 @@ struct PlanDayEditor: View {
     }
     
     private func saveLogEntry(exerciseName: String) {
-        let reps = Int(inputReps.trimmingCharacters(in: .whitespaces))
-        let sets = Int(inputSets.trimmingCharacters(in: .whitespaces))
+        let reps = Double(inputReps.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+        let sets = Double(inputSets.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
         let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
         let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
 
@@ -737,7 +747,7 @@ struct PlanDayEditor: View {
             Section {
                 LabeledContent {
                     TextField("e.g. 10", text: $inputReps)
-                        .keyboardType(.numberPad)
+                        .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                 } label: {
                     Label("Reps", systemImage: "repeat")
@@ -745,7 +755,7 @@ struct PlanDayEditor: View {
 
                 LabeledContent {
                     TextField("e.g. 3", text: $inputSets)
-                        .keyboardType(.numberPad)
+                        .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                 } label: {
                     Label("Sets", systemImage: "square.grid.3x3")
@@ -808,7 +818,7 @@ private struct QuickExerciseProgress: View {
     
     // Break down complex view hierarchy into smaller components
     @ViewBuilder
-    private func recentLogsSection(recent: [(date: Date, reps: Int?, sets: Int?, weight: Double?)]) -> some View {
+    private func recentLogsSection(recent: [(date: Date, reps: Double?, sets: Double?, weight: Double?)]) -> some View {
         Section {
             if recent.isEmpty {
                 Text("No logs yet for this exercise").foregroundStyle(.secondary)
@@ -818,8 +828,8 @@ private struct QuickExerciseProgress: View {
                         Text(r.date.formatted(date: .abbreviated, time: .omitted))
                         Spacer()
                         LogMetricRow(
-                            reps: r.reps.map(String.init),
-                            sets: r.sets.map(String.init),
+                            reps: r.reps.map { String(format: "%.1f", $0) },
+                            sets: r.sets.map { String(format: "%.1f", $0) },
                             weight: r.weight.map { String(format: "%.1f", $0) },
                             grade: nil
                         )
@@ -883,7 +893,7 @@ private struct QuickExerciseProgress: View {
     }
 
     // Build recent rows quickly from all sessions
-    private func rows() -> [(date: Date, reps: Int?, sets: Int?, weight: Double?)] {
+    private func rows() -> [(date: Date, reps: Double?, sets: Double?, weight: Double?)] {
         let descriptor = FetchDescriptor<Session>(
             sortBy: [SortDescriptor<Session>(\.date, order: .reverse)]
         )
@@ -904,9 +914,9 @@ private struct QuickExerciseProgress: View {
         }
     }
 
-    private func loadSeries(from rows: [(Date, Int?, Int?, Double?)]) {
-        pointsReps = rows.compactMap { (d, r, _, _) in r.map { DataPoint(date: d, value: Double($0)) } }
-        pointsSets = rows.compactMap { (d, _, s, _) in s.map { DataPoint(date: d, value: Double($0)) } }
+    private func loadSeries(from rows: [(Date, Double?, Double?, Double?)]) {
+        pointsReps = rows.compactMap { (d, r, _, _) in r.map { DataPoint(date: d, value: $0) } }
+        pointsSets = rows.compactMap { (d, _, s, _) in s.map { DataPoint(date: d, value: $0) } }
         pointsWeight = rows.compactMap { (d, _, _, w) in w.map { DataPoint(date: d, value: $0) } }
     }
 

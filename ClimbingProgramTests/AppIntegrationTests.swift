@@ -152,7 +152,7 @@ class AppIntegrationTests: ClimbingProgramTestSuite {
                 exerciseName: exerciseName,
                 planSourceId: plan.id,
                 planName: plan.name,
-                reps: Int.random(in: 8...12),
+                reps: Double.random(in: 8...12),
                 sets: 3
             )
             session.items.append(item)

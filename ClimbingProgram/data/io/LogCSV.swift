@@ -76,8 +76,8 @@ enum LogCSV {
                 rows.append([
                     d,
                     csvEscape(i.exerciseName),
-                    i.reps.map(String.init) ?? "",
-                    i.sets.map(String.init) ?? "",
+                    i.reps.map{ String(format: "%.3f", $0) } ?? "",
+                    i.sets.map{ String(format: "%.3f", $0) } ?? "",
                     i.weightKg.map { String(format: "%.3f", $0) } ?? "",
                     i.planSourceId?.uuidString ?? "",
                     csvEscape(i.planName ?? ""),
@@ -196,8 +196,12 @@ enum LogCSV {
             }()
 
             // Parse numeric fields (empty -> nil)
-            let reps = Int(repsStr.trimmingCharacters(in: .whitespacesAndNewlines))
-            let sets = Int(setsStr.trimmingCharacters(in: .whitespacesAndNewlines))
+            let reps = Double(repsStr.replacingOccurrences(of: ",", with: ".")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+            let sets = Double(setsStr.replacingOccurrences(of: ",", with: ".")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
             let weight = Double(
                 weightStr
                     .replacingOccurrences(of: ",", with: ".")
@@ -367,8 +371,8 @@ private func parseCSVLine(_ line: String) -> [String] {
 /// Build a dedupe signature for an item row
 private func itemSignature(date: Date,
                            name: String,
-                           reps: Int?,
-                           sets: Int?,
+                           reps: Double?,
+                           sets: Double?,
                            weight: Double?,
                            planId: UUID?,
                            planName: String?,
@@ -382,8 +386,8 @@ private func itemSignature(date: Date,
     return [
         df.string(from: date),
         norm(name),
-        reps.map(String.init) ?? "",
-        sets.map(String.init) ?? "",
+        reps.map{ String(format: "%.3f", $0) } ?? "",
+        sets.map{ String(format: "%.3f", $0) } ?? "",
         weight.map { String(format: "%.3f", $0) } ?? "",
         planId?.uuidString ?? "",
         norm(planName)
@@ -403,8 +407,8 @@ extension LogCSV {
     struct Entry {
         let date: Date
         let name: String
-        let reps: Int?
-        let sets: Int?
+        let reps: Double?
+        let sets: Double?
         let weight: Double?
         let planId: UUID?
         let planName: String?
@@ -472,8 +476,12 @@ extension LogCSV {
                 else { continue }
 
                 let name   = nameRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-                let reps   = Int(repsStr.trimmingCharacters(in: .whitespacesAndNewlines))
-                let sets   = Int(setsStr.trimmingCharacters(in: .whitespacesAndNewlines))
+                let reps   = Double(repsStr.replacingOccurrences(of: ",", with: ".")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                let sets   = Double(setsStr.replacingOccurrences(of: ",", with: ".")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                )
                 let weight = Double(weightStr
                     .replacingOccurrences(of: ",", with: ".")
                     .trimmingCharacters(in: .whitespacesAndNewlines)

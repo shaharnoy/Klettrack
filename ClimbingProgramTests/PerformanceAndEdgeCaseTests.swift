@@ -265,8 +265,8 @@ class PerformanceAndEdgeCaseTests: ClimbingProgramTestSuite {
             for j in 0..<15 {
                 let item = SessionItem(
                     exerciseName: "Exercise \(j)",
-                    reps: Int.random(in: 5...20),
-                    sets: Int.random(in: 2...5),
+                    reps: Double.random(in: 5...20),
+                    sets: Double.random(in: 2...5),
                     weightKg: Double.random(in: 0...150),
                     notes: "Session \(i) item \(j)"
                 )

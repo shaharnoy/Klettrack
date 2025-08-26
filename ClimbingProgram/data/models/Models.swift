@@ -122,8 +122,8 @@ final class SessionItem {
     var planName: String?
 
     // Structured metrics
-    var reps: Int?
-    var sets: Int?
+    var reps: Double?
+    var sets: Double?
     var weightKg: Double?
     var grade: String?  // For bouldering grades (e.g., "6a+", "7b")
     var notes: String?
@@ -133,8 +133,8 @@ final class SessionItem {
         exerciseName: String,
         planSourceId: UUID? = nil,
         planName: String? = nil,
-        reps: Int? = nil,
-        sets: Int? = nil,
+        reps: Double? = nil,
+        sets: Double? = nil,
         weightKg: Double? = nil,
         grade: String? = nil,
         notes: String? = nil
