@@ -172,6 +172,9 @@ struct SeedData {
                 // Save all
                 [core, ant, climb, boulder].forEach { context.insert($0) }
                 try? context.save()
+                
+                // Seed timer templates
+                SeedTimerTemplates.loadIfNeeded(context)
             }
     static func nukeAndReseed(_ context: ModelContext) {
         // Delete everything
@@ -183,6 +186,10 @@ struct SeedData {
         try? context.delete(model: Session.self)
         try? context.delete(model: SessionItem.self)
         try? context.save()
+        
+        // Also nuke and reseed timer templates
+        SeedTimerTemplates.nukeAndReseed(context)
+        
         // Seed fresh
         loadIfNeeded(context)
     }

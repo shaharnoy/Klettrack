@@ -164,7 +164,7 @@ final class TimerTemplate {
     var intervals: [TimerInterval] = []
     var isRepeating: Bool
     var repeatCount: Int?
-    var restTimeBetweenIntervals: Int? // Add support for rest between different intervals
+    var restTimeBetweenIntervals: Int? // Rest time between different intervals
     
     // Metadata
     var createdDate: Date

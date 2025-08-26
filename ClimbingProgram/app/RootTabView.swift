@@ -59,6 +59,7 @@ struct RootTabView: View {
         .task {
             await initializeData()
             //SeedData.nukeAndReseed(context) // Uncomment this line to reset data during development
+            //SeedTimerTemplates.nukeAndReseed(context) // Uncomment this line to reset data during development
         }
     }
     
@@ -68,6 +69,9 @@ struct RootTabView: View {
         try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
         
         SeedData.loadIfNeeded(context)
+        
+        // Seed timer templates
+        SeedTimerTemplates.loadIfNeeded(context)
         
         // Non-destructive catalog deltas migration (run once per key)
         runOnce(per: "catalog_2025-08-21_bouldering") {

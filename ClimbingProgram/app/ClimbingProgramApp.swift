@@ -14,10 +14,7 @@ struct ClimbingProgramApp: App {
         WindowGroup {
             RootTabView()
                 .onAppear {
-                    // no-op; seeding happens in .task below
-                }
-                .task {
-                    // Seed after model container exists
+                    // Seeding happens when the view appears with proper context
                 }
         }
         .modelContainer(for: [
@@ -26,6 +23,5 @@ struct ClimbingProgramApp: App {
             Plan.self, PlanDay.self,
             TimerTemplate.self, TimerInterval.self, TimerSession.self, TimerLap.self
         ])
-
     }
 }
