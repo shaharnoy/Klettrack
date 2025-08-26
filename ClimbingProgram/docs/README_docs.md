@@ -189,118 +189,242 @@ RootTabView
 - **plans/**: Training plan management and day-by-day tracking
 - **sessions/**: Direct workout logging
 - **analytics/**: Progress tracking and visualization
+- **timer/**: Interval training and workout timing system
 
-### **Data Layer** (`/data/`)
-- **models/**: SwiftData entity definitions
-- **persistence/**: Data seeding, factory patterns, utilities
-- **io/**: Import/export functionality (CSV)
+## ⏱️ Timer Module Architecture
 
-### **Design Layer** (`/design/`)
-- **Theme.swift**: Color schemes, typography, spacing constants
+The timer module provides a comprehensive interval training system with template management, customizable workout timers, and session tracking. This system integrates with the main app to enhance workout planning and execution.
 
-### **Shared Layer** (`/shared/`)
-- **SharedSheet.swift**: Reusable UI components
+### Timer System Overview
 
-## 🔄 Key Design Patterns
-
-### 1. **Repository Pattern**
-- SwiftData handles data persistence automatically
-- Context injection through SwiftUI environment
-- Centralized model container configuration
-
-### 2. **Factory Pattern**
-- **PlanFactory**: Creates plan templates with appropriate day structures
-- **SeedData**: Populates initial exercise catalog
-
-### 3. **Observer Pattern**
-- SwiftUI's reactive data binding
-- @Query automatically updates views when data changes
-- Environment-based dependency injection
-
-### 4. **Strategy Pattern**
-- **PlanKind**: Different plan generation strategies
-- **DayType**: Different day type behaviors and UI representation
-
-## 📱 User Journey Flow Charts
-
-### Exercise Selection Journey
 ```
-Start ──► Catalog Tab ──► Activity ──► TrainingType ──► Exercise
-                                                         │
-                                                         ▼
-                                              Add to Plan ──► PlanDay
-                                                         │
-                                                         ▼
-                                                    Save & Complete
+┌─────────────────────────────────────────────────────────────┐
+│                     Timer Module                            │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐│
+│  │  TimerManager   │  │ Timer Templates │  │ Timer Sessions  ││
+│  │  (State Logic)  │  │  (Presets)      │  │   (History)     ││
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Timer Components                          │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐│
+│  │   TimerView     │  │  Template Mgmt  │  │  Custom Setup   ││
+│  │ (Main Interface)│  │    Views        │  │     Views       ││
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘│
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Workout Logging Journey
+### Core Timer Components
+
+#### 1. **TimerManager** (`TimerManager.swift`)
+Central state management class that handles all timer logic and coordination.
+
+**Key Responsibilities:**
+- **State Management**: Controls timer states (stopped, running, paused, completed)
+- **Interval Logic**: Manages work/rest cycles and interval progressions
+- **Time Calculations**: Tracks elapsed time, remaining time, and phase transitions
+- **Audio Feedback**: Provides countdown beeps and phase transition sounds
+- **Screen Management**: Keeps screen awake during active timer sessions
+- **Session Integration**: Links timer sessions to workout plans and logging
+
+**Core Properties:**
+```swift
+@Published var state: TimerState = .stopped
+@Published var currentTime: Int = 0
+@Published var totalElapsedTime: Int = 0
+@Published var currentInterval: Int = 0
+@Published var currentRepetition: Int = 0
+@Published var currentPhase: IntervalPhase = .work
+@Published var laps: [TimerLap] = []
 ```
-Start ──► Plans Tab ──► Select Plan ──► Select Day ──► View Exercises
-                                                           │
-                                        ┌──────────────────┼──────────────────┐
-                                        ▼                  ▼                  ▼
-                                   Quick Log          Detailed Log        Progress View
-                                   (1 tap)           (Form entry)        (Analytics)
-                                        │                  │                  │
-                                        ▼                  ▼                  ▼
-                                 SessionItem         SessionItem          Chart Display
-                                (minimal data)      (full metrics)      (historical data)
+
+**Timer States:**
+- **Stopped**: Initial state, timer not running
+- **Running**: Timer actively counting
+- **Paused**: Timer temporarily halted but retains state
+- **Completed**: Timer finished all configured intervals
+
+#### 2. **Timer Data Models** (`TimerModels.swift`)
+
+**TimerConfiguration:**
+```swift
+struct TimerConfiguration {
+    let totalTimeSeconds: Int?              // Overall time limit
+    let intervals: [IntervalConfiguration]  // Work/rest cycles
+    let isRepeating: Bool                  // Repeat entire sequence
+    let repeatCount: Int?                  // Number of repetitions
+    let restTimeBetweenIntervals: Int?     // Rest between different intervals
+}
 ```
 
-### Plan Management Journey
+**IntervalConfiguration:**
+```swift
+struct IntervalConfiguration {
+    let name: String           // Interval description
+    let workTimeSeconds: Int   // Active work period
+    let restTimeSeconds: Int   // Rest period
+    let repetitions: Int       // How many work/rest cycles
+}
 ```
-Start ──► Plans Tab ──► Create/Select Plan ──► Configure Days ──► Add Exercises
-                                                    │
-                                                    ▼
-                                              Daily Execution ──► Log Completion
-                                                    │
-                                                    ▼
-                                              Track Progress ──► Analytics View
+
+**Persistent Models:**
+- **TimerTemplate**: Saved timer configurations for reuse
+- **TimerInterval**: Individual interval definitions within templates
+- **TimerSession**: Historical record of completed timer sessions
+- **TimerLap**: Lap markers during timer execution
+
+#### 3. **Timer User Interface** (`TimerViews.swift`)
+
+**Main TimerView Features:**
+- **Large Time Display**: Primary countdown/elapsed time (60pt monospaced font)
+- **Progress Indicators**: Visual progress bars for overall and interval progress
+- **Phase Indicators**: Color-coded work/rest status with remaining time
+- **Control Buttons**: Start, pause, resume, lap, and stop functionality
+- **Session Integration**: Links to plan days and exercise logging
+
+**Screen Management:**
+```swift
+// Keeps screen on during timer sessions
+UIApplication.shared.isIdleTimerDisabled = timerManager.isRunning || timerManager.isPaused
 ```
 
-## 🔗 Integration Points
+**Visual Design Patterns:**
+- **Work Phase**: Green indicators and buttons
+- **Rest Phase**: Orange indicators
+- **Between Intervals**: Purple indicators for distinct rest periods
+- **Completed**: Gray indicators when finished
 
-### SwiftData Integration
-- **Automatic Persistence**: Changes save automatically
-- **Relationship Management**: SwiftData handles entity relationships
-- **Query Performance**: Optimized data fetching with FetchDescriptor
+#### 4. **Timer Templates** (`TimerTemplateViews.swift`)
 
-### CSV Import/Export
-- **LogCSV.swift**: Handles data serialization/deserialization
-- **Plan Reconstruction**: Maintains plan-exercise relationships during import
-- **Date Normalization**: Consistent date handling across operations
+**Template Management Features:**
+- **Template Creation**: Save custom timer configurations
+- **Template Library**: Browse and select from saved templates
+- **Usage Tracking**: Track how often templates are used
+- **Template Editing**: Modify existing timer configurations
 
-### UI State Management
-- **Environment Context**: Shared ModelContext across views
-- **State Preservation**: SwiftUI maintains view state automatically
-- **Navigation State**: Managed through NavigationStack and sheets
+**Template Integration:**
+```swift
+TimerTemplateSelector { template in
+    let config = TimerConfiguration(from: template)
+    timerManager.start(with: config, session: session)
+}
+```
 
-## 🛠️ Development Guidelines
+### Timer Flow Architecture
 
-### Adding New Features
-1. **Data Model**: Define SwiftData entities if needed
-2. **Factory/Seeder**: Add data population logic
-3. **UI Views**: Create SwiftUI views following established patterns
-4. **Integration**: Wire up data binding and navigation
-5. **Testing**: Add to test suite in `/tests/`
+#### 1. **Timer Setup Flow**
+```
+TimerView Launch
+     │
+     ▼
+Timer Setup Options
+     │
+     ├── Load Template ──► TimerTemplateSelector ──► Pre-configured Timer
+     │
+     ├── Custom Timer ───► CustomTimerSetup ──────► User-defined Timer
+     │
+     └── Plan Integration ──► PlanDay Context ────► Plan-linked Session
+```
 
-### Best Practices
-- **Single Responsibility**: Each view handles one primary function
-- **Data Consistency**: Use SwiftData relationships over manual linking
-- **User Experience**: Provide both quick and detailed interaction paths
-- **Error Handling**: Graceful degradation with try? patterns
+#### 2. **Timer Execution Flow**
+```
+Timer Start
+     │
+     ▼
+TimerManager.start()
+     │
+     ├── State: .running
+     ├── Screen: Always On
+     ├── Audio: Countdown Beeps
+     └── Session: Created & Tracked
+     │
+     ▼
+Interval Progression
+     │
+     ├── Work Phase ──► Rest Phase ──► Next Repetition
+     │
+     ├── Interval Complete ──► Next Interval (with rest)
+     │
+     └── All Intervals ──► Sequence Repeat (if enabled)
+```
 
-## 📈 Performance Considerations
+#### 3. **Timer Control Flow**
+```
+Running Timer
+     │
+     ├── Pause ──► State: .paused (Screen: Still On)
+     │    │
+     │    └── Resume ──► State: .running
+     │
+     ├── Lap ──► Add TimerLap ──► Continue Running
+     │
+     └── Stop ──► State: .stopped ──► Screen: Normal ──► Session: Saved
+```
 
-### Data Access Patterns
-- **Lazy Loading**: @Query fetches data as needed
-- **Filtered Queries**: Use predicates to limit data sets
-- **Memory Management**: SwiftData handles automatic cleanup
+### Timer Integration Points
 
-### UI Performance
-- **View Decomposition**: Break complex views into smaller components
-- **State Minimization**: Keep @State variables focused and minimal
-- **Batch Operations**: Group related data changes together
+#### 1. **Plan Integration**
+- **Plan Day Context**: Timers launched from PlanDayEditor include plan context
+- **Exercise Correlation**: Timer sessions can be linked to specific exercises
+- **Progress Tracking**: Timer usage contributes to overall training analytics
 
-This architecture provides a scalable, maintainable foundation for the climbing training app with clear separation of concerns and efficient data flow patterns.
+#### 2. **Session Tracking**
+- **TimerSession Creation**: Each timer run creates a persistent session record
+- **Metadata Capture**: Template name, plan context, duration, and completion status
+- **Historical Analysis**: Timer sessions contribute to progress and usage analytics
+
+#### 3. **Audio System**
+- **Countdown Beeps**: 3-2-1 countdown at phase transitions
+- **Phase Transitions**: Audio cues for work/rest changes
+- **Completion Sounds**: Audio feedback when intervals or entire timer completes
+
+### Timer Use Cases
+
+#### 1. **Interval Training**
+```
+Example: "Hangboard Protocol"
+- Work: 7 seconds hanging
+- Rest: 53 seconds recovery
+- Repetitions: 6 cycles
+- Between Sets: 3 minutes rest
+- Total Sets: 3
+```
+
+#### 2. **Circuit Training**
+```
+Example: "Core Circuit"
+- Interval 1: Plank (30s work, 10s rest, 3 reps)
+- Interval 2: Dead Bug (20s work, 10s rest, 4 reps)
+- Interval 3: Superman (25s work, 15s rest, 3 reps)
+- Rest Between Intervals: 60 seconds
+```
+
+#### 3. **Simple Countdown**
+```
+Example: "Rest Timer"
+- Total Time: 5 minutes
+- No intervals, just countdown
+- Used between exercise sets
+```
+
+### Advanced Timer Features
+
+#### 1. **Template System**
+- **Reusable Configurations**: Save frequently used timer setups
+- **Community Sharing**: Templates can be exported/imported via CSV
+- **Usage Analytics**: Track which templates are most effective
+
+#### 2. **Smart Progression**
+- **Automatic Advancement**: Timer progresses through complex sequences
+- **Visual Feedback**: Clear indication of current position in workout
+- **Completion Tracking**: Records successful completion of timer protocols
+
+#### 3. **Integration Benefits**
+- **Plan Coordination**: Timer sessions enhance plan-based training
+- **Progress Analytics**: Timer data contributes to overall training insights
+- **Exercise Context**: Timers can be associated with specific exercises for targeted training
+
+This timer module transforms the app from a simple exercise tracker into a comprehensive training system capable of guiding users through complex interval protocols while maintaining detailed records of their training sessions.

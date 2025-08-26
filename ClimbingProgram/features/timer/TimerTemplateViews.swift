@@ -589,7 +589,9 @@ struct IntervalInput {
     }
     
     var isValid: Bool {
-        workTime > 0 && repetitions > 0
+        // Allow intervals with work time only, rest time only, or both
+        // At least one must be greater than 0, and repetitions must be positive
+        (workTime > 0 || restTime > 0) && repetitions > 0
     }
     
     func toConfiguration() -> IntervalConfiguration? {

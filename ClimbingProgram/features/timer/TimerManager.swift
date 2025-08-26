@@ -160,7 +160,15 @@ class TimerManager: ObservableObject {
         currentInterval = 0
         currentRepetition = 0
         currentSequenceRepeat = 0 // Initialize sequence repeat counter
-        currentPhase = configuration.hasIntervals ? .work : .work
+        
+        // Set initial phase based on first interval configuration
+        if configuration.hasIntervals && !configuration.intervals.isEmpty {
+            let firstInterval = configuration.intervals[0]
+            // If work time is 0, start directly in rest phase
+            currentPhase = firstInterval.workTimeSeconds > 0 ? .work : .rest
+        } else {
+            currentPhase = .work
+        }
         
         startTimer()
         playSound(.start)

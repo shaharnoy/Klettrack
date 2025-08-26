@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 // MARK: - Main Timer View
 struct TimerView: View {
@@ -109,6 +110,28 @@ struct TimerView: View {
                 }
             }
         }
+        .onAppear {
+            // Keep screen on when timer view appears
+            updateScreenIdleTimer()
+        }
+        .onDisappear {
+            // Allow screen to sleep when timer view disappears
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .onChange(of: timerManager.isRunning) { _, isRunning in
+            // Update screen idle timer when timer state changes
+            updateScreenIdleTimer()
+        }
+        .onChange(of: timerManager.isPaused) { _, isPaused in
+            // Update screen idle timer when pause state changes
+            updateScreenIdleTimer()
+        }
+    }
+    
+    // MARK: - Screen Management
+    private func updateScreenIdleTimer() {
+        // Keep screen on when timer is running or paused (but not stopped)
+        UIApplication.shared.isIdleTimerDisabled = timerManager.isRunning || timerManager.isPaused
     }
     
     // MARK: - Timer Display Section

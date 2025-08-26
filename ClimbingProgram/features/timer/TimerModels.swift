@@ -28,7 +28,7 @@ struct TimerConfiguration {
     let intervals: [IntervalConfiguration]
     let isRepeating: Bool
     let repeatCount: Int?
-    let restTimeBetweenIntervals: Int? // New: rest time between different intervals
+    let restTimeBetweenIntervals: Int? // Rest time between different intervals
     
     var hasIntervals: Bool {
         !intervals.isEmpty
@@ -48,4 +48,15 @@ struct IntervalConfiguration {
     var totalTimeSeconds: Int {
         (workTimeSeconds + restTimeSeconds) * repetitions
     }
+}
+
+// MARK: - Audio System
+enum TimerSound {
+    case start
+    case pause
+    case resume
+    case stop
+    case countdown
+    case phaseTransition
+    case complete
 }
