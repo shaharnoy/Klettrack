@@ -236,7 +236,36 @@ class TimerManager: ObservableObject {
         
         // Add to session if exists
         session?.laps.append(lap)
-
+    }
+    
+    // MARK: - Restart Functionality
+    func restart() {
+        guard let savedConfiguration = configuration else { return }
+        
+        // Stop current timer
+        stopTimer()
+        
+        // Reset all timing variables but keep the configuration
+        currentTime = 0
+        totalElapsedTime = 0
+        currentInterval = 0
+        currentRepetition = 0
+        currentSequenceRepeat = 0
+        currentPhase = .work
+        isInBetweenIntervalRest = false
+        betweenIntervalRestStartTime = 0
+        startTime = nil
+        pausedTime = nil
+        laps.removeAll()
+        lastBeepTime = -1
+        
+        // Keep the configuration but clear the session (new session will be created)
+        session = nil
+        
+        // Set state to stopped so user can start again
+        state = .stopped
+        
+        playSound(.stop)
     }
     
     // MARK: - Private Methods

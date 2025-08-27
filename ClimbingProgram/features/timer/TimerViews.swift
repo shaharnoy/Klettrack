@@ -318,6 +318,14 @@ struct TimerView: View {
                     }
                 }
                 .buttonStyle(PrimaryTimerButtonStyle(color: .green))
+            } else if timerManager.isCompleted {
+                // Show both Restart and Reset options when timer is completed
+                VStack(spacing: 16) {
+                    Button("Restart") {
+                        restartTimer()
+                    }
+                    .buttonStyle(PrimaryTimerButtonStyle(color: .green))
+                }
             } else if timerManager.isRunning {
                 // Enhanced: Wider buttons with equal distribution
                 VStack(spacing: 12) {
@@ -449,6 +457,12 @@ struct TimerView: View {
         context.insert(session)
         timerManager.start(with: config, session: session)
     }
+    
+    // MARK: - Restart Timer
+    private func restartTimer() {
+        // Use the new restart method from TimerManager
+        timerManager.restart()
+    }
 }
 
 // MARK: - Lap Row View
@@ -566,6 +580,22 @@ struct FullWidthTimerButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(color)
             .cornerRadius(25)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Load Config Button Style (for Load Configuration button)
+struct LoadConfigButtonStyle: ButtonStyle {
+    let color: Color
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline.weight(.medium))
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(color)
+            .cornerRadius(22)
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -765,40 +795,51 @@ struct CustomTimerSetupTab: View {
     }
     
     var body: some View {
-        Form {
-            Section("Timer Type") {
-                Picker("Type", selection: $timerType) {
-                    ForEach(TimerType.allCases, id: \.self) { type in
-                        Text(type.title).tag(type)
+        VStack(spacing: 0) {
+            Form {
+                Section("Timer Type") {
+                    Picker("Type", selection: $timerType) {
+                        ForEach(TimerType.allCases, id: \.self) { type in
+                            Text(type.title).tag(type)
+                        }
                     }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
-            }
-            
-            if timerType == .totalTime {
-                totalTimeSection
-            }
-            
-            if timerType == .intervals {
-                intervalsSection
-            }
-            
-            if timerType == .intervals {
-                repeatSection
-            }
-            
-            if saveAsTemplate {
-                templateSection
-            }
-            
-            Section {
-                Toggle("Save as template", isOn: $saveAsTemplate)
                 
-                Button("Load Configuration") {
+                if timerType == .totalTime {
+                    totalTimeSection
+                }
+                
+                if timerType == .intervals {
+                    intervalsSection
+                }
+                
+                if timerType == .intervals {
+                    repeatSection
+                }
+                
+                if saveAsTemplate {
+                    templateSection
+                }
+                
+                Section {
+                    Toggle("Save as template", isOn: $saveAsTemplate)
+                }
+            }
+            
+            // Standalone Load Configuration Button
+            VStack(spacing: 16) {
+                Divider()
+                
+                Button("Load") {
                     createTimer()
                 }
+                .buttonStyle(LoadConfigButtonStyle(color: isValidConfiguration ? .blue : .gray))
                 .disabled(!isValidConfiguration)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
+            .background(Color(.systemGroupedBackground))
         }
         .onAppear {
             if intervals.isEmpty {
