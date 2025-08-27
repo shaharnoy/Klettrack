@@ -15,7 +15,7 @@ class TimerAppState: ObservableObject {
     
     func switchToTimer(with planDay: PlanDay? = nil) {
         currentPlanDay = planDay
-        selectedTab = 4 // Timer tab index
+        selectedTab = 5 // Timer tab index (updated from 4 to 5)
     }
 }
 
@@ -25,36 +25,43 @@ struct RootTabView: View {
     @StateObject private var timerAppState = TimerAppState()
     
     var body: some View {
-        TabView(selection: $timerAppState.selectedTab) {
-            CatalogView()
-                .tabItem { Label("Catalog", systemImage: "square.grid.2x2") }
-                .environment(\.isDataReady, isDataReady)
-                .environmentObject(timerAppState)
-                .tag(0)
+        VStack(spacing: 0) {
+            // Main content area
+            Group {
+                switch timerAppState.selectedTab {
+                case 0:
+                    CatalogView()
+                        .environment(\.isDataReady, isDataReady)
+                        .environmentObject(timerAppState)
+                case 1:
+                    PlansListView()
+                        .environment(\.isDataReady, isDataReady)
+                        .environmentObject(timerAppState)
+                case 2:
+                    ClimbView()
+                        .environment(\.isDataReady, isDataReady)
+                        .environmentObject(timerAppState)
+                case 3:
+                    LogView()
+                        .environment(\.isDataReady, isDataReady)
+                        .environmentObject(timerAppState)
+                case 4:
+                    ProgressViewScreen()
+                        .environment(\.isDataReady, isDataReady)
+                        .environmentObject(timerAppState)
+                case 5:
+                    TimerView(planDay: timerAppState.currentPlanDay)
+                        .environment(\.isDataReady, isDataReady)
+                        .environmentObject(timerAppState)
+                default:
+                    CatalogView()
+                        .environment(\.isDataReady, isDataReady)
+                        .environmentObject(timerAppState)
+                }
+            }
             
-            PlansListView()
-                .tabItem { Label("Plans", systemImage: "calendar") }
-                .environment(\.isDataReady, isDataReady)
-                .environmentObject(timerAppState)
-                .tag(1)
-            
-            LogView()
-                .tabItem { Label("Log", systemImage: "square.and.pencil") }
-                .environment(\.isDataReady, isDataReady)
-                .environmentObject(timerAppState)
-                .tag(2)
-            
-            ProgressViewScreen()
-                .tabItem { Label("Progress", systemImage: "chart.bar") }
-                .environment(\.isDataReady, isDataReady)
-                .environmentObject(timerAppState)
-                .tag(3)
-            
-            TimerView(planDay: timerAppState.currentPlanDay)
-                .tabItem { Label("Timer", systemImage: "timer") }
-                .environment(\.isDataReady, isDataReady)
-                .environmentObject(timerAppState)
-                .tag(4)
+            // Custom tab bar
+            CustomTabBar(selectedTab: $timerAppState.selectedTab)
         }
         .task {
             await initializeData()
