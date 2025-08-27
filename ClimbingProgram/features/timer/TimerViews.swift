@@ -772,7 +772,7 @@ struct CustomTimerSetupTab: View {
     let onConfigurationReady: (TimerConfiguration) -> Void
     
     @State private var timerType: TimerType = .totalTime
-    @State private var totalTimeMinutes = 10
+    @State private var totalTimeMinutes = 0
     @State private var totalTimeSeconds = 0
     @State private var intervals: [IntervalInput] = []
     @State private var isRepeating = false
