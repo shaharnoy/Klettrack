@@ -815,7 +815,6 @@ struct PlanDayEditor: View {
                     .listStyle(.insetGrouped)
                     .navigationTitle("Quick Log")
                     .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { loggingExercise = nil } }
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Save") {
                                 saveLogEntry(exerciseName: sel.name)
@@ -1121,7 +1120,6 @@ struct CatalogExercisePicker: View {
         }
         .navigationTitle("Catalog")
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
         }
     }
@@ -1242,7 +1240,6 @@ struct ExercisesList: View {
         .listStyle(.insetGrouped)
         .navigationTitle(trainingType.name)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { onDone() } }
             ToolbarItem(placement: .confirmationAction) { Button("Done") { onDone() } }
         }
     }

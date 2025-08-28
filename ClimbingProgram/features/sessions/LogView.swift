@@ -304,7 +304,6 @@ struct AddSessionItemSheet: View {
             }
             .navigationTitle("Add Exercise")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
@@ -367,7 +366,6 @@ struct NewSessionSheet: View {
             }
             .navigationTitle("New Session")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
                         context.insert(Session(date: date))

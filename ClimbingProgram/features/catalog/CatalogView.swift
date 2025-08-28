@@ -301,7 +301,6 @@ struct TrainingTypeDetailView: View {
                                     .contentShape(Rectangle())
                                     .onTapGesture { openEditor(for: ex) }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        Button("Edit") { openEditor(for: ex) }.tint(.blue)
                                         Button(role: .destructive) {
                                             context.delete(ex); try? context.save()
                                         } label: { Label("Delete", systemImage: "trash") }
@@ -323,7 +322,6 @@ struct TrainingTypeDetailView: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture { openEditor(for: ex) }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button("Edit") { openEditor(for: ex) }.tint(.blue)
                                     Button(role: .destructive) {
                                         context.delete(ex); try? context.save()
                                     } label: { Label("Delete", systemImage: "trash") }
@@ -467,13 +465,11 @@ struct CombinationDetailView: View {
                         .contentShape(Rectangle())
                         .onTapGesture { openEditor(for: ex) }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("Edit") { openEditor(for: ex) }.tint(.blue)
                             Button(role: .destructive) {
                                 context.delete(ex); try? context.save()
                             } label: { Label("Delete", systemImage: "trash") }
                         }
                         .contextMenu {
-                            Button("Edit") { openEditor(for: ex) }
                             Button(role: .destructive) { context.delete(ex); try? context.save() } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -653,7 +649,6 @@ struct NameOnlySheet: View {
             }
             .navigationTitle(title)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -682,7 +677,6 @@ struct TrainingTypeEditSheet: View {
             }
             .navigationTitle(title)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -779,7 +773,6 @@ struct ExerciseEditSheet: View {
             }
             .navigationTitle(title)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { onSave(); dismiss() }
                 }

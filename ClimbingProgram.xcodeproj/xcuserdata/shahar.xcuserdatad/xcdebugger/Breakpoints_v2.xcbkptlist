@@ -14,13 +14,13 @@
             filePath = "ClimbingProgram/features/sessions/LogView.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "514"
-            endingLineNumber = "514"
+            startingLineNumber = "512"
+            endingLineNumber = "512"
             landmarkName = "body"
             landmarkType = "24">
             <Locations>
                <Location
-                  uuid = "4F31ECEA-D885-470E-80F5-C6784F772EA3 - 1555c99c6b32771a"
+                  uuid = "4F31ECEA-D885-470E-80F5-C6784F772EA3 - 1555c99c6b3288dc"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
@@ -30,11 +30,11 @@
                   urlString = "file:///Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/features/sessions/LogView.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "514"
-                  endingLineNumber = "514">
+                  startingLineNumber = "512"
+                  endingLineNumber = "512">
                </Location>
                <Location
-                  uuid = "4F31ECEA-D885-470E-80F5-C6784F772EA3 - c0cee84bf8ab07cb"
+                  uuid = "4F31ECEA-D885-470E-80F5-C6784F772EA3 - c0cee84bf8abf80d"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
@@ -44,8 +44,8 @@
                   urlString = "file:///Users/shahar/Desktop/code/ClimbingProgram/ClimbingProgram/features/sessions/LogView.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "514"
-                  endingLineNumber = "514">
+                  startingLineNumber = "512"
+                  endingLineNumber = "512">
                </Location>
             </Locations>
          </BreakpointContent>
