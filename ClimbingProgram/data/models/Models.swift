@@ -190,6 +190,32 @@ final class TimerTemplate {
         self.createdDate = Date()
         self.useCount = 0
     }
+    
+    // Computed property to get the effective total time
+    var effectiveTotalTimeSeconds: Int? {
+        // If we have an explicit total time, use it
+        if let totalTime = totalTimeSeconds {
+            return totalTime
+        }
+        
+        // Otherwise, calculate from intervals
+        guard !intervals.isEmpty else { return nil }
+        
+        let intervalTime = intervals.reduce(0) { total, interval in
+            let singleCycleTime = (interval.workTimeSeconds + interval.restTimeSeconds) * interval.repetitions
+            return total + singleCycleTime
+        }
+        
+        // Add rest time between intervals (if any)
+        let restBetweenTime = intervals.count > 1 ? (restTimeBetweenIntervals ?? 0) * (intervals.count - 1) : 0
+        
+        let baseTime = intervalTime + restBetweenTime
+        
+        // Multiply by repeat count if repeating
+        let totalRepeats = isRepeating ? (repeatCount ?? 1) : 1
+        
+        return baseTime * totalRepeats
+    }
 }
 
 @Model

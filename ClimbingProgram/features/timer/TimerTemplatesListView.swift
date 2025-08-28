@@ -103,21 +103,33 @@ struct TimerTemplateListRow: View {
                         .lineLimit(2)
                 }
                 
-                HStack {
-                    if let totalTime = template.totalTimeSeconds {
-                        Label(formatTime(totalTime), systemImage: "clock")
+                HStack(spacing: 36) {
+                    if template.isRepeating {
+                        HStack(spacing: 3) {
+                            Image(systemName: "repeat")
+                            Text("\(template.repeatCount ?? 1)x")
+                        }
                     }
                     
                     if !template.intervals.isEmpty {
-                        Label("\(template.intervals.count) intervals", systemImage: "repeat")
+                        HStack(spacing: 3) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("\(template.intervals.count)")
+                        }
                     }
-                    
-                    if template.isRepeating {
-                        Label("Repeats \(template.repeatCount ?? 1)x", systemImage: "arrow.clockwise")
-                    }
-                    
+                       
                     if let restBetween = template.restTimeBetweenIntervals, restBetween > 0 {
-                        Label("Rest: \(formatTime(restBetween))", systemImage: "pause.circle")
+                        HStack(spacing: 3) {
+                            Image(systemName: "pause.circle")
+                            Text(formatTime(restBetween))
+                        }
+                    }
+                    
+                    if let totalTime = template.effectiveTotalTimeSeconds {
+                        HStack(spacing: 3) {
+                            Image(systemName: "clock.badge.checkmark")
+                            Text(formatTime(totalTime))
+                        }
                     }
                 }
                 .font(.caption)
@@ -138,7 +150,7 @@ struct TimerTemplateListRow: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
     
     private func formatTime(_ seconds: Int) -> String {
