@@ -50,12 +50,12 @@ struct PlanFactory {
             // Create a varied pyramid structure
             let weekPattern: [DayType] = {
                 switch week % 3 {
-                case 0: // Heavy week
-                    return [.climbingFull, .rest, .climbingFull, .rest, .climbingSmall, .rest, .rest]
+                case 0: // TODO: decide if we want to have different tempaltes here
+                    return [.rest, .rest, .rest, .rest, .rest, .rest, .rest]
                 case 1: // Medium week
-                    return [.climbingSmall, .rest, .climbingFull, .rest, .climbingSmall, .rest, .rest]
+                    return [.rest, .rest, .rest, .rest, .rest, .rest, .rest]
                 case 2: // Light week
-                    return [.climbingSmall, .rest, .climbingSmall, .rest, .rest, .rest, .rest]
+                    return [.rest, .rest, .rest, .rest, .rest, .rest, .rest]
                 default:
                     return [.rest, .rest, .rest, .rest, .rest, .rest, .rest]
                 }

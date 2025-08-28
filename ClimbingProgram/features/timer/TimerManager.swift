@@ -306,7 +306,8 @@ class TimerManager: ObservableObject {
     
     // MARK: - Private Methods
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        // Use a more frequent timer for better precision (0.1 seconds instead of 1.0)
+        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateTime()
             }
@@ -321,7 +322,13 @@ class TimerManager: ObservableObject {
     private func updateTime() {
         guard let startTime = startTime else { return }
         
-        let elapsed = Int(Date().timeIntervalSince(startTime))
+        // Use more precise time calculation
+        let preciseElapsed = Date().timeIntervalSince(startTime)
+        let elapsed = Int(preciseElapsed)
+        
+        // Only update if the second has actually changed to avoid redundant calculations
+        guard elapsed != currentTime else { return }
+        
         currentTime = elapsed
         totalElapsedTime = elapsed
         
@@ -500,16 +507,25 @@ class TimerManager: ObservableObject {
     }
     
     private func checkCountdownBeeps(timeRemaining: Int) {
-        // Play beep sound for last 3 seconds (3, 2, and 1 second remaining)
-        if (timeRemaining == 3 || timeRemaining == 2 || timeRemaining == 1) && lastBeepTime != timeRemaining {
+        // Only beep for the last 3 seconds and ensure we haven't already beeped for this second
+        if timeRemaining >= 1 && timeRemaining <= 3 && lastBeepTime != timeRemaining {
             lastBeepTime = timeRemaining
-            playCountdownBeep()
+            
+            // Schedule the beep to play precisely at the beginning of the second
+            // This helps synchronize the beep with the actual countdown timing
+            DispatchQueue.main.async { [weak self] in
+                self?.playCountdownBeep()
+            }
         }
     }
     
     private func playCountdownBeep() {
-        // Use a distinct sound for countdown beeps
+        // Use a distinct sound for countdown beeps with haptic feedback for better user experience
         AudioServicesPlaySystemSound(1103) // SMS received sound (short beep)
+        
+        // Add subtle haptic feedback for countdown beeps (optional)
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
     }
     
     internal func checkForCompletion() {
