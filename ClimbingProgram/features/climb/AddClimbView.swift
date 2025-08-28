@@ -23,8 +23,8 @@ struct AddClimbView: View {
     @State private var selectedGym: String = ""
     @State private var notes: String = ""
     
-    @State private var showingStylePicker = false
-    @State private var showingGymPicker = false
+    @State private var showingStyleAlert = false
+    @State private var showingGymAlert = false
     @State private var newStyleName = ""
     @State private var newGymName = ""
     
@@ -43,68 +43,72 @@ struct AddClimbView: View {
         return Array(Set(seededGyms + customGyms)).sorted()
     }
     
+    private var climbTypeColor: Color {
+        switch selectedClimbType {
+        case .boulder:
+            return CatalogHue.bouldering.color
+        case .lead:
+            return CatalogHue.climbing.color
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             Form {
-                Section("Climb Type") {
-                    Picker("Type", selection: $selectedClimbType) {
-                        ForEach(ClimbType.allCases, id: \.self) { type in
-                            Text(type.displayName).tag(type)
+                // Climb Type Picker - changed to dropdown menu
+                Picker("Type", selection: $selectedClimbType) {
+                    ForEach(ClimbType.allCases, id: \.self) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                
+                // Style picker with add button
+                HStack {
+                    Picker("Style", selection: $selectedStyle) {
+                        Text("select").tag("")
+                        ForEach(availableStyles, id: \.self) { style in
+                            Text(style).tag(style)
                         }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
+                    
+                    Button {
+                        showingStyleAlert = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                
+                // Gym picker with add button
+                HStack {
+                    Picker("Gym", selection: $selectedGym) {
+                        Text("select").tag("")
+                        ForEach(availableGyms, id: \.self) { gym in
+                            Text(gym).tag(gym)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    Button {
+                        showingGymAlert = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.accentColor)
+                    }
                 }
                 
                 Section("Details") {
-                    HStack {
-                        Text("Grade")
-                        Spacer()
-                        TextField("e.g., 6a, V4, 8-, 10+", text: $grade)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 150)
-                    }
-                    
-                    HStack {
-                        Text("Angle (degrees)")
-                        Spacer()
-                        TextField("Optional", text: $angleDegrees)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.numberPad)
-                            .frame(maxWidth: 100)
-                    }
-                    
-                    HStack {
-                        Text("Style")
-                        Spacer()
-                        Button(selectedStyle.isEmpty ? "Select Style" : selectedStyle) {
-                            showingStylePicker = true
-                        }
-                        .foregroundColor(selectedStyle.isEmpty ? .secondary : .primary)
-                    }
-                    
-                    HStack {
-                        Text("Attempts")
-                        Spacer()
-                        TextField("Optional", text: $attempts)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 100)
-                    }
-                    
-                    Toggle("Work in Progress", isOn: $isWorkInProgress)
-                    
-                    HStack {
-                        Text("Gym")
-                        Spacer()
-                        Button(selectedGym.isEmpty ? "Select Gym" : selectedGym) {
-                            showingGymPicker = true
-                        }
-                        .foregroundColor(selectedGym.isEmpty ? .secondary : .primary)
-                    }
-                }
-                
-                Section("Notes") {
-                    TextField("Optional notes...", text: $notes, axis: .vertical)
-                        .lineLimit(3...6)
+                    TextField("Grade", text: $grade)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                    TextField("Angle°", text: $angleDegrees)
+                        .keyboardType(.numberPad)
+                    TextField("Attempts", text: $attempts)
+                        .keyboardType(.numberPad)
+                    Toggle("WIP?", isOn: $isWorkInProgress)
+                    TextField("Notes", text: $notes)
                 }
             }
             .navigationTitle("Add Climb")
@@ -123,19 +127,33 @@ struct AddClimbView: View {
                     .disabled(!isFormValid)
                 }
             }
-            .sheet(isPresented: $showingStylePicker) {
-                StylePickerView(
-                    selectedStyle: $selectedStyle,
-                    availableStyles: availableStyles,
-                    onAddNew: addNewStyle
-                )
+            .alert("Add New Style", isPresented: $showingStyleAlert) {
+                TextField("Style name", text: $newStyleName)
+                Button("Add") {
+                    if !newStyleName.trimmingCharacters(in: .whitespaces).isEmpty {
+                        addNewStyle(newStyleName.trimmingCharacters(in: .whitespaces))
+                        newStyleName = ""
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    newStyleName = ""
+                }
+            } message: {
+                Text("Enter a name for the new climbing style")
             }
-            .sheet(isPresented: $showingGymPicker) {
-                GymPickerView(
-                    selectedGym: $selectedGym,
-                    availableGyms: availableGyms,
-                    onAddNew: addNewGym
-                )
+            .alert("Add New Gym", isPresented: $showingGymAlert) {
+                TextField("Gym name", text: $newGymName)
+                Button("Add") {
+                    if !newGymName.trimmingCharacters(in: .whitespaces).isEmpty {
+                        addNewGym(newGymName.trimmingCharacters(in: .whitespaces))
+                        newGymName = ""
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    newGymName = ""
+                }
+            } message: {
+                Text("Enter a name for the new gym")
             }
         }
     }
@@ -192,95 +210,61 @@ struct AddClimbView: View {
     }
 }
 
-struct StylePickerView: View {
-    @Binding var selectedStyle: String
-    let availableStyles: [String]
-    let onAddNew: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var newStyleName = ""
-    @State private var showingAddNew = false
+// MARK: - Modern Input Components
+
+struct ModernInputField: View {
+    let title: String
+    let placeholder: String
+    @Binding var text: String
+    let keyboardType: UIKeyboardType
+    
+    init(title: String, placeholder: String, text: Binding<String>, keyboardType: UIKeyboardType = .default) {
+        self.title = title
+        self.placeholder = placeholder
+        self._text = text
+        self.keyboardType = keyboardType
+    }
     
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(availableStyles, id: \.self) { style in
-                    Button(style) {
-                        selectedStyle = style
-                        dismiss()
-                    }
-                    .foregroundColor(.primary)
-                }
-                
-                Button("Add New Style...") {
-                    showingAddNew = true
-                }
-                .foregroundColor(.blue)
-            }
-            .navigationTitle("Select Style")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-            .alert("Add New Style", isPresented: $showingAddNew) {
-                TextField("Style name", text: $newStyleName)
-                Button("Add") {
-                    if !newStyleName.isEmpty {
-                        onAddNew(newStyleName)
-                        dismiss()
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+            
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .keyboardType(keyboardType)
+                .padding(12)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
         }
     }
 }
 
-struct GymPickerView: View {
-    @Binding var selectedGym: String
-    let availableGyms: [String]
-    let onAddNew: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var newGymName = ""
-    @State private var showingAddNew = false
+struct ModernPickerField: View {
+    let title: String
+    let selection: String
+    let isSelected: Bool
+    let action: () -> Void
     
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(availableGyms, id: \.self) { gym in
-                    Button(gym) {
-                        selectedGym = gym
-                        dismiss()
-                    }
-                    .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+            
+            Button(action: action) {
+                HStack {
+                    Text(selection)
+                        .foregroundColor(isSelected ? .primary : .secondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                
-                Button("Add New Gym...") {
-                    showingAddNew = true
-                }
-                .foregroundColor(.blue)
-            }
-            .navigationTitle("Select Gym")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-            .alert("Add New Gym", isPresented: $showingAddNew) {
-                TextField("Gym name", text: $newGymName)
-                Button("Add") {
-                    if !newGymName.isEmpty {
-                        onAddNew(newGymName)
-                        dismiss()
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
+                .padding(12)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
             }
         }
     }

@@ -145,7 +145,7 @@ struct RootTabView: View {
             await initializeData()
             //SeedData.nukeAndReseed(context) // Uncomment this line to reset data during development
             //SeedTimerTemplates.nukeAndReseed(context) // Uncomment this line to reset data during development
-            SeedClimbingData.nukeAndReseed(context) // Uncomment this line to reset data during development
+            //SeedClimbingData.nukeAndReseed(context) // Uncomment this line to reset data during development
         }
     }
     
