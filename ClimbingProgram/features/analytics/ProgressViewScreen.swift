@@ -10,113 +10,515 @@ import SwiftData
 import Charts
 
 struct ProgressViewScreen: View {
-    // Sessions
+    // Data queries
     @Query(sort: \Session.date) private var allSessions: [Session]
-
-    // Plan filter
+    @Query(sort: \ClimbEntry.dateLogged) private var allClimbEntries: [ClimbEntry]
     @Query(sort: \Plan.startDate) private var plansForFilter: [Plan]
+    
+    // Filter states
+    @State private var selectedType: LogType = .all
+    @State private var selectedStyle: String = ""
+    @State private var selectedGrade: String = ""
+    @State private var selectedAngle: String = ""
+    @State private var selectedGym: String = ""
+    @State private var selectedMetric: Metric = .count
     @State private var selectedPlanID: UUID? = nil
-
-    // Metric + Exercise pickers
-    enum Metric: String, CaseIterable, Identifiable { case reps = "Reps", sets = "Sets", weight = "Weight (kg)"; var id: String { rawValue } }
-    @State private var selectedMetric: Metric = .reps
-    @State private var selectedExercise: String = ""  // empty = all exercises
-
-    // Filter sessions by plan’s date window
-    var filteredSessions: [Session] {
+    
+    // Chart selection states
+    @State private var selectedDistributionAxis: DistributionAxis = .style
+    
+    // Date range filter
+    @State private var dateRange: DateRange = .all
+    @State private var customStartDate = Date()
+    @State private var customEndDate = Date()
+    
+    // Enums for filters and metrics
+    enum LogType: String, CaseIterable, Identifiable {
+        case all = "All"
+        case exercise = "Exercise"
+        case climb = "Climb"
+        var id: String { rawValue }
+    }
+    
+    enum Metric: String, CaseIterable, Identifiable {
+        case count = "Count"
+        case reps = "Reps"
+        case weight = "Weight (kg)"
+        case grade = "Grade"
+        var id: String { rawValue }
+    }
+    
+    enum DistributionAxis: String, CaseIterable, Identifiable {
+        case style = "Style"
+        case grade = "Grade" 
+        case angle = "Angle"
+        case exercise = "Exercise"
+        var id: String { rawValue }
+        
+        // Dynamic display name based on selected type
+        func displayName(for logType: LogType) -> String {
+            switch self {
+            case .style:
+                return logType == .exercise ? "Exercise" : "Style"
+            case .grade:
+                return "Grade"
+            case .angle:
+                return "Angle"
+            case .exercise:
+                return "Exercise"
+            }
+        }
+    }
+    
+    enum DateRange: String, CaseIterable, Identifiable {
+        case all = "All Time"
+        case last7Days = "Last 7 Days"
+        case last30Days = "Last 30 Days"
+        case last3Months = "Last 3 Months"
+        case custom = "Custom Range"
+        var id: String { rawValue }
+    }
+    
+    // Data processing
+    var dateFilteredSessions: [Session] {
+        let filtered = filterSessionsByDateRange(allSessions)
+        return filterByPlan(filtered)
+    }
+    
+    var dateFilteredClimbEntries: [ClimbEntry] {
+        filterClimbsByDateRange(allClimbEntries)
+    }
+    
+    private func filterSessionsByDateRange(_ sessions: [Session]) -> [Session] {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        let startDate: Date
+        switch dateRange {
+        case .all:
+            return sessions
+        case .last7Days:
+            startDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        case .last30Days:
+            startDate = calendar.date(byAdding: .day, value: -30, to: now) ?? now
+        case .last3Months:
+            startDate = calendar.date(byAdding: .month, value: -3, to: now) ?? now
+        case .custom:
+            startDate = customStartDate
+        }
+        
+        let endDate = dateRange == .custom ? customEndDate : now
+        return sessions.filter { $0.date >= startDate && $0.date <= endDate }
+    }
+    
+    private func filterClimbsByDateRange(_ climbs: [ClimbEntry]) -> [ClimbEntry] {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        let startDate: Date
+        switch dateRange {
+        case .all:
+            return climbs
+        case .last7Days:
+            startDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        case .last30Days:
+            startDate = calendar.date(byAdding: .day, value: -30, to: now) ?? now
+        case .last3Months:
+            startDate = calendar.date(byAdding: .month, value: -3, to: now) ?? now
+        case .custom:
+            startDate = customStartDate
+        }
+        
+        let endDate = dateRange == .custom ? customEndDate : now
+        return climbs.filter { $0.dateLogged >= startDate && $0.dateLogged <= endDate }
+    }
+    
+    private func filterByPlan(_ sessions: [Session]) -> [Session] {
         guard let pid = selectedPlanID,
-              let plan = plansForFilter.first(where: { $0.id == pid }) else { return allSessions }
+              let plan = plansForFilter.first(where: { $0.id == pid }) else { return sessions }
         let dates = plan.days.map { $0.date }
-        guard let minD = dates.min(), let maxD = dates.max() else { return allSessions }
-        return allSessions.filter { $0.date >= minD && $0.date <= maxD }
+        guard let minD = dates.min(), let maxD = dates.max() else { return sessions }
+        return sessions.filter { $0.date >= minD && $0.date <= maxD }
     }
-
-    var totalExercises: Int { filteredSessions.flatMap { $0.items }.count }
-
-    // Unique exercise names present in logs (for picker)
-    var loggedExerciseNames: [String] {
-        let names = filteredSessions.flatMap { $0.items.map { $0.exerciseName } }
-        return Array(Set(names)).sorted()
+    
+    // Get unique values for filter dropdowns
+    var availableStyles: [String] {
+        var styles: [String] = []
+        
+        if selectedType == .all || selectedType == .exercise {
+            // For exercises, we don't have style directly, but we can use exercise names as styles
+            styles.append(contentsOf: dateFilteredSessions.flatMap { $0.items.map { $0.exerciseName } })
+        }
+        
+        if selectedType == .all || selectedType == .climb {
+            styles.append(contentsOf: dateFilteredClimbEntries.map { $0.style })
+        }
+        
+        return Array(Set(styles)).sorted()
     }
-
-    // Data points for chart based on selection
-    struct DataPoint: Identifiable {
+    
+    var availableGrades: [String] {
+        var grades: [String] = []
+        
+        if selectedType == .all || selectedType == .exercise {
+            grades.append(contentsOf: dateFilteredSessions.flatMap { $0.items.compactMap { $0.grade } })
+        }
+        
+        if selectedType == .all || selectedType == .climb {
+            grades.append(contentsOf: dateFilteredClimbEntries.map { $0.grade })
+        }
+        
+        return Array(Set(grades)).sorted()
+    }
+    
+    var availableAngles: [String] {
+        var angles: [String] = []
+        
+        if selectedType == .all || selectedType == .climb {
+            angles.append(contentsOf: dateFilteredClimbEntries.compactMap { entry in
+                entry.angleDegrees.map { "\($0)°" }
+            })
+        }
+        
+        return Array(Set(angles)).sorted()
+    }
+    
+    var availableGyms: [String] {
+        var gyms: [String] = []
+        
+        if selectedType == .all || selectedType == .climb {
+            gyms.append(contentsOf: dateFilteredClimbEntries.map { $0.gym })
+        }
+        
+        return Array(Set(gyms)).sorted()
+    }
+    
+    // Data points for charts
+    struct TimeSeriesDataPoint: Identifiable {
         let id = UUID()
         let date: Date
-        let value: Double
-        let label: String
+        let count: Int
     }
-
-    var points: [DataPoint] {
-        filteredSessions.flatMap { s in
-            s.items.compactMap { item -> DataPoint? in
-                // filter by chosen exercise (if selected)
-                if !selectedExercise.isEmpty, item.exerciseName != selectedExercise { return nil }
-                switch selectedMetric {
-                case .reps:
-                    guard let v = item.reps else { return nil }
-                    return DataPoint(date: s.date, value: Double(v), label: item.exerciseName)
-                case .sets:
-                    guard let v = item.sets else { return nil }
-                    return DataPoint(date: s.date, value: Double(v), label: item.exerciseName)
-                case .weight:
-                    guard let v = item.weightKg else { return nil }
-                    return DataPoint(date: s.date, value: v, label: item.exerciseName)
+    
+    struct DistributionDataPoint: Identifiable {
+        let id = UUID()
+        let category: String
+        let count: Int
+    }
+    
+    var timeSeriesData: [TimeSeriesDataPoint] {
+        let calendar = Calendar.current
+        var dateCountMap: [Date: Int] = [:]
+        
+        // Process exercises
+        if selectedType == .all || selectedType == .exercise {
+            for session in dateFilteredSessions {
+                let dayStart = calendar.startOfDay(for: session.date)
+                let items = session.items.filter { item in
+                    applyFiltersToExercise(item)
+                }
+                dateCountMap[dayStart, default: 0] += items.count
+            }
+        }
+        
+        // Process climbs
+        if selectedType == .all || selectedType == .climb {
+            for climb in dateFilteredClimbEntries {
+                if applyFiltersToClimb(climb) {
+                    let dayStart = calendar.startOfDay(for: climb.dateLogged)
+                    dateCountMap[dayStart, default: 0] += 1
                 }
             }
         }
-        .sorted { $0.date < $1.date }
+        
+        return dateCountMap.map { TimeSeriesDataPoint(date: $0.key, count: $0.value) }
+            .sorted { $0.date < $1.date }
     }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                // Filters
-                Section("Filter") {
-                    Picker("Plan", selection: $selectedPlanID) {
-                        Text("All sessions").tag(UUID?.none)
-                        ForEach(plansForFilter) { p in
-                            Text(p.name).tag(UUID?.some(p.id))
-                        }
-                    }
-                    Picker("Metric", selection: $selectedMetric) {
-                        ForEach(Metric.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    Picker("Exercise", selection: $selectedExercise) {
-                        Text("All exercises").tag("")
-                        ForEach(loggedExerciseNames, id: \.self) { name in
-                            Text(name).tag(name)
-                        }
-                    }
-                }
-
-                // Totals
-                Section("Totals") {
-                    HStack { Text("Sessions"); Spacer(); Text("\(filteredSessions.count)") }
-                    HStack { Text("Total exercises"); Spacer(); Text("\(totalExercises)") }
-                }
-
-                // Chart
-                Section("Progress over time") {
-                    if points.isEmpty {
-                        Text("No data for the chosen filter yet. Log some sets!")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Chart(points) { p in
-                            LineMark(
-                                x: .value("Date", p.date),
-                                y: .value(selectedMetric.rawValue, p.value)
-                            )
-                            PointMark(
-                                x: .value("Date", p.date),
-                                y: .value(selectedMetric.rawValue, p.value)
-                            )
-                        }
-                        .frame(minHeight: 240)
+    
+    var distributionData: [DistributionDataPoint] {
+        var categoryCountMap: [String: Int] = [:]
+        
+        // Process exercises
+        if selectedType == .all || selectedType == .exercise {
+            for session in dateFilteredSessions {
+                for item in session.items {
+                    if applyFiltersToExercise(item) {
+                        let category = getCategoryValue(for: item, axis: selectedDistributionAxis)
+                        categoryCountMap[category, default: 0] += 1
                     }
                 }
             }
-            .navigationTitle("Progress")
+        }
+        
+        // Process climbs
+        if selectedType == .all || selectedType == .climb {
+            for climb in dateFilteredClimbEntries {
+                if applyFiltersToClimb(climb) {
+                    let category = getCategoryValue(for: climb, axis: selectedDistributionAxis)
+                    categoryCountMap[category, default: 0] += 1
+                }
+            }
+        }
+        
+        return categoryCountMap.map { DistributionDataPoint(category: $0.key, count: $0.value) }
+            .sorted { $0.count > $1.count }
+    }
+    
+    private func applyFiltersToExercise(_ item: SessionItem) -> Bool {
+        if !selectedStyle.isEmpty && item.exerciseName != selectedStyle { return false }
+        if !selectedGrade.isEmpty && item.grade != selectedGrade { return false }
+        return true
+    }
+    
+    private func applyFiltersToClimb(_ climb: ClimbEntry) -> Bool {
+        if !selectedStyle.isEmpty && climb.style != selectedStyle { return false }
+        if !selectedGrade.isEmpty && climb.grade != selectedGrade { return false }
+        if !selectedAngle.isEmpty {
+            let angleStr = climb.angleDegrees.map { "\($0)°" } ?? ""
+            if angleStr != selectedAngle { return false }
+        }
+        if !selectedGym.isEmpty && climb.gym != selectedGym { return false }
+        return true
+    }
+    
+    private func getCategoryValue(for item: SessionItem, axis: DistributionAxis) -> String {
+        switch axis {
+        case .style:
+            return item.exerciseName
+        case .grade:
+            return item.grade ?? "No Grade"
+        case .angle:
+            return "N/A" // Exercises don't have angles
+        case .exercise:
+            return item.exerciseName
+        }
+    }
+    
+    private func getCategoryValue(for climb: ClimbEntry, axis: DistributionAxis) -> String {
+        switch axis {
+        case .style:
+            return climb.style
+        case .grade:
+            return climb.grade
+        case .angle:
+            return climb.angleDegrees.map { "\($0)°" } ?? "No Angle"
+        case .exercise:
+            return "N/A" // Climbs don't have exercise names
+        }
+    }
+    
+    var totalCount: Int {
+        var count = 0
+        
+        if selectedType == .all || selectedType == .exercise {
+            count += dateFilteredSessions.flatMap { $0.items.filter(applyFiltersToExercise) }.count
+        }
+        
+        if selectedType == .all || selectedType == .climb {
+            count += dateFilteredClimbEntries.filter(applyFiltersToClimb).count
+        }
+        
+        return count
+    }
+    
+    // Clear all filters function
+    private func clearAllFilters() {
+        selectedType = .all
+        selectedStyle = ""
+        selectedGrade = ""
+        selectedAngle = ""
+        selectedGym = ""
+        selectedPlanID = nil
+        dateRange = .all
+        selectedDistributionAxis = .style
+        customEndDate = Date()
+        customStartDate = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+    }
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                // Filters Section
+                Section("Filters") {
+                    Picker("Type", selection: $selectedType) {
+                        ForEach(LogType.allCases) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                    
+                    Picker("Date Range", selection: $dateRange) {
+                        ForEach(DateRange.allCases) { range in
+                            Text(range.rawValue).tag(range)
+                        }
+                    }
+                    
+                    if dateRange == .custom {
+                        DatePicker("Start Date", selection: $customStartDate, displayedComponents: .date)
+                        DatePicker("End Date", selection: $customEndDate, displayedComponents: .date)
+                    }
+                    
+                    if selectedType == .all || selectedType == .exercise {
+                        Picker("Plan", selection: $selectedPlanID) {
+                            Text("All plans").tag(UUID?.none)
+                            ForEach(plansForFilter) { p in
+                                Text(p.name).tag(UUID?.some(p.id))
+                            }
+                        }
+                    }
+                    
+                    if !availableStyles.isEmpty {
+                        Picker(selectedType == .exercise ? "Exercise" : "Style", selection: $selectedStyle) {
+                            Text(selectedType == .exercise ? "All exercises" : "All styles").tag("")
+                            ForEach(availableStyles, id: \.self) { style in
+                                Text(style).tag(style)
+                            }
+                        }
+                    }
+                    
+                    if !availableGrades.isEmpty {
+                        Picker("Grade", selection: $selectedGrade) {
+                            Text("All grades").tag("")
+                            ForEach(availableGrades, id: \.self) { grade in
+                                Text(grade).tag(grade)
+                            }
+                        }
+                    }
+                    
+                    if !availableAngles.isEmpty && (selectedType == .all || selectedType == .climb) {
+                        Picker("Angle", selection: $selectedAngle) {
+                            Text("All angles").tag("")
+                            ForEach(availableAngles, id: \.self) { angle in
+                                Text(angle).tag(angle)
+                            }
+                        }
+                    }
+                    
+                    if !availableGyms.isEmpty && (selectedType == .all || selectedType == .climb) {
+                        Picker("Gym", selection: $selectedGym) {
+                            Text("All gyms").tag("")
+                            ForEach(availableGyms, id: \.self) { gym in
+                                Text(gym).tag(gym)
+                            }
+                        }
+                    }
+                    
+                    // Clear Filters Button
+                    Button("Clear All Filters") {
+                        clearAllFilters()
+                    }
+                    .foregroundColor(.red)
+                }
+                
+                // Summary Section
+                Section("Summary") {
+                    HStack {
+                        Text("Total Items")
+                        Spacer()
+                        Text("\(totalCount)")
+                    }
+                    
+                    if selectedType == .all || selectedType == .exercise {
+                        HStack {
+                            Text("Sessions")
+                            Spacer()
+                            Text("\(dateFilteredSessions.count)")
+                        }
+                    }
+                    
+                    if selectedType == .all || selectedType == .climb {
+                        HStack {
+                            Text("Climb Entries")
+                            Spacer()
+                            Text("\(dateFilteredClimbEntries.count)")
+                        }
+                    }
+                }
+                
+                // Progress Over Time Chart
+                Section("Progress Over Time") {
+                    if timeSeriesData.isEmpty {
+                        Text("No data available for the selected filters")
+                            .foregroundStyle(.secondary)
+                            .frame(minHeight: 120)
+                    } else {
+                        Chart(timeSeriesData) { point in
+                            LineMark(
+                                x: .value("Date", point.date),
+                                y: .value("Count", point.count)
+                            )
+                            .foregroundStyle(.blue)
+                            
+                            PointMark(
+                                x: .value("Date", point.date),
+                                y: .value("Count", point.count)
+                            )
+                            .foregroundStyle(.blue)
+                        }
+                        .frame(minHeight: 200)
+                        .chartYAxis {
+                            AxisMarks(position: .leading)
+                        }
+                        .chartXAxis {
+                            AxisMarks(values: .stride(by: .day, count: max(1, timeSeriesData.count / 5))) { value in
+                                AxisGridLine()
+                                AxisTick()
+                                AxisValueLabel(format: .dateTime.month().day())
+                            }
+                        }
+                    }
+                }
+                
+                // Distribution Chart
+                Section("Distribution") {
+                    Picker("", selection: $selectedDistributionAxis) {
+                        ForEach(DistributionAxis.allCases) { axis in
+                            Text(axis.displayName(for: selectedType)).tag(axis)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    if distributionData.isEmpty {
+                        Text("No data available for the selected filters")
+                            .foregroundStyle(.secondary)
+                            .frame(minHeight: 120)
+                    } else {
+                        Chart(distributionData.prefix(10)) { point in // Limit to top 10 for readability
+                            BarMark(
+                                x: .value("Category", point.category),
+                                y: .value("Count", point.count)
+                            )
+                            .foregroundStyle(.green)
+                        }
+                        .frame(minHeight: 200)
+                        .chartYAxis {
+                            AxisMarks(position: .leading)
+                        }
+                        .chartXAxis {
+                            AxisMarks { value in
+                                AxisGridLine()
+                                AxisTick()
+                                AxisValueLabel() {
+                                    if let category = value.as(String.self) {
+                                        Text(category)
+                                            .rotationEffect(.degrees(-45))
+                                            .font(.caption)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Progress Analytics")
+            .onAppear {
+                // Reset filters when view appears
+                selectedStyle = ""
+                selectedGrade = ""
+                selectedAngle = ""
+                selectedGym = ""
+                customEndDate = Date()
+                customStartDate = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+            }
         }
     }
 }
