@@ -60,13 +60,10 @@ struct TimerView: View {
                 }
             }
             .padding()
-            .navigationTitle("Timer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") {
-                        dismiss()
-                    }
+                   
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {

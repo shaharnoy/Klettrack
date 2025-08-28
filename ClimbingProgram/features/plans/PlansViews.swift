@@ -69,7 +69,6 @@ struct PlansListView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("Plans")
         .navigationDestination(for: PlanNavigationItem.self) { planItem in
             // Find the plan by ID and pass it to PlanDetailView
             if let plan = plans.first(where: { $0.id == planItem.planId }) {

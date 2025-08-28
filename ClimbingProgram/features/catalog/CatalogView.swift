@@ -54,8 +54,6 @@ struct CatalogView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            .navigationTitle("Catalog")
-
             // New Category
             .sheet(isPresented: $showingNewActivity) {
                 NameOnlySheet(title: "New Category", placeholder: "e.g. Core, Antagonist & Stabilizer…", name: $draftActivityName) {

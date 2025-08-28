@@ -38,7 +38,6 @@ struct LogView: View {
     var body: some View {
         NavigationStack {
             CombinedLogList(sessions: sessions, climbEntries: climbEntries) // <- updated to show both
-                .navigationTitle("Log")
                 .toolbar { trailingToolbar }
                 .sheet(isPresented: $showingNew) { NewSessionSheet() }
         }

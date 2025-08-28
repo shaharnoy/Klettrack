@@ -28,7 +28,7 @@ struct ClimbView: View {
                             guard isDataReady else { return }
                             showingAddClimb = true
                         } label: {
-                            Label("Log a Climb", systemImage: "plus")
+                            Text("Log a Climb")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
@@ -66,7 +66,6 @@ struct ClimbView: View {
                 .padding(.horizontal, 16)
             }
         }
-        .navigationTitle("Climb")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -135,73 +134,89 @@ struct ClimbRowCard: View {
     }
     
     var body: some View {
-        CatalogCard(
-            title: climb.grade,
-            subtitle: climb.dateLogged.formatted(.dateTime.weekday().month().day()),
-            tint: climbTypeColor
-        ) {
-            VStack(alignment: .leading, spacing: 8) {
-                // Top row: Type, Style, WIP indicator
-                HStack {
-                    // Climb type badge
-                    Text(climb.climbType.displayName)
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(climbTypeColor.opacity(0.2))
-                        .foregroundColor(climbTypeColor)
-                        .cornerRadius(4)
-                    
-                    // Style
-                    Text(climb.style)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Spacer()
-                    
-                    // WIP indicator
-                    if climb.isWorkInProgress {
-                        Text("WIP")
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.yellow.opacity(0.3))
-                            .foregroundColor(.orange)
-                            .cornerRadius(4)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            // Top row: Grade, Type, Date, WIP
+            HStack(alignment: .center) {
                 
-                // Middle row: Location and details
-                HStack(spacing: 8) {
-                    Text(climb.gym)
+                // Climb type badge
+                Text(climb.climbType.displayName)
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(climbTypeColor.opacity(0.2))
+                    .foregroundColor(climbTypeColor)
+                    .cornerRadius(3)
+                
+                // Grade - only show if not "Unknown"
+                if climb.grade != "Unknown" && !climb.grade.isEmpty {
+                    Text(climb.grade)
                         .font(.subheadline)
                         .foregroundColor(.primary)
-                    
-                    if let angle = climb.angleDegrees {
-                        Text("• \(angle)°")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    if let attempts = climb.attempts, !attempts.isEmpty {
-                        Text("• \(attempts) attempts")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
                 }
                 
-                // Notes if available
-                if let notes = climb.notes, !notes.isEmpty {
-                    Text(notes)
+                Spacer()
+                
+                // Date
+                Text(climb.dateLogged.formatted(.dateTime.year().month().day()))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                // WIP indicator
+                if climb.isWorkInProgress {
+                    Text("WIP")
                         .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(3)
-                        .padding(.top, 2)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.yellow.opacity(0.3))
+                        .foregroundColor(.orange)
+                        .cornerRadius(3)
+                }
+            }
+            
+            // Bottom row: Style, Gym, and optional details - only show if populated
+            let hasStyle = climb.style != "Unknown" && !climb.style.isEmpty
+            let hasGym = climb.gym != "Unknown" && !climb.gym.isEmpty
+            let hasAngle = climb.angleDegrees != nil
+            
+            if hasStyle || hasGym || hasAngle {
+                HStack(spacing: 4) {
+                    if hasStyle {
+                        Text(climb.style)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    if hasAngle {
+                        if hasStyle {
+                            Text("•")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Text("\(climb.angleDegrees!)°")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    if hasGym {
+                        if hasStyle || hasAngle {
+                            Text("•")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Text("@\(climb.gym)")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
+        .padding(14)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(climbTypeColor.opacity(0.25), lineWidth: 1)
+        )
         .contextMenu {
             Button(role: .destructive) {
                 onDelete()

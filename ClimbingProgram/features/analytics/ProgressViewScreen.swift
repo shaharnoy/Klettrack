@@ -512,7 +512,6 @@ struct ProgressViewScreen: View {
                     }
                 }
             }
-            .navigationTitle("Progress view")
             .onAppear {
                 // Reset filters when view appears
                 selectedStyle = ""
