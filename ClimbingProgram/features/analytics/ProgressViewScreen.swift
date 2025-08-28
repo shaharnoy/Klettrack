@@ -16,11 +16,12 @@ struct ProgressViewScreen: View {
     @Query(sort: \Plan.startDate) private var plansForFilter: [Plan]
     
     // Filter states
-    @State private var selectedType: LogType = .all
+    @State private var selectedType: LogType = .climb
     @State private var selectedStyle: String = ""
     @State private var selectedGrade: String = ""
     @State private var selectedAngle: String = ""
     @State private var selectedGym: String = ""
+    @State private var selectedClimbType: String = ""
     @State private var selectedMetric: Metric = .count
     @State private var selectedPlanID: UUID? = nil
     
@@ -34,7 +35,6 @@ struct ProgressViewScreen: View {
     
     // Enums for filters and metrics
     enum LogType: String, CaseIterable, Identifiable {
-        case all = "All"
         case exercise = "Exercise"
         case climb = "Climb"
         var id: String { rawValue }
@@ -50,7 +50,7 @@ struct ProgressViewScreen: View {
     
     enum DistributionAxis: String, CaseIterable, Identifiable {
         case style = "Style"
-        case grade = "Grade" 
+        case grade = "Grade"
         case angle = "Angle"
         case exercise = "Exercise"
         var id: String { rawValue }
@@ -145,12 +145,10 @@ struct ProgressViewScreen: View {
     var availableStyles: [String] {
         var styles: [String] = []
         
-        if selectedType == .all || selectedType == .exercise {
+        if selectedType == .exercise {
             // For exercises, we don't have style directly, but we can use exercise names as styles
             styles.append(contentsOf: dateFilteredSessions.flatMap { $0.items.map { $0.exerciseName } })
-        }
-        
-        if selectedType == .all || selectedType == .climb {
+        } else {
             styles.append(contentsOf: dateFilteredClimbEntries.map { $0.style })
         }
         
@@ -160,11 +158,9 @@ struct ProgressViewScreen: View {
     var availableGrades: [String] {
         var grades: [String] = []
         
-        if selectedType == .all || selectedType == .exercise {
+        if selectedType == .exercise {
             grades.append(contentsOf: dateFilteredSessions.flatMap { $0.items.compactMap { $0.grade } })
-        }
-        
-        if selectedType == .all || selectedType == .climb {
+        } else {
             grades.append(contentsOf: dateFilteredClimbEntries.map { $0.grade })
         }
         
@@ -174,7 +170,7 @@ struct ProgressViewScreen: View {
     var availableAngles: [String] {
         var angles: [String] = []
         
-        if selectedType == .all || selectedType == .climb {
+        if selectedType == .climb {
             angles.append(contentsOf: dateFilteredClimbEntries.compactMap { entry in
                 entry.angleDegrees.map { "\($0)°" }
             })
@@ -186,7 +182,7 @@ struct ProgressViewScreen: View {
     var availableGyms: [String] {
         var gyms: [String] = []
         
-        if selectedType == .all || selectedType == .climb {
+        if selectedType == .climb {
             gyms.append(contentsOf: dateFilteredClimbEntries.map { $0.gym })
         }
         
@@ -210,8 +206,8 @@ struct ProgressViewScreen: View {
         let calendar = Calendar.current
         var dateCountMap: [Date: Int] = [:]
         
-        // Process exercises
-        if selectedType == .all || selectedType == .exercise {
+        if selectedType == .exercise {
+            // Process exercises
             for session in dateFilteredSessions {
                 let dayStart = calendar.startOfDay(for: session.date)
                 let items = session.items.filter { item in
@@ -219,10 +215,8 @@ struct ProgressViewScreen: View {
                 }
                 dateCountMap[dayStart, default: 0] += items.count
             }
-        }
-        
-        // Process climbs
-        if selectedType == .all || selectedType == .climb {
+        } else {
+            // Process climbs
             for climb in dateFilteredClimbEntries {
                 if applyFiltersToClimb(climb) {
                     let dayStart = calendar.startOfDay(for: climb.dateLogged)
@@ -238,8 +232,8 @@ struct ProgressViewScreen: View {
     var distributionData: [DistributionDataPoint] {
         var categoryCountMap: [String: Int] = [:]
         
-        // Process exercises
-        if selectedType == .all || selectedType == .exercise {
+        if selectedType == .exercise {
+            // Process exercises
             for session in dateFilteredSessions {
                 for item in session.items {
                     if applyFiltersToExercise(item) {
@@ -248,10 +242,8 @@ struct ProgressViewScreen: View {
                     }
                 }
             }
-        }
-        
-        // Process climbs
-        if selectedType == .all || selectedType == .climb {
+        } else {
+            // Process climbs
             for climb in dateFilteredClimbEntries {
                 if applyFiltersToClimb(climb) {
                     let category = getCategoryValue(for: climb, axis: selectedDistributionAxis)
@@ -278,6 +270,7 @@ struct ProgressViewScreen: View {
             if angleStr != selectedAngle { return false }
         }
         if !selectedGym.isEmpty && climb.gym != selectedGym { return false }
+        if !selectedClimbType.isEmpty && climb.climbType.rawValue != selectedClimbType { return false }
         return true
     }
     
@@ -308,26 +301,20 @@ struct ProgressViewScreen: View {
     }
     
     var totalCount: Int {
-        var count = 0
-        
-        if selectedType == .all || selectedType == .exercise {
-            count += dateFilteredSessions.flatMap { $0.items.filter(applyFiltersToExercise) }.count
+        if selectedType == .exercise {
+            return dateFilteredSessions.flatMap { $0.items.filter(applyFiltersToExercise) }.count
+        } else {
+            return dateFilteredClimbEntries.filter(applyFiltersToClimb).count
         }
-        
-        if selectedType == .all || selectedType == .climb {
-            count += dateFilteredClimbEntries.filter(applyFiltersToClimb).count
-        }
-        
-        return count
     }
     
     // Clear all filters function
     private func clearAllFilters() {
-        selectedType = .all
         selectedStyle = ""
         selectedGrade = ""
         selectedAngle = ""
         selectedGym = ""
+        selectedClimbType = ""
         selectedPlanID = nil
         dateRange = .all
         selectedDistributionAxis = .style
@@ -338,14 +325,20 @@ struct ProgressViewScreen: View {
     var body: some View {
         NavigationStack {
             List {
-                // Filters Section
-                Section("Filters") {
+                // Type Toggle Section
+                Section {
                     Picker("Type", selection: $selectedType) {
                         ForEach(LogType.allCases) { type in
                             Text(type.rawValue).tag(type)
                         }
                     }
-                    
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Type")
+                }
+                
+                // Filters Section
+                Section("Filters") {
                     Picker("Date Range", selection: $dateRange) {
                         ForEach(DateRange.allCases) { range in
                             Text(range.rawValue).tag(range)
@@ -357,7 +350,8 @@ struct ProgressViewScreen: View {
                         DatePicker("End Date", selection: $customEndDate, displayedComponents: .date)
                     }
                     
-                    if selectedType == .all || selectedType == .exercise {
+                    // Exercise-specific filters
+                    if selectedType == .exercise {
                         Picker("Plan", selection: $selectedPlanID) {
                             Text("All plans").tag(UUID?.none)
                             ForEach(plansForFilter) { p in
@@ -366,6 +360,34 @@ struct ProgressViewScreen: View {
                         }
                     }
                     
+                    // Climb-specific filters
+                    if selectedType == .climb {
+                        Picker("Climb Type", selection: $selectedClimbType) {
+                            Text("All types").tag("")
+                            Text("Boulder").tag("Boulder")
+                            Text("Lead").tag("Lead")
+                        }
+                        
+                        if !availableAngles.isEmpty {
+                            Picker("Angle", selection: $selectedAngle) {
+                                Text("All angles").tag("")
+                                ForEach(availableAngles, id: \.self) { angle in
+                                    Text(angle).tag(angle)
+                                }
+                            }
+                        }
+                        
+                        if !availableGyms.isEmpty {
+                            Picker("Gym", selection: $selectedGym) {
+                                Text("All gyms").tag("")
+                                ForEach(availableGyms, id: \.self) { gym in
+                                    Text(gym).tag(gym)
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Common filters
                     if !availableStyles.isEmpty {
                         Picker(selectedType == .exercise ? "Exercise" : "Style", selection: $selectedStyle) {
                             Text(selectedType == .exercise ? "All exercises" : "All styles").tag("")
@@ -380,24 +402,6 @@ struct ProgressViewScreen: View {
                             Text("All grades").tag("")
                             ForEach(availableGrades, id: \.self) { grade in
                                 Text(grade).tag(grade)
-                            }
-                        }
-                    }
-                    
-                    if !availableAngles.isEmpty && (selectedType == .all || selectedType == .climb) {
-                        Picker("Angle", selection: $selectedAngle) {
-                            Text("All angles").tag("")
-                            ForEach(availableAngles, id: \.self) { angle in
-                                Text(angle).tag(angle)
-                            }
-                        }
-                    }
-                    
-                    if !availableGyms.isEmpty && (selectedType == .all || selectedType == .climb) {
-                        Picker("Gym", selection: $selectedGym) {
-                            Text("All gyms").tag("")
-                            ForEach(availableGyms, id: \.self) { gym in
-                                Text(gym).tag(gym)
                             }
                         }
                     }
@@ -417,15 +421,13 @@ struct ProgressViewScreen: View {
                         Text("\(totalCount)")
                     }
                     
-                    if selectedType == .all || selectedType == .exercise {
+                    if selectedType == .exercise {
                         HStack {
                             Text("Sessions")
                             Spacer()
                             Text("\(dateFilteredSessions.count)")
                         }
-                    }
-                    
-                    if selectedType == .all || selectedType == .climb {
+                    } else {
                         HStack {
                             Text("Climb Entries")
                             Spacer()
@@ -484,24 +486,25 @@ struct ProgressViewScreen: View {
                     } else {
                         Chart(distributionData.prefix(10)) { point in // Limit to top 10 for readability
                             BarMark(
-                                x: .value("Category", point.category),
-                                y: .value("Count", point.count)
+                                x: .value("Count", point.count),
+                                y: .value("Category", point.category)
                             )
                             .foregroundStyle(.green)
                         }
-                        .frame(minHeight: 200)
-                        .chartYAxis {
-                            AxisMarks(position: .leading)
-                        }
+                        .frame(minHeight: 300)
                         .chartXAxis {
-                            AxisMarks { value in
+                            AxisMarks(position: .bottom)
+                        }
+                        .chartYAxis {
+                            AxisMarks(position: .leading) { value in
                                 AxisGridLine()
                                 AxisTick()
                                 AxisValueLabel() {
                                     if let category = value.as(String.self) {
                                         Text(category)
-                                            .rotationEffect(.degrees(-45))
                                             .font(.caption)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.trailing)
                                     }
                                 }
                             }
@@ -509,7 +512,7 @@ struct ProgressViewScreen: View {
                     }
                 }
             }
-            .navigationTitle("Progress Analytics")
+            .navigationTitle("Progress view")
             .onAppear {
                 // Reset filters when view appears
                 selectedStyle = ""
