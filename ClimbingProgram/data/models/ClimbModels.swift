@@ -68,10 +68,9 @@ struct ClimbingDefaults {
         "slab",
         "overhang",
         "crimps",
-        "pinchy",
-        "pumpy",
-        "dynamic",
-        "other"
+        "coordination",
+        "tension board",
+        "kilter board"
     ]
     
     static let defaultGyms = [

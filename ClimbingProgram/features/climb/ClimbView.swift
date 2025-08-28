@@ -11,55 +11,48 @@ import SwiftData
 struct ClimbView: View {
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.modelContext) private var modelContext
-    @Query private var climbEntries: [ClimbEntry]
+    @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
     @State private var showingAddClimb = false
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                if climbEntries.isEmpty {
-                    // Empty state
-                    VStack(spacing: 20) {
-                        Image(systemName: "mountain.2.fill")
-                            .font(.system(size: 80))
-                            .foregroundColor(.blue)
-                        
-                        Text("Climb")
-                            .font(.largeTitle.bold())
-                        
-                        Text("Start tracking your climbing sessions")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        
-                        Button(action: { showingAddClimb = true }) {
-                            Label("Add New Climb", systemImage: "plus.circle.fill")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.blue)
-                                .cornerRadius(10)
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if climbEntries.isEmpty {
+                        // Empty state using consistent design
+                        emptyStateCard
+                    } else {
+                        // Add climb button at the top when there are existing climbs
+                        Button {
+                            guard isDataReady else { return }
+                            showingAddClimb = true
+                        } label: {
+                            Label("Log a Climb", systemImage: "plus")
+                                .frame(maxWidth: .infinity)
                         }
-                    }
-                } else {
-                    // List of climbs
-                    List {
-                        ForEach(climbEntries.sorted(by: { $0.dateLogged > $1.dateLogged })) { climb in
-                            ClimbRowView(climb: climb)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.accentColor)
+                        .disabled(!isDataReady)
+                        
+                        // List of climbs using card design
+                        ForEach(climbEntries) { climb in
+                            ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) })
                         }
-                        .onDelete(perform: deleteClimbs)
                     }
                 }
-                
-                Spacer()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding()
             .navigationTitle("Climb")
-            .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button(action: { showingAddClimb = true }) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        guard isDataReady else { return }
+                        showingAddClimb = true
+                    } label: {
                         Image(systemName: "plus")
                     }
+                    .disabled(!isDataReady)
                 }
             }
             .sheet(isPresented: $showingAddClimb) {
@@ -70,91 +63,127 @@ struct ClimbView: View {
         .animation(.easeInOut(duration: 0.3), value: isDataReady)
     }
     
-    private func deleteClimbs(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                let sortedClimbs = climbEntries.sorted(by: { $0.dateLogged > $1.dateLogged })
-                modelContext.delete(sortedClimbs[index])
+    private var emptyStateCard: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "mountain.2.fill")
+                .font(.system(size: 60))
+                .foregroundColor(CatalogHue.climbing.color)
+            
+            Text("Track your climbing sessions")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Button(action: { showingAddClimb = true }) {
+                Label("Add Your First Climb", systemImage: "plus.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(CatalogHue.climbing.color)
+                    .cornerRadius(8)
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 60)
+    }
+    
+    private func deleteClimb(_ climb: ClimbEntry) {
+        withAnimation {
+            modelContext.delete(climb)
+            try? modelContext.save()
         }
     }
 }
 
-struct ClimbRowView: View {
+struct ClimbRowCard: View {
     let climb: ClimbEntry
+    let onDelete: () -> Void
+    
+    private var climbTypeColor: Color {
+        switch climb.climbType {
+        case .boulder:
+            return CatalogHue.bouldering.color
+        case .lead:
+            return CatalogHue.climbing.color
+        }
+    }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                // Climb type indicator
-                Text(climb.climbType.displayName)
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(climb.climbType == .boulder ? Color.orange : Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(4)
-                
-                Spacer()
-                
-                // Date
-                Text(climb.dateLogged, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            HStack {
-                // Grade
-                Text(climb.grade)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                // Style
-                Text(climb.style)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                // WIP indicator
-                if climb.isWorkInProgress {
-                    Text("WIP")
+        CatalogCard(
+            title: climb.grade,
+            subtitle: climb.dateLogged.formatted(.dateTime.weekday().month().day()),
+            tint: climbTypeColor
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Top row: Type, Style, WIP indicator
+                HStack {
+                    // Climb type badge
+                    Text(climb.climbType.displayName)
                         .font(.caption)
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Color.yellow)
-                        .foregroundColor(.black)
+                        .background(climbTypeColor.opacity(0.2))
+                        .foregroundColor(climbTypeColor)
                         .cornerRadius(4)
-                }
-            }
-            
-            HStack {
-                // Gym
-                Text(climb.gym)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                if let angle = climb.angleDegrees {
-                    Text("• \(angle)°")
+                    
+                    // Style
+                    Text(climb.style)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    // WIP indicator
+                    if climb.isWorkInProgress {
+                        Text("WIP")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.yellow.opacity(0.3))
+                            .foregroundColor(.orange)
+                            .cornerRadius(4)
+                    }
                 }
                 
-                if let attempts = climb.attempts, !attempts.isEmpty {
-                    Text("• \(attempts) attempts")
+                // Middle row: Location and details
+                HStack(spacing: 8) {
+                    Text(climb.gym)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                    
+                    if let angle = climb.angleDegrees {
+                        Text("• \(angle)°")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    if let attempts = climb.attempts, !attempts.isEmpty {
+                        Text("• \(attempts) attempts")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+                
+                // Notes if available
+                if let notes = climb.notes, !notes.isEmpty {
+                    Text(notes)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .lineLimit(3)
+                        .padding(.top, 2)
                 }
-            }
-            
-            if let notes = climb.notes, !notes.isEmpty {
-                Text(notes)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
             }
         }
-        .padding(.vertical, 4)
+        .contextMenu {
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 }
 
