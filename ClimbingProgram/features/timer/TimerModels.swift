@@ -46,7 +46,11 @@ struct IntervalConfiguration {
     let repetitions: Int
     
     var totalTimeSeconds: Int {
-        (workTimeSeconds + restTimeSeconds) * repetitions
+        // Work periods: repetitions
+        // Rest periods: repetitions - 1 (no rest after the last work period)
+        let totalWorkTime = workTimeSeconds * repetitions
+        let totalRestTime = restTimeSeconds * max(0, repetitions - 1)
+        return totalWorkTime + totalRestTime
     }
 }
 

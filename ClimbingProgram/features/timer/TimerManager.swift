@@ -62,16 +62,28 @@ class TimerManager: ObservableObject {
         guard let intervalConfig = currentIntervalConfig else { return 0 }
         
         let timeInCurrentInterval = calculateTimeInCurrentInterval()
-        let cycleTime = intervalConfig.workTimeSeconds + intervalConfig.restTimeSeconds
-        let timeInCurrentCycle = timeInCurrentInterval % cycleTime
+        let singleCycleTime = intervalConfig.workTimeSeconds + intervalConfig.restTimeSeconds
+        let currentCycle = timeInCurrentInterval / singleCycleTime
+        let timeInCurrentCycle = timeInCurrentInterval % singleCycleTime
         
-        switch currentPhase {
-        case .work:
-            return intervalConfig.workTimeSeconds - timeInCurrentCycle
-        case .rest:
-            return cycleTime - timeInCurrentCycle
-        case .completed:
-            return 0
+        // Handle the last repetition differently (no rest after final work)
+        if currentCycle == intervalConfig.repetitions - 1 {
+            // Last repetition - only work phase
+            if timeInCurrentCycle < intervalConfig.workTimeSeconds {
+                return intervalConfig.workTimeSeconds - timeInCurrentCycle
+            } else {
+                return 0 // Completed final work period
+            }
+        } else {
+            // Normal work-rest cycles
+            switch currentPhase {
+            case .work:
+                return intervalConfig.workTimeSeconds - timeInCurrentCycle
+            case .rest:
+                return singleCycleTime - timeInCurrentCycle
+            case .completed:
+                return 0
+            }
         }
     }
     
@@ -304,17 +316,41 @@ class TimerManager: ObservableObject {
         }
         
         let interval = config.intervals[currentInterval]
-        let cycleTime = interval.workTimeSeconds + interval.restTimeSeconds
         
         // Calculate time within current interval (excluding previous intervals and rest periods)
         let timeInCurrentInterval = calculateTimeInCurrentInterval()
-        let timeInCurrentCycle = timeInCurrentInterval % cycleTime
         
-        // Determine current phase and time remaining in current phase
-        let (newPhase, timeRemainingInPhase) = if timeInCurrentCycle < interval.workTimeSeconds {
-            (IntervalPhase.work, interval.workTimeSeconds - timeInCurrentCycle)
+        // New logic: Calculate which work/rest cycle we're in and the phase
+        let singleCycleTime = interval.workTimeSeconds + interval.restTimeSeconds
+        let currentCycle = timeInCurrentInterval / singleCycleTime
+        let timeInCurrentCycle = timeInCurrentInterval % singleCycleTime
+        
+        // Determine current phase and time remaining
+        let (newPhase, timeRemainingInPhase): (IntervalPhase, Int)
+        
+        if currentCycle >= interval.repetitions {
+            // We've completed all repetitions, should move to next interval
+            newPhase = .completed
+            timeRemainingInPhase = 0
+        } else if currentCycle == interval.repetitions - 1 {
+            // Last repetition - only work phase, no rest after
+            if timeInCurrentCycle < interval.workTimeSeconds {
+                newPhase = .work
+                timeRemainingInPhase = interval.workTimeSeconds - timeInCurrentCycle
+            } else {
+                // Completed final work period - move to next interval
+                newPhase = .completed
+                timeRemainingInPhase = 0
+            }
         } else {
-            (IntervalPhase.rest, cycleTime - timeInCurrentCycle)
+            // Normal work-rest cycles (not the last repetition)
+            if timeInCurrentCycle < interval.workTimeSeconds {
+                newPhase = .work
+                timeRemainingInPhase = interval.workTimeSeconds - timeInCurrentCycle
+            } else {
+                newPhase = .rest
+                timeRemainingInPhase = singleCycleTime - timeInCurrentCycle
+            }
         }
         
         // Phase change detection
@@ -333,23 +369,19 @@ class TimerManager: ObservableObject {
         }
         
         // Countdown beeps for last 3 seconds of each phase
-        checkCountdownBeeps(timeRemaining: timeRemainingInPhase)
+        if newPhase != .completed {
+            checkCountdownBeeps(timeRemaining: timeRemainingInPhase)
+        }
         
-        // Check if we completed a cycle (work + rest)
-        let completedCycles = timeInCurrentInterval / cycleTime
-        let newRepetition = min(completedCycles, interval.repetitions)
-        
+        // Update repetition counter
+        let newRepetition = min(currentCycle + (timeInCurrentCycle >= interval.workTimeSeconds ? 1 : 0), interval.repetitions)
         if newRepetition > currentRepetition {
             currentRepetition = newRepetition
         }
         
         // Check if we've completed ALL repetitions for this interval
-        if currentRepetition >= interval.repetitions {
-            // Check if we've completed the total time for this interval
-            let totalIntervalTime = interval.totalTimeSeconds
-            if timeInCurrentInterval >= totalIntervalTime {
-                moveToNextInterval()
-            }
+        if currentRepetition >= interval.repetitions && timeInCurrentInterval >= interval.totalTimeSeconds {
+            moveToNextInterval()
         }
     }
     
