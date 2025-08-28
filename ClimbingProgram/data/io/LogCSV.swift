@@ -39,25 +39,30 @@ struct LogCSVDocument: FileDocument {
 
 enum LogCSV {
 
-    /// Build a CSV snapshot from all Sessions + SessionItems in the store.
+    /// Build a CSV snapshot from all Sessions + SessionItems + ClimbEntries in the store.
     static func makeExportCSV(context: ModelContext) -> LogCSVDocument {
         // Fetch sessions oldest → newest for nice reading
         let sessions: [Session] = (try? context.fetch(
             FetchDescriptor<Session>(sortBy: [SortDescriptor(\.date, order: .forward)])
         )) ?? []
 
+        // Fetch climb entries oldest → newest
+        let climbEntries: [ClimbEntry] = (try? context.fetch(
+            FetchDescriptor<ClimbEntry>(sortBy: [SortDescriptor(\.dateLogged, order: .forward)])
+        )) ?? []
+
         // Fetch all plans to look up day types
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
-        var rows: [String] = ["date,exercise,reps,sets,weight_kg,plan_id,plan_name,day_type,notes"] // header with day_type
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes"] // Updated header
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
         df.timeZone = TimeZone.current // Use current timezone consistently
         df.locale = Locale(identifier: "en_US_POSIX") // Ensure consistent formatting
 
+        // Export exercises
         for s in sessions {
-            // Use the session date directly without normalization to avoid timezone issues
             let d = df.string(from: s.date)
             for i in s.items {
                 // Find the day type for this session item
@@ -75,7 +80,15 @@ enum LogCSV {
                 
                 rows.append([
                     d,
-                    csvEscape(i.exerciseName),
+                    "exercise", // type
+                    csvEscape(i.exerciseName), // exercise_name
+                    "", // climb_type (empty for exercises)
+                    csvEscape(i.grade ?? ""), // grade
+                    "", // angle (empty for exercises)
+                    "", // style (empty for exercises)
+                    "", // attempts (empty for exercises)
+                    "", // wip (empty for exercises)
+                    "", // gym (empty for exercises)
                     i.reps.map{ String(format: "%.3f", $0) } ?? "",
                     i.sets.map{ String(format: "%.3f", $0) } ?? "",
                     i.weightKg.map { String(format: "%.3f", $0) } ?? "",
@@ -86,6 +99,32 @@ enum LogCSV {
                 ].joined(separator: ","))
             }
         }
+        
+        // Export climb entries
+        for climb in climbEntries {
+            let d = df.string(from: climb.dateLogged)
+            
+            rows.append([
+                d,
+                "climb", // type
+                "", // exercise_name (empty for climbs)
+                csvEscape(climb.climbType.rawValue), // climb_type
+                csvEscape(climb.grade), // grade
+                climb.angleDegrees.map { String($0) } ?? "", // angle
+                csvEscape(climb.style), // style
+                csvEscape(climb.attempts ?? ""), // attempts
+                climb.isWorkInProgress ? "true" : "false", // wip
+                csvEscape(climb.gym), // gym
+                "", // reps (empty for climbs)
+                "", // sets (empty for climbs)
+                "", // weight_kg (empty for climbs)
+                "", // plan_id (empty for climbs)
+                "", // plan_name (empty for climbs)
+                "", // day_type (empty for climbs)
+                csvEscape(climb.notes ?? "")
+            ].joined(separator: ","))
+        }
+        
         return LogCSVDocument(csv: rows.joined(separator: "\n"))
     }
 
@@ -139,6 +178,9 @@ enum LogCSV {
         // Track day types by date for each plan to preserve day type information
         var planDayTypesByDate: [UUID: [Date: DayType]] = [:]
         
+        // Array to collect parsed entries
+        var out: [Entry] = []
+        
         var inserted = 0
         var hasValidRows = false
 
@@ -150,27 +192,36 @@ enum LogCSV {
                 continue
             }
 
-            // Expect: date,exercise,reps,sets,weight_kg,plan_id,plan_name,day_type,notes (updated format)
-            guard parts.count >= 2 else {
+            // Expect new format: date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes
+            guard parts.count >= 3 else {
                 if !hasValidRows {
                     throw CocoaError(.fileReadCorruptFile)
                 }
                 continue
             }
 
-            let dateStr   = parts[safe: 0] ?? ""
-            let name      = parts[safe: 1] ?? ""
-            let repsStr   = parts[safe: 2] ?? ""
-            let setsStr   = parts[safe: 3] ?? ""
-            let weightStr = parts[safe: 4] ?? ""
-            let planIdStr = parts[safe: 5] ?? ""
-            let planName  = parts[safe: 6] ?? ""
-            let dayTypeStr = parts[safe: 7] ?? ""  // New day_type field
-            let notes     = parts[safe: 8] ?? ""   // Notes moved to position 8
+            // Parse new format: date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes
+            let dateStr      = parts[safe: 0] ?? ""
+            let typeStr      = parts[safe: 1] ?? ""
+            let exerciseName = parts[safe: 2] ?? ""
+            let climbTypeStr = parts[safe: 3] ?? ""
+            let gradeStr     = parts[safe: 4] ?? ""
+            let angleStr     = parts[safe: 5] ?? ""
+            let styleStr     = parts[safe: 6] ?? ""
+            let attemptsStr  = parts[safe: 7] ?? ""
+            let wipStr       = parts[safe: 8] ?? ""
+            let gymStr       = parts[safe: 9] ?? ""
+            let repsStr      = parts[safe: 10] ?? ""
+            let setsStr      = parts[safe: 11] ?? ""
+            let weightStr    = parts[safe: 12] ?? ""
+            let planIdStr    = parts[safe: 13] ?? ""
+            let planName     = parts[safe: 14] ?? ""
+            let dayTypeStr   = parts[safe: 15] ?? ""
+            let notesRaw     = parts[safe: 16] ?? ""
 
             guard
                 let dayDate = df.date(from: dateStr),
-                !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                !typeStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else {
                 if !hasValidRows {
                     throw CocoaError(.fileReadCorruptFile)
@@ -179,118 +230,45 @@ enum LogCSV {
             }
             
             hasValidRows = true
-
-            // Normalize date to start of day for consistency
-            let startOfDay = calendar.startOfDay(for: dayDate)
-            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
-            
-            // Find/create session on that day
-            let descriptor = FetchDescriptor<Session>(predicate: #Predicate {
-                $0.date >= startOfDay && $0.date < endOfDay
-            })
-            let existing = (try? context.fetch(descriptor)) ?? []
-            let session = existing.first ?? {
-                let s = Session(date: startOfDay) // Always use normalized date
-                context.insert(s)
-                return s
-            }()
-
-            // Parse numeric fields (empty -> nil)
+            let type = typeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let angle = angleStr.isEmpty ? nil : Int(angleStr)
+            let style = styleStr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let attempts = attemptsStr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isWIP = wipStr.lowercased() == "true"
+            let gym = gymStr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
             let reps = Double(repsStr.replacingOccurrences(of: ",", with: ".")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        )
+                .trimmingCharacters(in: .whitespacesAndNewlines))
             let sets = Double(setsStr.replacingOccurrences(of: ",", with: ".")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-            let weight = Double(
-                weightStr
-                    .replacingOccurrences(of: ",", with: ".")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            )
-            
-            // Handle plan reference
-            var planId: UUID?
-            var planNameToUse: String?
-            if !planIdStr.isEmpty {
-                if let uuid = UUID(uuidString: planIdStr) {
-                    planId = uuid
-                    planNameToUse = planName.isEmpty ? nil : planName
-                    
-                    // Create plan if it doesn't exist
-                    if !planName.isEmpty && !knownPlans.keys.contains(uuid) {
-                        // Check if plan already exists in DB
-                        let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == uuid })
-                        if let existing = try? context.fetch(planDescriptor).first {
-                            knownPlans[uuid] = existing
-                        } else {
-                            // Create new plan
-                            let plan = Plan(id: uuid, name: planName, kind: .weekly, startDate: startOfDay)
-                            context.insert(plan)
-                            knownPlans[uuid] = plan
-                        }
-                    }
-                    
-                    // Track exercises for this plan and date to reconstruct plan structure
-                    if planExercisesByDate[uuid] == nil {
-                        planExercisesByDate[uuid] = [:]
-                    }
-                    if planExercisesByDate[uuid]![startOfDay] == nil {
-                        planExercisesByDate[uuid]![startOfDay] = Set()
-                    }
-                    planExercisesByDate[uuid]![startOfDay]!.insert(name)
-                    
-                    // Track day type for this date if present
-                    if !dayTypeStr.isEmpty, let dayType = DayType(rawValue: dayTypeStr) {
-                        if planDayTypesByDate[uuid] == nil {
-                            planDayTypesByDate[uuid] = [:]
-                        }
-                        planDayTypesByDate[uuid]![startOfDay] = dayType
-                    }
-                }
-            }
+                .trimmingCharacters(in: .whitespacesAndNewlines))
+            let weight = Double(weightStr
+                .replacingOccurrences(of: ",", with: ".")
+                .trimmingCharacters(in: .whitespacesAndNewlines))
+            let planId = UUID(uuidString: planIdStr)
+            let dayType = !dayTypeStr.isEmpty ? DayType(rawValue: dayTypeStr) : nil
+            let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let notesOpt = notes.isEmpty ? nil : notes
 
-            // DEDUPE within this session and globally if enabled
-            if dedupe {
-                let sig = itemSignature(date: session.date,
-                                        name: name,
-                                        reps: reps,
-                                        sets: sets,
-                                        weight: weight,
-                                        planId: planId,
-                                        planName: planNameToUse,
-                                        notes: notes)
-                
-                // Check for exact duplicate in current session
-                let existingItem = session.items.first { item in
-                    let itemSig = itemSignature(date: session.date,
-                                              name: item.exerciseName,
-                                              reps: item.reps,
-                                              sets: item.sets,
-                                              weight: item.weightKg,
-                                              planId: item.planSourceId,
-                                              planName: item.planName,
-                                              notes: item.notes)
-                    return itemSig == sig
-                }
-                
-                if existingItem != nil {
-                    continue // Skip duplicate
-                }
-            }
-
-            // Append & tag
-            let newItem = SessionItem(
-                exerciseName: name,
-                planSourceId: planId,
-                planName: planNameToUse,
+            out.append(Entry(
+                date: dayDate,
+                type: type,
+                name: name,
+                climbType: climbTypeStr.isEmpty ? nil : climbTypeStr,
+                grade: grade.isEmpty ? nil : grade,
+                angle: angle,
+                style: style.isEmpty ? nil : style,
+                attempts: attempts.isEmpty ? nil : attempts,
+                isWIP: isWIP,
+                gym: gym.isEmpty ? nil : gym,
                 reps: reps,
                 sets: sets,
-                weightKg: weight,
-                notes: notes.isEmpty ? nil : notes
-            )
-            newItem.sourceTag = tag
-            session.items.append(newItem)
-            inserted += 1
+                weight: weight,
+                planId: planId,
+                planName: planName.isEmpty ? nil : planName,
+                dayType: dayType,
+                notes: notesOpt
+            ))
         }
 
         // If no valid rows were found, throw an error
@@ -395,6 +373,35 @@ private func itemSignature(date: Date,
     ].joined(separator: "|")
 }
 
+/// Build a dedupe signature for a climb entry
+private func climbSignature(date: Date,
+                           climbType: ClimbType,
+                           grade: String,
+                           angle: Int?,
+                           style: String,
+                           attempts: String?,
+                           isWIP: Bool,
+                           gym: String,
+                           notes: String?) -> String {
+    func norm(_ s: String?) -> String {
+        (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+    let df = ISO8601DateFormatter()
+    df.formatOptions = [.withFullDate]
+    
+    return [
+        df.string(from: date),
+        climbType.rawValue,
+        norm(grade),
+        angle?.description ?? "",
+        norm(style),
+        norm(attempts),
+        isWIP ? "true" : "false",
+        norm(gym)
+        // Notes intentionally excluded from deduplication
+    ].joined(separator: "|")
+}
+
 // Safe indexing helper
 private extension Array {
     subscript(safe idx: Int) -> Element? {
@@ -403,10 +410,18 @@ private extension Array {
 }
 
 extension LogCSV {
-
+    
     struct Entry {
         let date: Date
+        let type: String // Added type field
         let name: String
+        let climbType: String? // Added climb-specific fields
+        let grade: String?
+        let angle: Int?
+        let style: String?
+        let attempts: String?
+        let isWIP: Bool
+        let gym: String?
         let reps: Double?
         let sets: Double?
         let weight: Double?
@@ -415,7 +430,7 @@ extension LogCSV {
         let dayType: DayType?
         let notes: String?
     }
-
+    
     /// Async importer: parses off-main, then mutates SwiftData on the main actor.
     @MainActor
     static func importCSVAsync(
@@ -425,32 +440,32 @@ extension LogCSV {
         dedupe: Bool = true,
         progress: ((Double) -> Void)? = nil
     ) async throws -> Int {
-
+        
         // Start security-scoped access (if needed)
         let didAccess = url.startAccessingSecurityScopedResource()
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-
+        
         // 1) Read + parse OFF-MAIN (no ModelContext captured)
         let entries: [Entry] = try await Task.detached(priority: .userInitiated) { () -> [Entry] in
             let data = try Data(contentsOf: url)
             guard let text = String(data: data, encoding: .utf8) else { return [] }
-
+            
             let lines = text.split(whereSeparator: \.isNewline).map(String.init)
             guard !lines.isEmpty else { return [] }
-
+            
             let first = lines[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let startIdx = first.hasPrefix("date,") ? 1 : 0
-
+            
             let df = ISO8601DateFormatter()
             df.formatOptions = [.withFullDate] // YYYY-MM-DD
-
+            
             var out: [Entry] = []
             out.reserveCapacity(max(0, lines.count - startIdx))
-
+            
             for (n, idx) in (startIdx..<lines.count).enumerated() {
                 // brief cooperative yield to keep the system responsive
                 if n % 500 == 0 { await Task.yield() }
-
+                
                 let parts = parseCSVLine(lines[idx])
                 
                 // Skip empty lines
@@ -459,41 +474,62 @@ extension LogCSV {
                 }
                 
                 guard parts.count >= 2 else { continue }
-
-                let dateStr   = parts[safe: 0] ?? ""
-                let nameRaw   = parts[safe: 1] ?? ""
-                let repsStr   = parts[safe: 2] ?? ""
-                let setsStr   = parts[safe: 3] ?? ""
-                let weightStr = parts[safe: 4] ?? ""
-                let planIdStr = parts[safe: 5] ?? ""
-                let planName  = parts[safe: 6] ?? ""
-                let dayTypeStr = parts[safe: 7] ?? ""  // Day type field
-                let notesRaw  = parts[safe: 8] ?? ""   // Notes moved to position 8
-
+                
+                // Parse new format: date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes
+                let dateStr      = parts[safe: 0] ?? ""
+                let typeStr      = parts[safe: 1] ?? ""
+                let exerciseName = parts[safe: 2] ?? ""
+                let climbTypeStr = parts[safe: 3] ?? ""
+                let gradeStr     = parts[safe: 4] ?? ""
+                let angleStr     = parts[safe: 5] ?? ""
+                let styleStr     = parts[safe: 6] ?? ""
+                let attemptsStr  = parts[safe: 7] ?? ""
+                let wipStr       = parts[safe: 8] ?? ""
+                let gymStr       = parts[safe: 9] ?? ""
+                let repsStr      = parts[safe: 10] ?? ""
+                let setsStr      = parts[safe: 11] ?? ""
+                let weightStr    = parts[safe: 12] ?? ""
+                let planIdStr    = parts[safe: 13] ?? ""
+                let planName     = parts[safe: 14] ?? ""
+                let dayTypeStr   = parts[safe: 15] ?? ""
+                let notesRaw     = parts[safe: 16] ?? ""
+                
                 guard
                     let dayDate = df.date(from: dateStr),
-                    !nameRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    !typeStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 else { continue }
-
-                let name   = nameRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-                let reps   = Double(repsStr.replacingOccurrences(of: ",", with: ".")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                )
-                let sets   = Double(setsStr.replacingOccurrences(of: ",", with: ".")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                )
+                
+                let type = typeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let angle = angleStr.isEmpty ? nil : Int(angleStr)
+                let style = styleStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let attempts = attemptsStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let isWIP = wipStr.lowercased() == "true"
+                let gym = gymStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let reps = Double(repsStr.replacingOccurrences(of: ",", with: ".")
+                    .trimmingCharacters(in: .whitespacesAndNewlines))
+                let sets = Double(setsStr.replacingOccurrences(of: ",", with: ".")
+                    .trimmingCharacters(in: .whitespacesAndNewlines))
                 let weight = Double(weightStr
                     .replacingOccurrences(of: ",", with: ".")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                )
+                    .trimmingCharacters(in: .whitespacesAndNewlines))
                 let planId = UUID(uuidString: planIdStr)
                 let dayType = !dayTypeStr.isEmpty ? DayType(rawValue: dayTypeStr) : nil
                 let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
                 let notesOpt = notes.isEmpty ? nil : notes
-
+                
                 out.append(Entry(
                     date: dayDate,
+                    type: type,
                     name: name,
+                    climbType: climbTypeStr.isEmpty ? nil : climbTypeStr,
+                    grade: grade.isEmpty ? nil : grade,
+                    angle: angle,
+                    style: style.isEmpty ? nil : style,
+                    attempts: attempts.isEmpty ? nil : attempts,
+                    isWIP: isWIP,
+                    gym: gym.isEmpty ? nil : gym,
                     reps: reps,
                     sets: sets,
                     weight: weight,
@@ -503,153 +539,225 @@ extension LogCSV {
                     notes: notesOpt
                 ))
             }
-
+            
             return out
         }.value
-
+        
         guard !entries.isEmpty else {
             progress?(1.0)
             return 0
         }
-
+        
         // Optional half-way signal after parse
         progress?(0.5)
-
+        
         // 2) Apply ON MAIN (safe for ModelContext) + progressive progress
         let cal = Calendar.current
         var inserted = 0
-
+        
         // Cache sessions per day to avoid repeated fetches
         var sessionCache: [Date: Session] = [:]
         sessionCache.reserveCapacity(32)
         
         // Cache plans we create/find during import
         var knownPlans: [UUID: Plan] = [:]
-
+        
         // Cache signature sets per session for dedupe
         var sigCache: [ObjectIdentifier: Set<String>] = [:]
-
+        
         // Track exercises by date for each plan to reconstruct plan structure
         var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
-
+        
         // Track day types by date for each plan to preserve day type information
         var planDayTypesByDate: [UUID: [Date: DayType]] = [:]
-
+        
         for (idx, e) in entries.enumerated() {
             // Progress from 0.5 → 1.0 during application
             if idx % 50 == 0 {
                 let p = 0.5 + 0.5 * (Double(idx) / Double(entries.count))
                 progress?(min(max(p, 0.5), 1.0))
             }
-
-            // Find or create session for this day (normalized to startOfDay)
-            let startOfDay = cal.startOfDay(for: e.date)
-            let session: Session
-            if let cached = sessionCache[startOfDay] {
-                session = cached
-            } else {
-                let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay)!
-                let fetch = FetchDescriptor<Session>(predicate: #Predicate {
-                    $0.date >= startOfDay && $0.date < endOfDay
-                })
-                let matches = (try? context.fetch(fetch)) ?? []
-                if let found = matches.first {
-                    session = found
-                } else {
-                    let s = Session(date: startOfDay)
-                    context.insert(s)
-                    session = s
-                }
-                sessionCache[startOfDay] = session
-            }
             
-            // Handle plan reference if present
-            if let planId = e.planId, !knownPlans.keys.contains(planId), let planName = e.planName {
-                // Check if plan already exists in DB
-                let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == planId })
-                if let existing = try? context.fetch(planDescriptor).first {
-                    knownPlans[planId] = existing
-                } else {
-                    // Create new plan
-                    let plan = Plan(id: planId, name: planName, kind: .weekly, startDate: startOfDay)
-                    context.insert(plan)
-                    knownPlans[planId] = plan
-                }
-            }
-
-            // Track exercises for plan reconstruction if planId exists
-            if let planId = e.planId {
-                if planExercisesByDate[planId] == nil {
-                    planExercisesByDate[planId] = [:]
-                }
-                if planExercisesByDate[planId]![startOfDay] == nil {
-                    planExercisesByDate[planId]![startOfDay] = Set()
-                }
-                planExercisesByDate[planId]![startOfDay]!.insert(e.name)
+            let startOfDay = cal.startOfDay(for: e.date)
+            
+            if e.type == "exercise" {
+                // Handle exercise entries
+                guard !e.name.isEmpty else { continue }
                 
-                // Track day type for this date if present
-                if let dayType = e.dayType {
-                    if planDayTypesByDate[planId] == nil {
-                        planDayTypesByDate[planId] = [:]
+                // Find or create session for this day
+                let session: Session
+                if let cached = sessionCache[startOfDay] {
+                    session = cached
+                } else {
+                    let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay)!
+                    let fetch = FetchDescriptor<Session>(predicate: #Predicate {
+                        $0.date >= startOfDay && $0.date < endOfDay
+                    })
+                    let matches = (try? context.fetch(fetch)) ?? []
+                    if let found = matches.first {
+                        session = found
+                    } else {
+                        let s = Session(date: startOfDay)
+                        context.insert(s)
+                        session = s
                     }
-                    planDayTypesByDate[planId]![startOfDay] = dayType
+                    sessionCache[startOfDay] = session
                 }
-            }
-
-            // Build/get signature set for dedupe
-            let sid = ObjectIdentifier(session)
-            var existing = sigCache[sid]
-            if existing == nil {
-                existing = Set(session.items.map {
-                    itemSignature(date: session.date,
-                                  name: $0.exerciseName,
-                                  reps: $0.reps,
-                                  sets: $0.sets,
-                                  weight: $0.weightKg,
-                                  planId: $0.planSourceId,
-                                  planName: $0.planName,
-                                  notes: $0.notes)
-                })
-            }
-
-            let sig = itemSignature(date: session.date,
-                                    name: e.name,
-                                    reps: e.reps,
-                                    sets: e.sets,
-                                    weight: e.weight,
-                                    planId: e.planId,
-                                    planName: e.planName,
-                                    notes: e.notes)
-
-            if !dedupe || !(existing?.contains(sig) ?? false) {
-                let item = SessionItem(
-                    exerciseName: e.name,
-                    planSourceId: e.planId,
-                    planName: e.planName,
-                    reps: e.reps,
-                    sets: e.sets,
-                    weightKg: e.weight,
-                    notes: e.notes
+                
+                // Handle plan reference if present
+                if let planId = e.planId, !knownPlans.keys.contains(planId), let planName = e.planName {
+                    let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == planId })
+                    if let existing = try? context.fetch(planDescriptor).first {
+                        knownPlans[planId] = existing
+                    } else {
+                        let plan = Plan(id: planId, name: planName, kind: .weekly, startDate: startOfDay)
+                        context.insert(plan)
+                        knownPlans[planId] = plan
+                    }
+                }
+                
+                // Track exercises for plan reconstruction if planId exists
+                if let planId = e.planId {
+                    if planExercisesByDate[planId] == nil {
+                        planExercisesByDate[planId] = [:]
+                    }
+                    if planExercisesByDate[planId]![startOfDay] == nil {
+                        planExercisesByDate[planId]![startOfDay] = Set()
+                    }
+                    planExercisesByDate[planId]![startOfDay]!.insert(e.name)
+                    
+                    if let dayType = e.dayType {
+                        if planDayTypesByDate[planId] == nil {
+                            planDayTypesByDate[planId] = [:]
+                        }
+                        planDayTypesByDate[planId]![startOfDay] = dayType
+                    }
+                }
+                
+                // Build/get signature set for dedupe
+                let sid = ObjectIdentifier(session)
+                var existing = sigCache[sid]
+                if existing == nil {
+                    existing = Set(session.items.map {
+                        itemSignature(date: session.date,
+                                      name: $0.exerciseName,
+                                      reps: $0.reps,
+                                      sets: $0.sets,
+                                      weight: $0.weightKg,
+                                      planId: $0.planSourceId,
+                                      planName: $0.planName,
+                                      notes: $0.notes)
+                    })
+                }
+                
+                let sig = itemSignature(date: session.date,
+                                        name: e.name,
+                                        reps: e.reps,
+                                        sets: e.sets,
+                                        weight: e.weight,
+                                        planId: e.planId,
+                                        planName: e.planName,
+                                        notes: e.notes)
+                
+                if !dedupe || !(existing?.contains(sig) ?? false) {
+                    let item = SessionItem(
+                        exerciseName: e.name,
+                        planSourceId: e.planId,
+                        planName: e.planName,
+                        reps: e.reps,
+                        sets: e.sets,
+                        weightKg: e.weight,
+                        grade: e.grade,
+                        notes: e.notes
+                    )
+                    item.sourceTag = tag
+                    session.items.append(item)
+                    existing?.insert(sig)
+                    inserted += 1
+                }
+                
+                sigCache[sid] = existing ?? []
+                
+            } else if e.type == "climb" {
+                // Handle climb entries
+                guard let grade = e.grade, !grade.isEmpty else { continue }
+                
+                // Parse climb type
+                let climbType: ClimbType
+                if let climbTypeStr = e.climbType, let parsedType = ClimbType(rawValue: climbTypeStr) {
+                    climbType = parsedType
+                } else {
+                    climbType = .boulder // default
+                }
+                
+                // DEDUPE climb entries if enabled
+                if dedupe {
+                    let climbSig = climbSignature(
+                        date: startOfDay,
+                        climbType: climbType,
+                        grade: grade,
+                        angle: e.angle,
+                        style: e.style ?? "",
+                        attempts: e.attempts,
+                        isWIP: e.isWIP,
+                        gym: e.gym ?? "",
+                        notes: e.notes
+                    )
+                    
+                    let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay)!
+                    let climbDescriptor = FetchDescriptor<ClimbEntry>(predicate: #Predicate<ClimbEntry> {
+                        $0.dateLogged >= startOfDay && $0.dateLogged < endOfDay
+                    })
+                    let existingClimbs = (try? context.fetch(climbDescriptor)) ?? []
+                    
+                    let duplicate = existingClimbs.first { climb in
+                        let existingSig = climbSignature(
+                            date: Calendar.current.startOfDay(for: climb.dateLogged),
+                            climbType: climb.climbType,
+                            grade: climb.grade,
+                            angle: climb.angleDegrees,
+                            style: climb.style,
+                            attempts: climb.attempts,
+                            isWIP: climb.isWorkInProgress,
+                            gym: climb.gym,
+                            notes: climb.notes
+                        )
+                        return existingSig == climbSig
+                    }
+                    
+                    if duplicate != nil {
+                        continue // Skip duplicate
+                    }
+                }
+                
+                // Create climb entry
+                let climbEntry = ClimbEntry(
+                    climbType: climbType,
+                    grade: grade,
+                    angleDegrees: e.angle,
+                    style: e.style?.isEmpty == false ? e.style! : "Unknown",
+                    attempts: e.attempts,
+                    isWorkInProgress: e.isWIP,
+                    gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
+                    notes: e.notes,
+                    dateLogged: startOfDay
                 )
-                item.sourceTag = tag
-                session.items.append(item)
-                existing?.insert(sig)
+                
+                context.insert(climbEntry)
                 inserted += 1
             }
-
-            sigCache[sid] = existing ?? []
         }
-
-        // RECONSTRUCT PLAN STRUCTURE: assign exercises and day types to plan days
-        for (planId, dateGroups) in planExercisesByDate {
+        
+        // After processing all rows, populate the plans with their days and exercises
+        for (planId, exercisesByDate) in planExercisesByDate {
             guard let plan = knownPlans[planId] else { continue }
-
+            
             // Only populate if the plan doesn't already have days (avoid overwriting existing plans)
             if plan.days.isEmpty {
-                let sortedDates = Array(dateGroups.keys).sorted()
+                let sortedDates = Array(exercisesByDate.keys).sorted()
                 
                 for date in sortedDates {
-                    let exercises = Array(dateGroups[date] ?? [])
+                    let exercises = Array(exercisesByDate[date] ?? [])
                     if !exercises.isEmpty {
                         // Use the imported day type if available, otherwise default to climbingFull
                         let dayType = planDayTypesByDate[planId]?[date] ?? .climbingFull
@@ -663,9 +771,8 @@ extension LogCSV {
                 }
             }
         }
-
-        try? context.save()
-        progress?(1.0)
+        
+        try context.save()
         return inserted
     }
 }

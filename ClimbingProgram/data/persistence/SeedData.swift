@@ -171,6 +171,10 @@ struct SeedData {
 
                 // Save all
                 [core, ant, climb, boulder].forEach { context.insert($0) }
+                
+                // Seed climbing styles and gyms
+                SeedClimbingData.loadIfNeeded(context)
+                
                 try? context.save()
                 
                 // Seed timer templates

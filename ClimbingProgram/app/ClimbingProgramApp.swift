@@ -21,7 +21,8 @@ struct ClimbingProgramApp: App {
             Activity.self, TrainingType.self, Exercise.self,
             Session.self, SessionItem.self,
             Plan.self, PlanDay.self,
-            TimerTemplate.self, TimerInterval.self, TimerSession.self, TimerLap.self
+            TimerTemplate.self, TimerInterval.self, TimerSession.self, TimerLap.self,
+            ClimbEntry.self, ClimbStyle.self, ClimbGym.self
         ])
     }
 }

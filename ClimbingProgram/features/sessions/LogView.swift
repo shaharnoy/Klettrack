@@ -14,6 +14,7 @@ struct LogView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Query(sort: [SortDescriptor(\Session.date, order: .reverse)]) private var sessions: [Session]
+    @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
 
     // New session
     @State private var showingNew = false
@@ -36,7 +37,7 @@ struct LogView: View {
 
     var body: some View {
         NavigationStack {
-            SessionsList(sessions: sessions) // <- tiny subview
+            CombinedLogList(sessions: sessions, climbEntries: climbEntries) // <- updated to show both
                 .navigationTitle("Log")
                 .toolbar { trailingToolbar }
                 .sheet(isPresented: $showingNew) { NewSessionSheet() }
@@ -579,5 +580,326 @@ struct SingleCatalogExercisePicker: View {
                 internalSelection = [selected]
             }
         }
+    }
+}
+
+// MARK: - Combined Log List (Sessions + Climb Entries)
+
+private struct CombinedLogList: View {
+    @Environment(\.modelContext) private var context
+    let sessions: [Session]
+    let climbEntries: [ClimbEntry]
+    
+    // Group data by date
+    private var groupedData: [Date: (exercises: Int, climbs: Int, session: Session?, climbEntries: [ClimbEntry])] {
+        var grouped: [Date: (exercises: Int, climbs: Int, session: Session?, climbEntries: [ClimbEntry])] = [:]
+        
+        // Add sessions (exercises)
+        for session in sessions {
+            let dateKey = Calendar.current.startOfDay(for: session.date)
+            if grouped[dateKey] == nil {
+                grouped[dateKey] = (exercises: 0, climbs: 0, session: nil, climbEntries: [])
+            }
+            grouped[dateKey]?.exercises = session.items.count
+            grouped[dateKey]?.session = session
+        }
+        
+        // Add climb entries
+        for climb in climbEntries {
+            let dateKey = Calendar.current.startOfDay(for: climb.dateLogged)
+            if grouped[dateKey] == nil {
+                grouped[dateKey] = (exercises: 0, climbs: 0, session: nil, climbEntries: [])
+            }
+            grouped[dateKey]?.climbs += 1
+            grouped[dateKey]?.climbEntries.append(climb)
+        }
+        
+        return grouped
+    }
+    
+    private var sortedDates: [Date] {
+        groupedData.keys.sorted(by: >)
+    }
+    
+    var body: some View {
+        List {
+            ForEach(sortedDates, id: \.self) { date in
+                let dayData = groupedData[date]!
+                NavigationLink {
+                    CombinedDayDetailView(
+                        date: date,
+                        session: dayData.session,
+                        climbEntries: dayData.climbEntries
+                    )
+                } label: {
+                    CombinedDayRow(
+                        date: date,
+                        exerciseCount: dayData.exercises,
+                        climbCount: dayData.climbs
+                    )
+                }
+            }
+            .onDelete(perform: delete)
+        }
+        .listStyle(.insetGrouped)
+    }
+    
+    private func delete(_ offsets: IndexSet) {
+        for index in offsets {
+            let date = sortedDates[index]
+            let dayData = groupedData[date]!
+            
+            // Delete session if exists
+            if let session = dayData.session {
+                context.delete(session)
+            }
+            
+            // Delete climb entries
+            for climbEntry in dayData.climbEntries {
+                context.delete(climbEntry)
+            }
+        }
+        try? context.save()
+    }
+}
+
+private struct CombinedDayRow: View {
+    let date: Date
+    let exerciseCount: Int
+    let climbCount: Int
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Color tags for activity types
+                HStack(spacing: 4) {
+                    if exerciseCount > 0 {
+                        Text("#exercise")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(4)
+                    }
+                    
+                    if climbCount > 0 {
+                        Text("#climb")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange)
+                            .foregroundColor(.white)
+                            .cornerRadius(4)
+                    }
+                }
+            }
+            
+            HStack(spacing: 12) {
+                if exerciseCount > 0 {
+                    Text("\(exerciseCount) exercise\(exerciseCount == 1 ? "" : "s")")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                
+                if climbCount > 0 {
+                    Text("\(climbCount) climb\(climbCount == 1 ? "" : "s")")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Combined Day Detail View
+
+private struct CombinedDayDetailView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
+    let date: Date
+    let session: Session?
+    let climbEntries: [ClimbEntry]
+    
+    @State private var showingAddItem = false
+    @State private var showingAddClimb = false
+    
+    var body: some View {
+        List {
+            // Exercises section
+            if let session = session, !session.items.isEmpty {
+                Section("Exercises") {
+                    ForEach(session.items) { item in
+                        SessionItemRow(item: item)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    guard isDataReady else { return }
+                                    if let index = session.items.firstIndex(where: { $0.id == item.id }) {
+                                        session.items.remove(at: index)
+                                        try? context.save()
+                                    }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                
+                                NavigationLink {
+                                    EditSessionItemView(item: item)
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
+                            }
+                    }
+                }
+            }
+            
+            // Climbs section
+            if !climbEntries.isEmpty {
+                Section("Climbs") {
+                    ForEach(climbEntries.sorted(by: { $0.dateLogged > $1.dateLogged })) { climb in
+                        ClimbEntryRow(climb: climb)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    guard isDataReady else { return }
+                                    context.delete(climb)
+                                    try? context.save()
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                    }
+                }
+            }
+            
+            // Empty state
+            if (session?.items.isEmpty ?? true) && climbEntries.isEmpty {
+                Section {
+                    Text("No activities logged for this day")
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(date.formatted(date: .abbreviated, time: .omitted))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(action: { addExercise() }) {
+                        Label("Add Exercise", systemImage: "dumbbell")
+                    }
+                    
+                    Button(action: { showingAddClimb = true }) {
+                        Label("Add Climb", systemImage: "figure.climbing")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(!isDataReady)
+            }
+        }
+        .sheet(isPresented: $showingAddItem) {
+            if let session = session {
+                AddSessionItemSheet(session: session)
+            }
+        }
+        .sheet(isPresented: $showingAddClimb) {
+            AddClimbView()
+        }
+    }
+    
+    private func addExercise() {
+        guard isDataReady else { return }
+        
+        // Create session if it doesn't exist
+        if session == nil {
+            let newSession = Session(date: date)
+            context.insert(newSession)
+            try? context.save()
+        }
+        
+        showingAddItem = true
+    }
+}
+
+// MARK: - Climb Entry Row
+
+private struct ClimbEntryRow: View {
+    let climb: ClimbEntry
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                // Climb type indicator
+                Text(climb.climbType.displayName)
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(climb.climbType == .boulder ? Color.orange : Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(4)
+                
+                // Grade
+                Text(climb.grade)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                // WIP indicator
+                if climb.isWorkInProgress {
+                    Text("WIP")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.yellow)
+                        .foregroundColor(.black)
+                        .cornerRadius(4)
+                }
+            }
+            
+            HStack {
+                // Style
+                Text(climb.style)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                if let angle = climb.angleDegrees {
+                    Text("• \(angle)°")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                if let attempts = climb.attempts, !attempts.isEmpty {
+                    Text("• \(attempts) attempts")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            HStack {
+                // Gym
+                Text(climb.gym)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+            }
+            
+            if let notes = climb.notes, !notes.isEmpty {
+                Text(notes)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
