@@ -49,18 +49,10 @@ struct TimerView: View {
                 }
                 
                 Spacer()
-                
-                // Stop & Reset button at the bottom
-                if !timerManager.isStopped {
-                    Button("Stop & Reset") {
-                        timerManager.stop()
-                    }
-                    .buttonStyle(FullWidthTimerButtonStyle(color: .red))
-                    .padding(.bottom)
-                }
             }
-            .padding()
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Timer")
+            .navigationBarTitleDisplayMode(.large)
+            .padding(.horizontal, 20)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                    

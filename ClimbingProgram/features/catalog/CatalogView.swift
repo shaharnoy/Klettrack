@@ -72,6 +72,8 @@ struct CatalogView: View {
                 }
             }
         }
+        .navigationTitle("Catalog")
+        .navigationBarTitleDisplayMode(.large)
     }
     
     private func activityCard(for activity: Activity) -> some View {

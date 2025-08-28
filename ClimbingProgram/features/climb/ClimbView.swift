@@ -44,6 +44,7 @@ struct ClimbView: View {
                             ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) })
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                                 .swipeActions(edge: .trailing) {
                                     Button(role: .destructive) {
                                         deleteClimb(climb)
@@ -62,6 +63,7 @@ struct ClimbView: View {
                     }
                 }
                 .listStyle(.plain)
+                .listRowSpacing(4)
                 .scrollContentBackground(.hidden)
                 .padding(.horizontal, 16)
             }
@@ -210,7 +212,8 @@ struct ClimbRowCard: View {
                 }
             }
         }
-        .padding(14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(

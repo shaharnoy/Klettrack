@@ -52,139 +52,143 @@ struct PlansListView: View {
 
 
     var body: some View {
-        List {
-            ForEach(plans) { plan in
-                Button {
-                    // Use programmatic navigation with Hashable wrapper
-                    timerAppState.plansNavigationPath.append(PlanNavigationItem(plan: plan))
-                } label: {
-                    PlanRow(plan: plan)
-                }
-                .buttonStyle(.plain)
-            }
-            .onDelete { idx in
-                guard isDataReady else { return }
-                idx.map { plans[$0] }.forEach(context.delete)
-                try? context.save()
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationDestination(for: PlanNavigationItem.self) { planItem in
-            // Find the plan by ID and pass it to PlanDetailView
-            if let plan = plans.first(where: { $0.id == planItem.planId }) {
-                PlanDetailView(plan: plan)
-                    .environmentObject(timerAppState)
-            } else {
-                Text("Plan not found")
-            }
-        }
-        .navigationDestination(for: PlanDayNavigationItem.self) { dayItem in
-            // Find the plan day by ID across all plans
-            let allDays = plans.flatMap { $0.days }
-            if let day = allDays.first(where: { $0.id == dayItem.planDayId }) {
-                PlanDayEditor(day: day)
-                    .environmentObject(timerAppState)
-            } else {
-                Text("Plan day not found")
-            }
-        }
-        .toolbar {
-            // Overflow menu: export / share / import
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    // Export (save to Files)
+        NavigationStack {
+            List {
+                ForEach(plans) { plan in
                     Button {
-                        guard isDataReady else { return }
-                        exportDoc = LogCSV.makeExportCSV(context: context)
-                        showExporter = true
+                        // Use programmatic navigation with Hashable wrapper
+                        timerAppState.plansNavigationPath.append(PlanNavigationItem(plan: plan))
                     } label: {
-                        Label("Export logs to CSV", systemImage: "square.and.arrow.up")
+                        PlanRow(plan: plan)
                     }
+                    .buttonStyle(.plain)
+                }
+                .onDelete { idx in
+                    guard isDataReady else { return }
+                    idx.map { plans[$0] }.forEach(context.delete)
+                    try? context.save()
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationDestination(for: PlanNavigationItem.self) { planItem in
+                // Find the plan by ID and pass it to PlanDetailView
+                if let plan = plans.first(where: { $0.id == planItem.planId }) {
+                    PlanDetailView(plan: plan)
+                        .environmentObject(timerAppState)
+                } else {
+                    Text("Plan not found")
+                }
+            }
+            .navigationDestination(for: PlanDayNavigationItem.self) { dayItem in
+                // Find the plan day by ID across all plans
+                let allDays = plans.flatMap { $0.days }
+                if let day = allDays.first(where: { $0.id == dayItem.planDayId }) {
+                    PlanDayEditor(day: day)
+                        .environmentObject(timerAppState)
+                } else {
+                    Text("Plan day not found")
+                }
+            }
+            .navigationTitle("Plans")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                // Overflow menu: export / share / import
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        // Export (save to Files)
+                        Button {
+                            guard isDataReady else { return }
+                            exportDoc = LogCSV.makeExportCSV(context: context)
+                            showExporter = true
+                        } label: {
+                            Label("Export logs to CSV", systemImage: "square.and.arrow.up")
+                        }
 
-                    // Share (Mail / Messages / Files…)
-                    Button {
-                        guard isDataReady else { return }
-                        let doc = LogCSV.makeExportCSV(context: context)
-                        let fn = "climbing-log-\(Date().formatted(.dateTime.year().month().day())).csv"
-                        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
+                        // Share (Mail / Messages / Files…)
+                        Button {
+                            guard isDataReady else { return }
+                            let doc = LogCSV.makeExportCSV(context: context)
+                            let fn = "climbing-log-\(Date().formatted(.dateTime.year().month().day())).csv"
+                            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
 
-                        do {
-                            try doc.csv.write(to: url, atomically: true, encoding: .utf8)
-                            guard FileManager.default.fileExists(atPath: url.path) else {
-                                importResultMessage = "Share failed: file not found."
-                                return
+                            do {
+                                try doc.csv.write(to: url, atomically: true, encoding: .utf8)
+                                guard FileManager.default.fileExists(atPath: url.path) else {
+                                    importResultMessage = "Share failed: file not found."
+                                    return
+                                }
+                                // triggers the share sheet
+                                sharePayload = SharePayload(url: url)
+                            } catch {
+                                importResultMessage = "Share prep failed: \(error.localizedDescription)"
                             }
-                            // triggers the share sheet
-                            sharePayload = SharePayload(url: url)
-                        } catch {
-                            importResultMessage = "Share prep failed: \(error.localizedDescription)"
+                        } label: {
+                            Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
+                        }
+
+                        // Import (from Files / cloud storage)
+                        Button {
+                            guard isDataReady else { return }
+                            showImporter = true
+                        } label: {
+                            Label("Import logs from CSV", systemImage: "square.and.arrow.down")
                         }
                     } label: {
-                        Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
+                        Image(systemName: "ellipsis.circle")
                     }
+                    .disabled(!isDataReady)
+                }
 
-                    // Import (from Files / cloud storage)
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         guard isDataReady else { return }
-                        showImporter = true
+                        showingNew = true
                     } label: {
-                        Label("Import logs from CSV", systemImage: "square.and.arrow.down")
+                        Image(systemName: "plus")
                     }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+                    .disabled(!isDataReady)
                 }
-                .disabled(!isDataReady)
             }
-
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    guard isDataReady else { return }
-                    showingNew = true
-                } label: {
-                    Image(systemName: "plus")
+            .sheet(isPresented: $showingNew) { NewPlanSheet() }
+            // Exporter
+            .fileExporter(isPresented: $showExporter,
+                          document: exportDoc,
+                          contentType: .commaSeparatedText,
+                          defaultFilename: "climbing-log-\(Date().formatted(.dateTime.year().month().day()))") { result in
+                switch result {
+                case .success:
+                    importResultMessage = "CSV exported."
+                case .failure(let err):
+                    importResultMessage = "Export failed: \(err.localizedDescription)"
                 }
-                .disabled(!isDataReady)
             }
-        }
-        .sheet(isPresented: $showingNew) { NewPlanSheet() }
-        // Exporter
-        .fileExporter(isPresented: $showExporter,
-                      document: exportDoc,
-                      contentType: .commaSeparatedText,
-                      defaultFilename: "climbing-log-\(Date().formatted(.dateTime.year().month().day()))") { result in
-            switch result {
-            case .success:
-                importResultMessage = "CSV exported."
-            case .failure(let err):
-                importResultMessage = "Export failed: \(err.localizedDescription)"
+            // Importer
+            .fileImporter(isPresented: $showImporter,
+                          allowedContentTypes: [.commaSeparatedText],
+                          allowsMultipleSelection: false) { result in
+                do {
+                    guard let url = try result.get().first else { return }
+                    let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
+                    let tag = "import:\(df.string(from: Date()))"
+                    let inserted = try LogCSV.importCSV(from: url, into: context, tag: tag, dedupe: true)
+                    importResultMessage = "Imported \(inserted) log item(s)."
+                } catch {
+                    importResultMessage = "Import failed: \(error.localizedDescription)"
+                }
             }
-        }
-        // Importer
-        .fileImporter(isPresented: $showImporter,
-                      allowedContentTypes: [.commaSeparatedText],
-                      allowsMultipleSelection: false) { result in
-            do {
-                guard let url = try result.get().first else { return }
-                let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
-                let tag = "import:\(df.string(from: Date()))"
-                let inserted = try LogCSV.importCSV(from: url, into: context, tag: tag, dedupe: true)
-                importResultMessage = "Imported \(inserted) log item(s)."
-            } catch {
-                importResultMessage = "Import failed: \(error.localizedDescription)"
-            }
-        }
-        // Share
-          .sheet(item: $sharePayload) { payload in
-              ShareSheet(items: [payload.url]) {
-                  try? FileManager.default.removeItem(at: payload.url)
+            // Share
+              .sheet(item: $sharePayload) { payload in
+                  ShareSheet(items: [payload.url]) {
+                      try? FileManager.default.removeItem(at: payload.url)
+                  }
+                  .presentationDetents([.medium])
               }
-              .presentationDetents([.medium])
-          }
-        // Result alert
-        .alert(importResultMessage ?? "", isPresented: Binding(
-            get: { importResultMessage != nil },
-            set: { if !$0 { importResultMessage = nil } }
-        )) { Button("OK", role: .cancel) {} }
+            // Result alert
+            .alert(importResultMessage ?? "", isPresented: Binding(
+                get: { importResultMessage != nil },
+                set: { if !$0 { importResultMessage = nil } }
+            )) { Button("OK", role: .cancel) {} }
+        }
     }
 }
 
