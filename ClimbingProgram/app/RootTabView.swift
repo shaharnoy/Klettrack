@@ -151,26 +151,36 @@ struct RootTabView: View {
     
     @MainActor
     private func initializeData() async {
-        // Longer delay to ensure SwiftData container is fully ready
-        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
-        
-        SeedData.loadIfNeeded(context)
-        
-        // Seed timer templates
-        SeedTimerTemplates.loadIfNeeded(context)
-        
-        // Non-destructive catalog deltas migration (run once per key)
-        runOnce(per: "catalog_2025-08-21_bouldering") {
-            applyCatalogUpdates(context)
+        defer {
+            // Ensure isDataReady is always set to true, even if there are errors
+            isDataReady = true
         }
         
-        // Ensure all changes are committed
-        try? context.save()
-        
-        // Additional delay to ensure everything is settled
-        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
-        
-        isDataReady = true
+        do {
+            // Longer delay to ensure SwiftData container is fully ready
+            try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+            
+            SeedData.loadIfNeeded(context)
+            
+            // Seed timer templates
+            SeedTimerTemplates.loadIfNeeded(context)
+            
+            // Non-destructive catalog deltas migration (run once per key)
+            runOnce(per: "catalog_2025-08-21_bouldering") {
+                applyCatalogUpdates(context)
+            }
+            
+            // Ensure all changes are committed
+            try context.save()
+            
+            // Additional delay to ensure everything is settled
+            try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+            
+            print("Data initialization completed successfully")
+        } catch {
+            print("Error during data initialization: \(error)")
+            // Don't prevent the app from continuing even if there's an error
+        }
     }
 }
 

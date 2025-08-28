@@ -562,6 +562,7 @@ struct EditSessionItemView: View {
 struct SingleCatalogExercisePicker: View {
     @Binding var selected: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isDataReady) private var isDataReady
     @State private var internalSelection: [String] = []
 
     var body: some View {
@@ -574,6 +575,7 @@ struct SingleCatalogExercisePicker: View {
                 dismiss()
             }
         ))
+        .environment(\.isDataReady, isDataReady)
         .onAppear {
             if let selected = selected {
                 internalSelection = [selected]
@@ -678,7 +680,7 @@ private struct CombinedDayRow: View {
                 // Color tags for activity types
                 HStack(spacing: 4) {
                     if exerciseCount > 0 {
-                        Text("#exercise")
+                        Text("exercise")
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -688,7 +690,7 @@ private struct CombinedDayRow: View {
                     }
                     
                     if climbCount > 0 {
-                        Text("#climb")
+                        Text("climb")
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)

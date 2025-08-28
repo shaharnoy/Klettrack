@@ -465,6 +465,7 @@ private struct ExerciseSelection: Identifiable, Equatable {
 
 struct PlanDayEditor: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
     @EnvironmentObject private var timerAppState: TimerAppState
     @State var day: PlanDay
 
@@ -834,6 +835,7 @@ struct PlanDayEditor: View {
         }
         .sheet(isPresented: $showingPicker) {
             CatalogExercisePicker(selected: $day.chosenExercises)
+                .environment(\.isDataReady, isDataReady)
         }
         // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in
@@ -1109,18 +1111,35 @@ private struct QuickExerciseProgress: View {
 struct CatalogExercisePicker: View {
     @Binding var selected: [String]
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.isDataReady) private var isDataReady
+    @Environment(\.modelContext) private var context
     @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    // Instead of relying on isDataReady environment, check if we have data directly
+    private var hasData: Bool {
+        !activities.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
-            if !isDataReady {
+            if !hasData {
                 VStack(spacing: 16) {
                     ProgressView()
                     Text("Loading catalog...")
                         .foregroundStyle(.secondary)
+                    // Debug info
+                    Text("Debug: activities.count = \(activities.count)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear {
+                    print("🔴 CatalogExercisePicker: activities.count = \(activities.count)")
+                }
+                // Add a refresh mechanism
+                .task {
+                    // Small delay to allow SwiftData to initialize
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+                }
             } else {
                 List {
                     ForEach(activities) { activity in
@@ -1142,6 +1161,9 @@ struct CatalogExercisePicker: View {
                             }
                         }
                     }
+                }
+                .onAppear {
+                    print("🟢 CatalogExercisePicker: activities.count = \(activities.count)")
                 }
             }
         }
@@ -1431,10 +1453,12 @@ private struct MonthlyGridView: View {
 
     var body: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+        
         ScrollViewReader { proxy in
             LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(groups, id: \.components) { group in
+                ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
                     let monthDate = calendar.date(from: group.components) ?? Date()
+                    
                     Section {
                         ForEach(group.days) { day in
                             dayCell(for: day)
