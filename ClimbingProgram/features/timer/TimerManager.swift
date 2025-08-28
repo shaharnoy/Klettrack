@@ -50,6 +50,19 @@ class TimerManager: ObservableObject {
         return config.intervals[currentInterval]
     }
     
+    /// The primary display time - counts down for total time mode, shows remaining time for current phase in interval mode
+    var displayTime: Int {
+        guard let config = configuration else { return 0 }
+        
+        if config.hasTotalTime && !config.hasIntervals {
+            // Total time mode: count down from total time
+            return max(0, config.totalTimeSeconds! - totalElapsedTime)
+        } else {
+            // Interval mode: show current phase time remaining
+            return currentPhaseTimeRemaining
+        }
+    }
+    
     var currentPhaseTimeRemaining: Int {
         // Handle rest between sequences
         if isInBetweenIntervalRest {

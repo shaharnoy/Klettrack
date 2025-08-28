@@ -178,7 +178,8 @@ struct TimerView: View {
                 }
             } else {
                 // Fallback to total time if no intervals
-                Text(timerManager.formatTime(timerManager.totalElapsedTime))
+                // Total time mode: show countdown timer
+                Text(timerManager.formatTime(timerManager.displayTime))
                     .font(.system(size: 72, weight: .ultraLight, design: .monospaced))
                     .foregroundStyle(
                         LinearGradient(
