@@ -522,5 +522,8 @@ struct ProgressViewScreen: View {
                 customStartDate = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
             }
         }
+        .navigationTitle("STATS")
     }
+    
+        
 }

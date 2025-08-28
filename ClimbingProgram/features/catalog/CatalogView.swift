@@ -72,7 +72,7 @@ struct CatalogView: View {
                 }
             }
         }
-        .navigationTitle("Catalog")
+        .navigationTitle("CATALOG")
         .navigationBarTitleDisplayMode(.large)
     }
     

@@ -87,7 +87,9 @@ struct ClimbView: View {
         }
         .opacity(isDataReady ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isDataReady)
+        .navigationTitle("CLIMB")
     }
+    
     
     private var emptyStateCard: some View {
         VStack(spacing: 16) {

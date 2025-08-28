@@ -50,7 +50,7 @@ struct TimerView: View {
                 
                 Spacer()
             }
-            .navigationTitle("Timer")
+            //.navigationTitle("TIMER")
             .navigationBarTitleDisplayMode(.large)
             .padding(.horizontal, 20)
             .toolbar {

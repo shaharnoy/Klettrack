@@ -89,7 +89,7 @@ struct PlansListView: View {
                     Text("Plan day not found")
                 }
             }
-            .navigationTitle("Plans")
+            .navigationTitle("PLAN")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 // Overflow menu: export / share / import

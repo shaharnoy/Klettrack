@@ -40,7 +40,7 @@ struct LogView: View {
             CombinedLogList(sessions: sessions, climbEntries: climbEntries) // <- updated to show both
                 .toolbar { trailingToolbar }
                 .sheet(isPresented: $showingNew) { NewSessionSheet() }
-                .navigationTitle("Log")
+                .navigationTitle("LOG")
                 .navigationBarTitleDisplayMode(.large)
         }
         // Exporter
