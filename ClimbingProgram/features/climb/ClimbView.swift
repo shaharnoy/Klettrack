@@ -154,27 +154,28 @@ struct ClimbRowCard: View {
                 // Grade - only show if not "Unknown"
                 if climb.grade != "Unknown" && !climb.grade.isEmpty {
                     Text(climb.grade)
-                        .font(.subheadline)
+                        .font(.body)
                         .foregroundColor(.primary)
                 }
                 
                 Spacer()
-                
-                // Date
-                Text(climb.dateLogged.formatted(.dateTime.year().month().day()))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
                 // WIP indicator
                 if climb.isWorkInProgress {
                     Text("WIP")
                         .font(.caption)
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.yellow.opacity(0.3))
                         .foregroundColor(.orange)
                         .cornerRadius(3)
                 }
+                // Date
+                Text(climb.dateLogged.formatted(.dateTime.year().month().day()))
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                
+                
+               
             }
             
             // Bottom row: Style, Gym, and optional details - only show if populated
@@ -186,25 +187,25 @@ struct ClimbRowCard: View {
                 HStack(spacing: 4) {
                     if hasStyle {
                         Text(climb.style)
-                            .font(.subheadline)
+                            .font(.body)
                             .foregroundColor(.primary)
                     }
                     
                     if hasAngle {
                         if hasStyle {
                             Text("•")
-                                .font(.caption)
+                                .font(.body)
                                 .foregroundColor(.secondary)
                         }
                         Text("\(climb.angleDegrees!)°")
-                            .font(.caption)
+                            .font(.body)
                             .foregroundColor(.secondary)
                     }
                     
                     if hasGym {
                         if hasStyle || hasAngle {
                             Text("•")
-                                .font(.caption)
+                                .font(.body)
                                 .foregroundColor(.secondary)
                         }
                         Text("@\(climb.gym)")
@@ -254,6 +255,7 @@ struct EditClimbView: View {
     @State private var attempts: String = ""
     @State private var selectedGym: String = ""
     @State private var notes: String = ""
+    @State private var selectedDate: Date = Date()
     
     // Computed properties to get available options
     private var availableStyles: [String] {
@@ -325,6 +327,7 @@ struct EditClimbView: View {
                 }
                 
                 Section("Details") {
+                    DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
                     TextField("Grade", text: $grade)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
@@ -392,6 +395,7 @@ struct EditClimbView: View {
         attempts = climb.attempts ?? ""
         selectedGym = climb.gym
         notes = climb.notes ?? ""
+        selectedDate = climb.dateLogged
     }
     
     private func saveChanges() {
@@ -401,6 +405,7 @@ struct EditClimbView: View {
         climb.attempts = attempts.isEmpty ? nil : attempts
         climb.gym = selectedGym.isEmpty ? "Unknown" : selectedGym
         climb.notes = notes.isEmpty ? nil : notes
+        climb.dateLogged = selectedDate
         
         do {
             try modelContext.save()

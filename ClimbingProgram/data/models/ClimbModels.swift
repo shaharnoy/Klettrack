@@ -63,22 +63,22 @@ enum ClimbType: String, CaseIterable, Codable {
 
 struct ClimbingDefaults {
     static let defaultStyles = [
-        "technical",
-        "power", 
-        "slab",
-        "overhang",
-        "crimps",
-        "coordination",
-        "tension board",
-        "kilter board"
+        "Technical",
+        "Power",
+        "Slab",
+        "Overhang",
+        "Crimps",
+        "Coordination",
+        "Tension board",
+        "Kilter board"
     ]
     
     static let defaultGyms = [
-        "OstBloc",
-        "Urban-Apes", 
-        "BoulderGarten",
+        "Ostbloc",
+        "Urban apes",
+        "Bouldergarten",
         "Elektra",
-        "MagicMountain",
+        "Magic mountain",
         "Der Kegel"
     ]
 }

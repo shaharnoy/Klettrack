@@ -82,7 +82,7 @@ struct CatalogView: View {
         } label: {
             let exerciseCount = totalExerciseCount(for: activity)
             let typeCountText = "\(activity.types.count) training type\(activity.types.count == 1 ? "" : "s")"
-            let exerciseCountText = "\(exerciseCount) available exercise\(exerciseCount == 1 ? "" : "s")"
+            let exerciseCountText = "\(exerciseCount) exercise\(exerciseCount == 1 ? "" : "s")"
             CatalogCard(
                 title: activity.name,
                 subtitle: "\(typeCountText)\n\(exerciseCountText)",

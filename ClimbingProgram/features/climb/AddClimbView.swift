@@ -14,6 +14,9 @@ struct AddClimbView: View {
     @Query private var climbStyles: [ClimbStyle]
     @Query private var climbGyms: [ClimbGym]
     
+    // Session manager for remembering climb type and gym
+    @State private var sessionManager = ClimbSessionManager.shared
+    
     @State private var selectedClimbType: ClimbType = .boulder
     @State private var grade: String = ""
     @State private var angleDegrees: String = ""
@@ -22,6 +25,7 @@ struct AddClimbView: View {
     @State private var isWorkInProgress: Bool = false
     @State private var selectedGym: String = ""
     @State private var notes: String = ""
+    @State private var selectedDate: Date = Date()
     
     @State private var showingStyleAlert = false
     @State private var showingGymAlert = false
@@ -100,6 +104,7 @@ struct AddClimbView: View {
                 }
                 
                 Section("Details") {
+                    DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
                     TextField("Grade", text: $grade)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
@@ -113,6 +118,9 @@ struct AddClimbView: View {
             }
             .navigationTitle("Add Climb")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                loadSessionDefaults()
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -182,8 +190,12 @@ struct AddClimbView: View {
             attempts: attemptsText,
             isWorkInProgress: isWorkInProgress,
             gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
-            notes: notesText
+            notes: notesText,
+            dateLogged: selectedDate
         )
+        
+        // Update session memory with this climb's info
+        sessionManager.updateSession(climbType: selectedClimbType, gym: selectedGym)
         
         modelContext.insert(climb)
         
@@ -207,6 +219,28 @@ struct AddClimbView: View {
         modelContext.insert(newGym)
         try? modelContext.save()
         selectedGym = gymName
+    }
+    
+    /// Load session defaults when the view appears
+    private func loadSessionDefaults() {
+        // First try to initialize from today's climbs if no session exists
+        sessionManager.initializeFromTodaysClimbs(modelContext: modelContext)
+        
+        // Then load the session defaults
+        if let sessionClimbType = sessionManager.getSessionClimbType(from: modelContext) {
+            selectedClimbType = sessionClimbType
+        }
+        
+        if let sessionGym = sessionManager.getSessionGym(from: modelContext) {
+            selectedGym = sessionGym
+        }
+    }
+    
+    /// Reset fields to default values when session is cleared
+    private func resetToDefaults() {
+        selectedClimbType = .boulder
+        selectedGym = ""
+        selectedDate = Date()
     }
 }
 
