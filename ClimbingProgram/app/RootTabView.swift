@@ -7,15 +7,48 @@
 
 import SwiftUI
 import SwiftData
+import Combine
 
 // Shared timer state to ensure only one timer instance
+@MainActor
 class TimerAppState: ObservableObject {
     @Published var selectedTab: Int = 0
     @Published var currentPlanDay: PlanDay? = nil
     
+    // Reference to shared timer manager
+    private let sharedTimerManager = SharedTimerManager.shared
+    private var cancellables = Set<AnyCancellable>()
+    
+    init() {
+        setupTimerObservation()
+    }
+    
+    deinit {
+        // Explicit cleanup
+        cancellables.removeAll()
+    }
+    
+    private func setupTimerObservation() {
+        // Monitor timer state and auto-switch to timer tab when timer becomes active
+        sharedTimerManager.$isTimerActive
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isActive in
+                guard let self = self else { return }
+                if isActive && self.selectedTab != 5 {
+                    // Timer is running/paused and we're not on timer tab - switch to it
+                    self.selectedTab = 5
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
     func switchToTimer(with planDay: PlanDay? = nil) {
         currentPlanDay = planDay
-        selectedTab = 5 // Timer tab index (updated from 4 to 5)
+        selectedTab = 5 // Timer tab index
+    }
+    
+    var isTimerActive: Bool {
+        sharedTimerManager.isTimerActive
     }
 }
 

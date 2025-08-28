@@ -14,13 +14,20 @@ struct TimerView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     
-    @StateObject private var timerManager = TimerManager()
+    // Use ObservedObject to observe the existing shared instance
+    @ObservedObject private var sharedTimerManager = SharedTimerManager.shared
+    
     @State private var showingTemplateSelector = false
     @State private var showingCustomTimer = false
     @State private var showingAllTemplates = false
     @State private var showingTimerSetup = false
     
     let planDay: PlanDay?
+    
+    // Computed property to access the timer manager
+    private var timerManager: TimerManager {
+        sharedTimerManager.timerManager
+    }
     
     var body: some View {
         NavigationStack {

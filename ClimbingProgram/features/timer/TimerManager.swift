@@ -33,9 +33,20 @@ class TimerManager: ObservableObject {
     var configuration: TimerConfiguration?
     var session: TimerSession?
     
+    // MARK: - Background State Management
+    private var backgroundTime: Date?
+    private var wasInBackground: Bool = false
+    private var notificationCenter = NotificationCenter.default
+    
     // MARK: - Initializers
     init() {
         // Initialize with default values - required for tests
+        setupBackgroundHandling()
+    }
+    
+    deinit {
+        // Remove observers synchronously - this is safe and doesn't require MainActor
+        notificationCenter.removeObserver(self)
     }
     
     // MARK: - Computed Properties
@@ -314,7 +325,12 @@ class TimerManager: ObservableObject {
         currentTime = elapsed
         totalElapsedTime = elapsed
         
-        updateIntervalProgress()
+        // Always update interval progress for interval-based timers
+        if let config = configuration, config.hasIntervals {
+            updateIntervalProgress()
+        }
+        
+        // Always check for completion regardless of timer type
         checkForCompletion()
     }
     
@@ -615,5 +631,89 @@ extension TimerManager {
         let m = (seconds % 3600) / 60
         let s = seconds % 60
         return (h, m, s)
+    }
+}
+
+// MARK: - Background Handling Setup
+extension TimerManager {
+    private func setupBackgroundHandling() {
+        // Use more specific notifications for actual background/foreground transitions
+        notificationCenter.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleAppDidEnterBackground()
+            }
+        }
+        
+        notificationCenter.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleAppWillEnterForeground()
+            }
+        }
+    }
+    
+    private func handleAppDidEnterBackground() {
+        // Only track background time if timer is running
+        guard state == .running else { return }
+        
+        backgroundTime = Date()
+        wasInBackground = true
+        // Keep timer running - iOS will suspend it, but we'll recalculate on return
+    }
+    
+    private func handleAppWillEnterForeground() {
+        // Only handle if we were actually in background and timer is running
+        guard state == .running, wasInBackground else {
+            backgroundTime = nil
+            wasInBackground = false
+            return
+        }
+        
+        // If we have a background time, catch up with error handling
+        if let backgroundTime = backgroundTime, let startTime = startTime {
+            // Calculate the total elapsed time based on current time
+            let totalElapsed = Int(Date().timeIntervalSince(startTime))
+            
+            // Validate that the elapsed time makes sense
+            guard totalElapsed >= 0 && totalElapsed < 86400 else { // Sanity check: less than 24 hours
+                // If time calculation seems wrong, stop the timer to prevent inconsistent state
+                stop()
+                return
+            }
+            
+            // Calculate background duration for validation
+            let backgroundDuration = Int(Date().timeIntervalSince(backgroundTime))
+            
+            // Only proceed if background duration is reasonable
+            guard backgroundDuration >= 0 && backgroundDuration < 3600 else { // Less than 1 hour in background
+                // If we were in background too long, the timer state might be unreliable
+                stop()
+                return
+            }
+            
+            // Update our state to match reality
+            currentTime = totalElapsed
+            totalElapsedTime = totalElapsed
+            
+            // Update interval progress to catch up
+            updateIntervalProgress()
+            checkForCompletion()
+        }
+        
+        // Clear background state
+        backgroundTime = nil
+        wasInBackground = false
+        
+        // Ensure timer is running if we're in running state
+        if timer == nil {
+            startTimer()
+        }
     }
 }
