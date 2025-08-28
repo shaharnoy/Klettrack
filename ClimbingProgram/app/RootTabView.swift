@@ -15,6 +15,13 @@ class TimerAppState: ObservableObject {
     @Published var selectedTab: Int = 0
     @Published var currentPlanDay: PlanDay? = nil
     
+    // Navigation path storage for each tab to preserve navigation state
+    @Published var catalogNavigationPath = NavigationPath()
+    @Published var plansNavigationPath = NavigationPath()
+    @Published var climbNavigationPath = NavigationPath()
+    @Published var logNavigationPath = NavigationPath()
+    @Published var progressNavigationPath = NavigationPath()
+    
     // Reference to shared timer manager
     private let sharedTimerManager = SharedTimerManager.shared
     private var cancellables = Set<AnyCancellable>()
@@ -52,6 +59,32 @@ class TimerAppState: ObservableObject {
     }
 }
 
+// MARK: - Navigation Types for Plans
+// Hashable wrapper types for navigation
+struct PlanNavigationItem: Hashable {
+    let planId: UUID
+    
+    init(planId: UUID) {
+        self.planId = planId
+    }
+    
+    init(plan: Plan) {
+        self.planId = plan.id
+    }
+}
+
+struct PlanDayNavigationItem: Hashable {
+    let planDayId: UUID
+    
+    init(planDayId: UUID) {
+        self.planDayId = planDayId
+    }
+    
+    init(planDay: PlanDay) {
+        self.planDayId = planDay.id
+    }
+}
+
 struct RootTabView: View {
     @Environment(\.modelContext) private var context
     @State private var isDataReady = false
@@ -63,33 +96,45 @@ struct RootTabView: View {
             Group {
                 switch timerAppState.selectedTab {
                 case 0:
-                    CatalogView()
-                        .environment(\.isDataReady, isDataReady)
-                        .environmentObject(timerAppState)
+                    NavigationStack(path: $timerAppState.catalogNavigationPath) {
+                        CatalogView()
+                            .environment(\.isDataReady, isDataReady)
+                            .environmentObject(timerAppState)
+                    }
                 case 1:
-                    PlansListView()
-                        .environment(\.isDataReady, isDataReady)
-                        .environmentObject(timerAppState)
+                    NavigationStack(path: $timerAppState.plansNavigationPath) {
+                        PlansListView()
+                            .environment(\.isDataReady, isDataReady)
+                            .environmentObject(timerAppState)
+                    }
                 case 2:
-                    ClimbView()
-                        .environment(\.isDataReady, isDataReady)
-                        .environmentObject(timerAppState)
+                    NavigationStack(path: $timerAppState.climbNavigationPath) {
+                        ClimbView()
+                            .environment(\.isDataReady, isDataReady)
+                            .environmentObject(timerAppState)
+                    }
                 case 3:
-                    LogView()
-                        .environment(\.isDataReady, isDataReady)
-                        .environmentObject(timerAppState)
+                    NavigationStack(path: $timerAppState.logNavigationPath) {
+                        LogView()
+                            .environment(\.isDataReady, isDataReady)
+                            .environmentObject(timerAppState)
+                    }
                 case 4:
-                    ProgressViewScreen()
-                        .environment(\.isDataReady, isDataReady)
-                        .environmentObject(timerAppState)
+                    NavigationStack(path: $timerAppState.progressNavigationPath) {
+                        ProgressViewScreen()
+                            .environment(\.isDataReady, isDataReady)
+                            .environmentObject(timerAppState)
+                    }
                 case 5:
                     TimerView(planDay: timerAppState.currentPlanDay)
                         .environment(\.isDataReady, isDataReady)
                         .environmentObject(timerAppState)
                 default:
-                    CatalogView()
-                        .environment(\.isDataReady, isDataReady)
-                        .environmentObject(timerAppState)
+                    NavigationStack(path: $timerAppState.catalogNavigationPath) {
+                        CatalogView()
+                            .environment(\.isDataReady, isDataReady)
+                            .environmentObject(timerAppState)
+                    }
                 }
             }
             

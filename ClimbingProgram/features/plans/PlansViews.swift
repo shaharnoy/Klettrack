@@ -36,6 +36,7 @@ private extension Date {
 struct PlansListView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
+    @EnvironmentObject private var timerAppState: TimerAppState
     // Be explicit with SortDescriptor to help the type checker
     @Query(sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
 
@@ -51,121 +52,140 @@ struct PlansListView: View {
 
 
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(plans) { plan in
-                    NavigationLink {
-                        PlanDetailView(plan: plan)
-                    } label: {
-                        PlanRow(plan: plan)              // ← extracted row keeps the builder simple
-                    }
+        List {
+            ForEach(plans) { plan in
+                Button {
+                    // Use programmatic navigation with Hashable wrapper
+                    timerAppState.plansNavigationPath.append(PlanNavigationItem(plan: plan))
+                } label: {
+                    PlanRow(plan: plan)
                 }
-                .onDelete { idx in
-                    guard isDataReady else { return }
-                    idx.map { plans[$0] }.forEach(context.delete)
-                    try? context.save()
-                }
+                .buttonStyle(.plain)
             }
-            .listStyle(.insetGrouped)
-            .navigationTitle("Plans")
-            .toolbar {
-                // Overflow menu: export / share / import
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        // Export (save to Files)
-                        Button {
-                            guard isDataReady else { return }
-                            exportDoc = LogCSV.makeExportCSV(context: context)
-                            showExporter = true
-                        } label: {
-                            Label("Export logs to CSV", systemImage: "square.and.arrow.up")
-                        }
-
-                        // Share (Mail / Messages / Files…)
-                        Button {
-                            guard isDataReady else { return }
-                            let doc = LogCSV.makeExportCSV(context: context)
-                            let fn = "climbing-log-\(Date().formatted(.dateTime.year().month().day())).csv"
-                            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
-
-                            do {
-                                try doc.csv.write(to: url, atomically: true, encoding: .utf8)
-                                guard FileManager.default.fileExists(atPath: url.path) else {
-                                    importResultMessage = "Share failed: file not found."
-                                    return
-                                }
-                                // triggers the share sheet
-                                sharePayload = SharePayload(url: url)
-                            } catch {
-                                importResultMessage = "Share prep failed: \(error.localizedDescription)"
-                            }
-                        } label: {
-                            Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
-                        }
-
-                        // Import (from Files / cloud storage)
-                        Button {
-                            guard isDataReady else { return }
-                            showImporter = true
-                        } label: {
-                            Label("Import logs from CSV", systemImage: "square.and.arrow.down")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .disabled(!isDataReady)
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
+            .onDelete { idx in
+                guard isDataReady else { return }
+                idx.map { plans[$0] }.forEach(context.delete)
+                try? context.save()
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Plans")
+        .navigationDestination(for: PlanNavigationItem.self) { planItem in
+            // Find the plan by ID and pass it to PlanDetailView
+            if let plan = plans.first(where: { $0.id == planItem.planId }) {
+                PlanDetailView(plan: plan)
+                    .environmentObject(timerAppState)
+            } else {
+                Text("Plan not found")
+            }
+        }
+        .navigationDestination(for: PlanDayNavigationItem.self) { dayItem in
+            // Find the plan day by ID across all plans
+            let allDays = plans.flatMap { $0.days }
+            if let day = allDays.first(where: { $0.id == dayItem.planDayId }) {
+                PlanDayEditor(day: day)
+                    .environmentObject(timerAppState)
+            } else {
+                Text("Plan day not found")
+            }
+        }
+        .toolbar {
+            // Overflow menu: export / share / import
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    // Export (save to Files)
                     Button {
                         guard isDataReady else { return }
-                        showingNew = true
+                        exportDoc = LogCSV.makeExportCSV(context: context)
+                        showExporter = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Export logs to CSV", systemImage: "square.and.arrow.up")
                     }
-                    .disabled(!isDataReady)
+
+                    // Share (Mail / Messages / Files…)
+                    Button {
+                        guard isDataReady else { return }
+                        let doc = LogCSV.makeExportCSV(context: context)
+                        let fn = "climbing-log-\(Date().formatted(.dateTime.year().month().day())).csv"
+                        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
+
+                        do {
+                            try doc.csv.write(to: url, atomically: true, encoding: .utf8)
+                            guard FileManager.default.fileExists(atPath: url.path) else {
+                                importResultMessage = "Share failed: file not found."
+                                return
+                            }
+                            // triggers the share sheet
+                            sharePayload = SharePayload(url: url)
+                        } catch {
+                            importResultMessage = "Share prep failed: \(error.localizedDescription)"
+                        }
+                    } label: {
+                        Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
+                    }
+
+                    // Import (from Files / cloud storage)
+                    Button {
+                        guard isDataReady else { return }
+                        showImporter = true
+                    } label: {
+                        Label("Import logs from CSV", systemImage: "square.and.arrow.down")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
+                .disabled(!isDataReady)
             }
-            .sheet(isPresented: $showingNew) { NewPlanSheet() }
-            // Exporter
-            .fileExporter(isPresented: $showExporter,
-                          document: exportDoc,
-                          contentType: .commaSeparatedText,
-                          defaultFilename: "climbing-log-\(Date().formatted(.dateTime.year().month().day()))") { result in
-                switch result {
-                case .success:
-                    importResultMessage = "CSV exported."
-                case .failure(let err):
-                    importResultMessage = "Export failed: \(err.localizedDescription)"
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    guard isDataReady else { return }
+                    showingNew = true
+                } label: {
+                    Image(systemName: "plus")
                 }
+                .disabled(!isDataReady)
             }
-            // Importer
-            .fileImporter(isPresented: $showImporter,
-                          allowedContentTypes: [.commaSeparatedText],
-                          allowsMultipleSelection: false) { result in
-                do {
-                    guard let url = try result.get().first else { return }
-                    let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
-                    let tag = "import:\(df.string(from: Date()))"
-                    let inserted = try LogCSV.importCSV(from: url, into: context, tag: tag, dedupe: true)
-                    importResultMessage = "Imported \(inserted) log item(s)."
-                } catch {
-                    importResultMessage = "Import failed: \(error.localizedDescription)"
-                }
-            }
-            // Share
-              .sheet(item: $sharePayload) { payload in
-                  ShareSheet(items: [payload.url]) {
-                      try? FileManager.default.removeItem(at: payload.url)
-                  }
-                  .presentationDetents([.medium])
-              }
-            // Result alert
-            .alert(importResultMessage ?? "", isPresented: Binding(
-                get: { importResultMessage != nil },
-                set: { if !$0 { importResultMessage = nil } }
-            )) { Button("OK", role: .cancel) {} }
         }
+        .sheet(isPresented: $showingNew) { NewPlanSheet() }
+        // Exporter
+        .fileExporter(isPresented: $showExporter,
+                      document: exportDoc,
+                      contentType: .commaSeparatedText,
+                      defaultFilename: "climbing-log-\(Date().formatted(.dateTime.year().month().day()))") { result in
+            switch result {
+            case .success:
+                importResultMessage = "CSV exported."
+            case .failure(let err):
+                importResultMessage = "Export failed: \(err.localizedDescription)"
+            }
+        }
+        // Importer
+        .fileImporter(isPresented: $showImporter,
+                      allowedContentTypes: [.commaSeparatedText],
+                      allowsMultipleSelection: false) { result in
+            do {
+                guard let url = try result.get().first else { return }
+                let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
+                let tag = "import:\(df.string(from: Date()))"
+                let inserted = try LogCSV.importCSV(from: url, into: context, tag: tag, dedupe: true)
+                importResultMessage = "Imported \(inserted) log item(s)."
+            } catch {
+                importResultMessage = "Import failed: \(error.localizedDescription)"
+            }
+        }
+        // Share
+          .sheet(item: $sharePayload) { payload in
+              ShareSheet(items: [payload.url]) {
+                  try? FileManager.default.removeItem(at: payload.url)
+              }
+              .presentationDetents([.medium])
+          }
+        // Result alert
+        .alert(importResultMessage ?? "", isPresented: Binding(
+            get: { importResultMessage != nil },
+            set: { if !$0 { importResultMessage = nil } }
+        )) { Button("OK", role: .cancel) {} }
     }
 }
 
@@ -236,6 +256,7 @@ struct NewPlanSheet: View {
 
 struct PlanDetailView: View {
     @Environment(\.modelContext) private var context
+    @EnvironmentObject private var timerAppState: TimerAppState
     @State var plan: Plan
 
     private enum ViewMode: Int {
@@ -342,8 +363,9 @@ struct PlanDetailView: View {
             ForEach(groupedByWeek, id: \.weekStart) { group in
                 Section(header: Text("Week of \(group.weekStart.formatted(date: .abbreviated, time: .omitted))")) {
                     ForEach(group.days) { day in
-                        NavigationLink {
-                            PlanDayEditor(day: day)
+                        Button {
+                            // Use programmatic navigation with Hashable wrapper
+                            timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
                         } label: {
                             HStack {
                                 Circle().fill(day.type.color).frame(width: 10, height: 10)
@@ -352,6 +374,7 @@ struct PlanDetailView: View {
                                 Text(day.type.rawValue).foregroundStyle(.secondary)
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -364,6 +387,7 @@ struct PlanDetailView: View {
         ScrollView {
             let monthGroups = groupDaysByMonth(plan.days, calendar: cal)
             MonthlyGridView(groups: monthGroups, calendar: cal)
+                .environmentObject(timerAppState)
         }
     }
 
@@ -1339,6 +1363,7 @@ private func findOrCreateSession(for date: Date, in context: ModelContext) -> Se
 private struct MonthlyGridView: View {
     let groups: [(components: DateComponents, days: [PlanDay])]
     let calendar: Calendar
+    @EnvironmentObject private var timerAppState: TimerAppState
 
     var body: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
@@ -1347,8 +1372,9 @@ private struct MonthlyGridView: View {
                 let monthDate = calendar.date(from: group.components) ?? Date()
                 Section {
                     ForEach(group.days) { day in
-                        NavigationLink {
-                            PlanDayEditor(day: day)
+                        Button {
+                            // Use programmatic navigation with Hashable wrapper
+                            timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
                         } label: {
                             VStack(spacing: 4) {
                                 Text("\(calendar.component(.day, from: day.date))")
@@ -1362,6 +1388,7 @@ private struct MonthlyGridView: View {
                             .background(.thinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
+                        .buttonStyle(.plain)
                     }
                 } header: {
                     Text(monthDate.formatted(.dateTime.year().month()))
