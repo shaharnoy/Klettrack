@@ -276,7 +276,7 @@ class TimerManager: ObservableObject {
     
     // MARK: - Restart Functionality
     func restart() {
-        guard let savedConfiguration = configuration else { return }
+        guard configuration != nil else { return }
         
         // Stop current timer
         stopTimer()

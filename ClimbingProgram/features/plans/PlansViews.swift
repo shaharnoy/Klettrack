@@ -270,6 +270,16 @@ struct PlanDetailView: View {
 
     private let cal = Calendar.current
 
+    // Helper to check if a day is today
+    private func isToday(_ date: Date) -> Bool {
+        cal.isDate(date, inSameDayAs: Date())
+    }
+    
+    // Helper to find the current day in the plan
+    private var currentDayId: UUID? {
+        plan.days.first { isToday($0.date) }?.id
+    }
+
     // Query for all session items that belong to this plan
     private var planSessionItems: [SessionItem] {
         let descriptor = FetchDescriptor<SessionItem>(
@@ -359,27 +369,48 @@ struct PlanDetailView: View {
     // Break down the main content into smaller views
     @ViewBuilder
     private var weeklyContent: some View {
-        List {
-            ForEach(groupedByWeek, id: \.weekStart) { group in
-                Section(header: Text("Week of \(group.weekStart.formatted(date: .abbreviated, time: .omitted))")) {
-                    ForEach(group.days) { day in
-                        Button {
-                            // Use programmatic navigation with Hashable wrapper
-                            timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
-                        } label: {
-                            HStack {
-                                Circle().fill(day.type.color).frame(width: 10, height: 10)
-                                Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
-                                Spacer()
-                                Text(day.type.rawValue).foregroundStyle(.secondary)
+        ScrollViewReader { proxy in
+            List {
+                ForEach(groupedByWeek, id: \.weekStart) { group in
+                    Section(header: Text("Week of \(group.weekStart.formatted(date: .abbreviated, time: .omitted))")) {
+                        ForEach(group.days) { day in
+                            Button {
+                                // Use programmatic navigation with Hashable wrapper
+                                timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
+                            } label: {
+                                HStack {
+                                    Circle().fill(day.type.color).frame(width: 10, height: 10)
+                                    Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
+                                    Spacer()
+                                    Text(day.type.rawValue).foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(isToday(day.date) ? Color.yellow.opacity(0.1) : Color.clear)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(isToday(day.date) ? Color.black : Color.clear, lineWidth: 1)
+                                )
                             }
+                            .buttonStyle(.plain)
+                            .id(day.id) // For ScrollViewReader
                         }
-                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .onAppear {
+                // Scroll to current day when view appears
+                if let currentId = currentDayId {
+                    DispatchQueue.main.asyncAfter(deadline: .now()) {
+                        proxy.scrollTo(currentId, anchor: .center)
                     }
                 }
             }
         }
-        .listStyle(.insetGrouped)
     }
 
     @ViewBuilder
@@ -518,9 +549,6 @@ struct PlanDayEditor: View {
         // Get all catalog data
         let activityDescriptor = FetchDescriptor<Activity>()
         let allActivities = (try? context.fetch(activityDescriptor)) ?? []
-        
-        let exerciseDescriptor = FetchDescriptor<Exercise>()
-        let allExercises = (try? context.fetch(exerciseDescriptor)) ?? []
         
         // Create a map of exercise names to their parent activity and order
         var exerciseToActivityMap: [String: (activity: Activity, order: Int)] = [:]
@@ -1362,38 +1390,72 @@ private struct MonthlyGridView: View {
     let calendar: Calendar
     @EnvironmentObject private var timerAppState: TimerAppState
 
+    // Helper to check if a day is today
+    private func isToday(_ date: Date) -> Bool {
+        calendar.isDate(date, inSameDayAs: Date())
+    }
+    
+    // Helper to find the current day in the plan
+    private var currentDayId: UUID? {
+        groups.flatMap { $0.days }.first { isToday($0.date) }?.id
+    }
+
+    // Extract day cell into separate view to reduce type checking complexity
+    @ViewBuilder
+    private func dayCell(for day: PlanDay) -> some View {
+        Button {
+            timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
+        } label: {
+            VStack(spacing: 4) {
+                Text("\(calendar.component(.day, from: day.date))")
+                    .font(.caption)
+                    .fontWeight(isToday(day.date) ? .bold : .regular)
+                    .foregroundStyle(isToday(day.date) ? .white : .primary)
+                Circle()
+                    .fill(day.type.color)
+                    .frame(width: 8, height: 8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(6)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isToday(day.date) ? Color.accentColor : Color.secondary.opacity(0.01))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isToday(day.date) ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
+        }
+        .buttonStyle(.plain)
+        .id(day.id)
+    }
+
     var body: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
-        LazyVGrid(columns: columns, spacing: 6) {
-            ForEach(groups, id: \.components) { group in
-                let monthDate = calendar.date(from: group.components) ?? Date()
-                Section {
-                    ForEach(group.days) { day in
-                        Button {
-                            // Use programmatic navigation with Hashable wrapper
-                            timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
-                        } label: {
-                            VStack(spacing: 4) {
-                                Text("\(calendar.component(.day, from: day.date))")
-                                    .font(.caption)
-                                Circle()
-                                    .fill(day.type.color)
-                                    .frame(width: 8, height: 8)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(6)
-                            .background(.thinMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+        ScrollViewReader { proxy in
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(groups, id: \.components) { group in
+                    let monthDate = calendar.date(from: group.components) ?? Date()
+                    Section {
+                        ForEach(group.days) { day in
+                            dayCell(for: day)
                         }
-                        .buttonStyle(.plain)
+                    } header: {
+                        Text(monthDate.formatted(.dateTime.year().month()))
+                            .font(.headline)
+                            .padding(.horizontal)
                     }
-                } header: {
-                    Text(monthDate.formatted(.dateTime.year().month()))
-                        .font(.headline)
-                        .padding(.horizontal)
+                }
+            }
+            .padding(.horizontal)
+            .onAppear {
+                // Scroll to current day when view appears
+                if let currentId = currentDayId {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        proxy.scrollTo(currentId, anchor: .center)
+                    }
                 }
             }
         }
-        .padding(.horizontal)
     }
 }
