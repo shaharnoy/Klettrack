@@ -322,7 +322,7 @@ struct TimerView: View {
                         restartTimer()
                     }
                     .buttonStyle(PrimaryTimerButtonStyle(color: .green))
-                    Button("reset") {
+                    Button("Reset") {
                         timerManager.reset()
                     }
                     .buttonStyle(WideTimerButtonStyle(color: .red))
@@ -343,7 +343,7 @@ struct TimerView: View {
                             }
                             .buttonStyle(WideTimerButtonStyle(color: .blue))
                         }
-                        Button("reset") {
+                        Button("Reset") {
                             timerManager.reset()
                         }
                         .buttonStyle(WideTimerButtonStyle(color: .red))
@@ -365,7 +365,7 @@ struct TimerView: View {
                             }
                             .buttonStyle(WideTimerButtonStyle(color: .blue))
                         }
-                            Button("reset") {
+                            Button("Reset") {
                                 timerManager.reset()
                             }
                             .buttonStyle(WideTimerButtonStyle(color: .red))

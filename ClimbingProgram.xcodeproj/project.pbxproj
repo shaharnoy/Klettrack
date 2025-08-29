@@ -17,15 +17,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		53229DCE2E573C2200D1A229 /* ClimbingProgram.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClimbingProgram.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		53229DCE2E573C2200D1A229 /* klettrack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = klettrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		536190D72E5B1211008A8555 /* ClimbingProgramTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClimbingProgramTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		53229DDB2E573C2400D1A229 /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */ = {
+		5327D8572E61DEDA00A5E034 /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Info.plist,
+				info.plist,
 			);
 			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
 		};
@@ -35,7 +35,7 @@
 		53229DD02E573C2200D1A229 /* ClimbingProgram */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				53229DDB2E573C2400D1A229 /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */,
+				5327D8572E61DEDA00A5E034 /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */,
 			);
 			path = ClimbingProgram;
 			sourceTree = "<group>";
@@ -77,7 +77,7 @@
 		53229DCF2E573C2200D1A229 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				53229DCE2E573C2200D1A229 /* ClimbingProgram.app */,
+				53229DCE2E573C2200D1A229 /* klettrack.app */,
 				536190D72E5B1211008A8555 /* ClimbingProgramTests.xctest */,
 			);
 			name = Products;
@@ -105,7 +105,7 @@
 			packageProductDependencies = (
 			);
 			productName = ClimbingProgram;
-			productReference = 53229DCE2E573C2200D1A229 /* ClimbingProgram.app */;
+			productReference = 53229DCE2E573C2200D1A229 /* klettrack.app */;
 			productType = "com.apple.product-type.application";
 		};
 		536190D62E5B1211008A8555 /* ClimbingProgramTests */ = {
@@ -224,8 +224,8 @@
 				DEVELOPMENT_TEAM = YG8D87B9SL;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = ClimbingProgram/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Climbing Program";
+				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -236,8 +236,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.somenoys.ClimbingProgram;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.somenoys.klettrack;
+				PRODUCT_MODULE_NAME = "$(PRODUCT_NAME)";
+				PRODUCT_NAME = klettrack;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -259,8 +260,8 @@
 				DEVELOPMENT_TEAM = YG8D87B9SL;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = ClimbingProgram/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Climbing Program";
+				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -271,8 +272,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.somenoys.ClimbingProgram;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.somenoys.klettrack;
+				PRODUCT_MODULE_NAME = "$(PRODUCT_NAME)";
+				PRODUCT_NAME = klettrack;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
