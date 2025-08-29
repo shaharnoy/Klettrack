@@ -781,14 +781,23 @@ struct PlanDayEditor: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.exerciseName)
                     .lineLimit(2)
-                LogMetricRow(
-                    reps: item.reps.map{ String(format: "%.1f", $0) },
-                    sets: item.sets.map{ String(format: "%.1f", $0) },
-                    weight: item.weightKg.map { String(format: "%.1f", $0) },
-                    grade: item.grade
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                
+                // Check if this is a climb log or regular exercise log
+                if isClimbLog(item: item) {
+                    ClimbLogMetricRow(item: item)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    LogMetricRow(
+                        reps: item.reps.map{ String(format: "%.1f", $0) },
+                        sets: item.sets.map{ String(format: "%.1f", $0) },
+                        weight: item.weightKg.map { String(format: "%.1f", $0) },
+                        grade: item.grade
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                
                 if let notes = item.notes, !notes.isEmpty {
                     Text(notes)
                         .font(.caption)
@@ -801,6 +810,14 @@ struct PlanDayEditor: View {
                 .foregroundStyle(.green)
                 .imageScale(.small)
         }
+    }
+    
+    // Helper to determine if a session item is a climb log
+    private func isClimbLog(item: SessionItem) -> Bool {
+        // Check if the notes contain climb log indicators or if it's a bouldering exercise
+        return item.notes?.contains("Plan climb log") == true ||
+               item.notes?.contains("Attempts:") == true ||
+               isBoulderingExercise(name: item.exerciseName)
     }
 
     var body: some View {
@@ -1089,11 +1106,7 @@ struct PlanClimbLogView: View {
     }
     
     private func buildSessionNotes(from climbEntry: ClimbEntry) -> String {
-        var noteParts: [String] = ["Plan climb log"]
-        
-        if let attempts = climbEntry.attempts {
-            noteParts.append("Attempts: \(attempts)")
-        }
+        var noteParts: [String] = []
         
         if climbEntry.style != "Unknown" {
             noteParts.append("Style: \(climbEntry.style)")
@@ -1101,14 +1114,6 @@ struct PlanClimbLogView: View {
         
         if climbEntry.gym != "Unknown" {
             noteParts.append("Gym: \(climbEntry.gym)")
-        }
-        
-        if climbEntry.isWorkInProgress {
-            noteParts.append("WIP")
-        }
-        
-        if let notes = climbEntry.notes {
-            noteParts.append("Notes: \(notes)")
         }
         
         return noteParts.joined(separator: " • ")
@@ -1615,5 +1620,67 @@ private struct MonthlyGridView: View {
                 }
             }
         }
+    }
+}
+
+private struct ClimbLogMetricRow: View {
+    let item: SessionItem
+    
+    private var climbTypeColor: Color {
+        // Default to boulder color since most plan climbs are bouldering
+        // Could be enhanced to detect climb type from notes if needed
+        return CatalogHue.bouldering.color
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Top row: Attempts, Grade, WIP status
+            HStack(alignment: .center) {
+                // Attempts (if available)
+                if let attempts = item.reps {
+                    Text("\(Int(attempts)) attempts")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                
+                // Grade - only show if available
+                if let grade = item.grade {
+                    if item.reps != nil {
+                        Text("•")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                    Text("grade \(grade)")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+
+        }
+    }
+    
+    // Parse climb-specific information from notes
+    private func parseClimbNotes(_ notes: String?) -> (style: String?, gym: String?, isWIP: Bool) {
+        guard let notes = notes else { return (nil, nil, false) }
+        
+        var style: String?
+        var gym: String?
+        var isWIP = false
+        
+        // Split notes by separator
+        let parts = notes.components(separatedBy: " • ")
+        
+        for part in parts {
+            if part.hasPrefix("Style: ") {
+                style = String(part.dropFirst(7)) // Remove "Style: "
+            } else if part.hasPrefix("Gym: ") {
+                gym = String(part.dropFirst(5)) // Remove "Gym: "
+            } else if part == "WIP" {
+                isWIP = true
+            }
+        }
+        
+        return (style, gym, isWIP)
     }
 }
