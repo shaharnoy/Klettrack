@@ -909,16 +909,13 @@ struct PlanDayEditor: View {
         }
         // Climb Log sheet for bouldering exercises
         .sheet(item: $climbLoggingExercise) { sel in
-            NavigationStack {
-                PlanClimbLogView(
-                    exerciseName: sel.name,
-                    planDay: day,
-                    onSave: {
-                        saveTick.toggle()
-                        climbLoggingExercise = nil
-                    }
-                )
-            }
+            PlanClimbLogView(
+                exerciseName: sel.name,
+                planDay: day,
+                onSave: {
+                    // Refresh any state if needed
+                }
+            )
         }
     }
     
@@ -1047,150 +1044,22 @@ struct PlanDayEditor: View {
 
 struct PlanClimbLogView: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    @Query private var climbStyles: [ClimbStyle]
-    @Query private var climbGyms: [ClimbGym]
     
     let exerciseName: String
     let planDay: PlanDay
     let onSave: () -> Void
     
-    @State private var grade: String = ""
-    @State private var attempts: String = ""
-    @State private var selectedStyle: String = ""
-    @State private var selectedGym: String = ""
-    @State private var notes: String = ""
-    @State private var isWorkInProgress: Bool = false
-    
-    @State private var showingStyleAlert = false
-    @State private var showingGymAlert = false
-    @State private var newStyleName = ""
-    @State private var newGymName = ""
-    
-    // Computed properties to get available options
-    private var availableStyles: [String] {
-        // Combine seeded styles with custom styles
-        let seededStyles = ClimbingDefaults.defaultStyles
-        let customStyles = climbStyles.map { $0.name }
-        return Array(Set(seededStyles + customStyles)).sorted()
-    }
-    
-    private var availableGyms: [String] {
-        // Combine seeded gyms with custom gyms
-        let seededGyms = ClimbingDefaults.defaultGyms
-        let customGyms = climbGyms.map { $0.name }
-        return Array(Set(seededGyms + customGyms)).sorted()
-    }
-    
     var body: some View {
-        Form {
-            Section {
-                Text("Climb Log for \(exerciseName)")
-                    .font(.headline)
-            }
-            
-            Section {
-                LabeledContent {
-                    TextField("e.g. V5, 6a+", text: $grade)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Grade", systemImage: "star")
-                }
-                
-                LabeledContent {
-                    TextField("e.g. 3", text: $attempts)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Attempts", systemImage: "repeat")
-                }
-                
-                // Style picker with add button
-                HStack {
-                    Picker("Style", selection: $selectedStyle) {
-                        Text("select").tag("")
-                        ForEach(availableStyles, id: \.self) { style in
-                            Text(style).tag(style)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    Button {
-                        showingStyleAlert = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.accentColor)
-                    }
-                }
-                
-                // Gym picker with add button
-                HStack {
-                    Picker("Gym", selection: $selectedGym) {
-                        Text("select").tag("")
-                        ForEach(availableGyms, id: \.self) { gym in
-                            Text(gym).tag(gym)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    Button {
-                        showingGymAlert = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.accentColor)
-                    }
-                }
-                
-                Toggle("Work in Progress", isOn: $isWorkInProgress)
-            } header: {
-                Text("Climb Details")
-            } footer: {
-                Text("Log climbing details for this bouldering exercise.")
-            }
-        }
-        .navigationTitle("Climb Log")
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    saveClimbLog()
-                }
-                .disabled(grade.isEmpty && attempts.isEmpty)
-            }
-        }
-        .alert("Add Style", isPresented: $showingStyleAlert) {
-            TextField("Style name", text: $newStyleName)
-            Button("Add") {
-                if !newStyleName.isEmpty {
-                    let newStyle = ClimbStyle(name: newStyleName)
-                    context.insert(newStyle)
-                    selectedStyle = newStyleName
-                    newStyleName = ""
-                    try? context.save()
-                }
-            }
-            Button("Cancel", role: .cancel) { newStyleName = "" }
-        }
-        .alert("Add Gym", isPresented: $showingGymAlert) {
-            TextField("Gym name", text: $newGymName)
-            Button("Add") {
-                if !newGymName.isEmpty {
-                    let newGym = ClimbGym(name: newGymName)
-                    context.insert(newGym)
-                    selectedGym = newGymName
-                    newGymName = ""
-                    try? context.save()
-                }
-            }
-            Button("Cancel", role: .cancel) { newGymName = "" }
+        ClimbLogForm(
+            title: "Climb Log for \(exerciseName)",
+            initialDate: planDay.date
+        ) { climbEntry in
+            // Custom save logic for plan integration
+            handlePlanClimbSave(climbEntry: climbEntry)
         }
     }
     
-    private func saveClimbLog() {
+    private func handlePlanClimbSave(climbEntry: ClimbEntry) {
         // Find the parent plan
         let planDescriptor = FetchDescriptor<Plan>()
         let plans = (try? context.fetch(planDescriptor)) ?? []
@@ -1198,9 +1067,11 @@ struct PlanClimbLogView: View {
             plan.days.contains { $0.id == planDay.id }
         }
         
-        // 1. Create SessionItem for plan tracking
+        // Create SessionItem for plan tracking
         let session = findOrCreateSession(for: planDay.date, in: context)
-        let attemptsDouble = Double(attempts.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+        
+        // Convert attempts to Double for consistency
+        let attemptsDouble = climbEntry.attempts != nil ? Double(climbEntry.attempts!) : nil
         
         session.items.append(SessionItem(
             exerciseName: exerciseName,
@@ -1209,51 +1080,34 @@ struct PlanClimbLogView: View {
             reps: attemptsDouble, // Store attempts as reps for consistency
             sets: nil,
             weightKg: nil,
-            grade: grade.isEmpty ? nil : grade,
-            notes: buildSessionNotes()
+            grade: climbEntry.grade != "Unknown" ? climbEntry.grade : nil,
+            notes: buildSessionNotes(from: climbEntry)
         ))
         
-        // 2. Create ClimbEntry for climb tracking
-        let climbEntry = ClimbEntry(
-            climbType: .boulder, // Always boulder for bouldering exercises
-            grade: grade.isEmpty ? "Unknown" : grade,
-            angleDegrees: nil, // Not specified in plan context
-            style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
-            attempts: attempts.isEmpty ? nil : attempts,
-            isWorkInProgress: isWorkInProgress,
-            gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
-            notes: notes.isEmpty ? nil : notes,
-            dateLogged: planDay.date
-        )
-        
-        context.insert(climbEntry)
-        
-        // Save everything
         try? context.save()
         onSave()
-        dismiss()
     }
     
-    private func buildSessionNotes() -> String {
+    private func buildSessionNotes(from climbEntry: ClimbEntry) -> String {
         var noteParts: [String] = ["Plan climb log"]
         
-        if !attempts.isEmpty {
+        if let attempts = climbEntry.attempts {
             noteParts.append("Attempts: \(attempts)")
         }
         
-        if !selectedStyle.isEmpty {
-            noteParts.append("Style: \(selectedStyle)")
+        if climbEntry.style != "Unknown" {
+            noteParts.append("Style: \(climbEntry.style)")
         }
         
-        if !selectedGym.isEmpty {
-            noteParts.append("Gym: \(selectedGym)")
+        if climbEntry.gym != "Unknown" {
+            noteParts.append("Gym: \(climbEntry.gym)")
         }
         
-        if isWorkInProgress {
+        if climbEntry.isWorkInProgress {
             noteParts.append("WIP")
         }
         
-        if !notes.isEmpty {
+        if let notes = climbEntry.notes {
             noteParts.append("Notes: \(notes)")
         }
         
