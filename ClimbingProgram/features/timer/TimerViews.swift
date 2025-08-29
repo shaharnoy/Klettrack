@@ -322,6 +322,10 @@ struct TimerView: View {
                         restartTimer()
                     }
                     .buttonStyle(PrimaryTimerButtonStyle(color: .green))
+                    Button("reset") {
+                        timerManager.reset()
+                    }
+                    .buttonStyle(WideTimerButtonStyle(color: .red))
                 }
             } else if timerManager.isRunning {
                 // Enhanced: Wider buttons with equal distribution
@@ -339,7 +343,12 @@ struct TimerView: View {
                             }
                             .buttonStyle(WideTimerButtonStyle(color: .blue))
                         }
+                        Button("reset") {
+                            timerManager.reset()
+                        }
+                        .buttonStyle(WideTimerButtonStyle(color: .red))
                     }
+                    
                 }
             } else if timerManager.isPaused {
                 VStack(spacing: 12) {
@@ -356,9 +365,28 @@ struct TimerView: View {
                             }
                             .buttonStyle(WideTimerButtonStyle(color: .blue))
                         }
+                            Button("reset") {
+                                timerManager.reset()
+                            }
+                            .buttonStyle(WideTimerButtonStyle(color: .red))
                     }
                 }
             }
+            else if timerManager.isReset {
+                VStack(spacing: 16) {
+                    HStack(spacing: 16) {
+                        Button("Start") {
+                            if timerManager.configuration == nil {
+                                showingTimerSetup = true
+                            } else {
+                                startTimerWithExistingConfig()
+                            }
+                        }
+                        .buttonStyle(PrimaryTimerButtonStyle(color: .green))
+                    }
+                }
+                }
+            
         }
     }
     

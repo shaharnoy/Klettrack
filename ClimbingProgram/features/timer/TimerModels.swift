@@ -14,6 +14,7 @@ enum TimerState {
     case running
     case paused
     case completed
+    case reseted
 }
 
 enum IntervalPhase {

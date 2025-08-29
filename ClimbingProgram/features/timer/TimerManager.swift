@@ -54,6 +54,7 @@ class TimerManager: ObservableObject {
     var isPaused: Bool { state == .paused }
     var isStopped: Bool { state == .stopped }
     var isCompleted: Bool { state == .completed }
+    var isReset: Bool { state == .reseted }
     
     var currentIntervalConfig: IntervalConfiguration? {
         guard let config = configuration,
@@ -581,7 +582,7 @@ class TimerManager: ObservableObject {
         }
     }
     
-    private func reset() {
+    func reset() {
         currentTime = 0
         totalElapsedTime = 0
         currentInterval = 0
@@ -596,6 +597,7 @@ class TimerManager: ObservableObject {
         session = nil
         laps.removeAll()
         lastBeepTime = -1 // Reset beep tracking
+        state = .reseted
     }
     
     // MARK: - Audio Feedback
