@@ -43,8 +43,8 @@ struct TimerView: View {
                 // Control Buttons (without Stop & Reset)
                 controlButtonsSection
                 
-                // Laps Section
-                if !timerManager.laps.isEmpty {
+                // Laps Section - only show for total time timers, not interval timers
+                if !timerManager.laps.isEmpty && timerManager.configuration?.hasIntervals == false {
                     lapsSection
                 }
                 
@@ -332,10 +332,13 @@ struct TimerView: View {
                         }
                         .buttonStyle(WideTimerButtonStyle(color: .orange))
                         
-                        Button("Lap") {
-                            timerManager.addLap()
+                        // Only show Lap button for total time timers, not interval timers
+                        if timerManager.configuration?.hasIntervals == false {
+                            Button("Lap") {
+                                timerManager.addLap()
+                            }
+                            .buttonStyle(WideTimerButtonStyle(color: .blue))
                         }
-                        .buttonStyle(WideTimerButtonStyle(color: .blue))
                     }
                 }
             } else if timerManager.isPaused {
@@ -346,10 +349,13 @@ struct TimerView: View {
                         }
                         .buttonStyle(WideTimerButtonStyle(color: .green))
                         
-                        Button("Lap") {
-                            timerManager.addLap()
+                        // Only show Lap button for total time timers, not interval timers
+                        if timerManager.configuration?.hasIntervals == false {
+                            Button("Lap") {
+                                timerManager.addLap()
+                            }
+                            .buttonStyle(WideTimerButtonStyle(color: .blue))
                         }
-                        .buttonStyle(WideTimerButtonStyle(color: .blue))
                     }
                 }
             }
