@@ -89,7 +89,7 @@ struct PlansListView: View {
                     Text("Plan day not found")
                 }
             }
-            .navigationTitle("PLAN")
+            .navigationTitle("TRAIN")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 // Overflow menu: export / share / import
@@ -488,6 +488,35 @@ struct PlanDayEditor: View {
     // Quick Progress
     @State private var progressExercise: ExerciseSelection? = nil
     
+    // Climb logging for bouldering exercises
+    @State private var showingClimbLog = false
+    @State private var climbLoggingExercise: ExerciseSelection? = nil
+    
+    // Helper function to check if an exercise belongs to the Bouldering activity
+    private func isBoulderingExercise(name: String) -> Bool {
+        let activityDescriptor = FetchDescriptor<Activity>()
+        let allActivities = (try? context.fetch(activityDescriptor)) ?? []
+        
+        // Find if this exercise belongs to an activity with "boulder" in the name
+        for activity in allActivities {
+            if activity.name.lowercased().contains("boulder") {
+                for trainingType in activity.types {
+                    // Check direct exercises
+                    if trainingType.exercises.contains(where: { $0.name == name }) {
+                        return true
+                    }
+                    // Check combination exercises
+                    for combination in trainingType.combinations {
+                        if combination.exercises.contains(where: { $0.name == name }) {
+                            return true
+                        }
+                    }
+                }
+            }
+        }
+        return false
+    }
+    
     // Query for logged exercises on this day that belong to this plan
     private var loggedExercisesForDay: [SessionItem] {
         let calendar = Calendar.current
@@ -630,6 +659,7 @@ struct PlanDayEditor: View {
     private func exerciseRow(name: String) -> some View {
         let isQuickLogged = isExerciseQuickLogged(name: name)
         let exerciseInfo = getExerciseInfo(name: name)
+        let isBouldering = isBoulderingExercise(name: name)
         
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -661,17 +691,33 @@ struct PlanDayEditor: View {
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Show progress for \(name)")
 
-                // Quick Log with details (icon-only)
-                Button {
-                    loggingExercise = ExerciseSelection(name: name)
-                    inputReps = ""; inputSets = ""; inputWeight = ""; inputGrade = ""; inputNotes = ""
-                } label: {
-                    Image(systemName: "square.and.pencil")
+                // Conditional logging button based on exercise type
+                if isBouldering {
+                    // Climb Log button for bouldering exercises
+                    Button {
+                        climbLoggingExercise = ExerciseSelection(name: name)
+                        inputGrade = ""; inputReps = ""
+                    } label: {
+                        Image(systemName: "mountain.2")
+                    }
+                    .labelStyle(.iconOnly)
+                    .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .foregroundColor(.pink) // Use bouldering color
+                    .accessibilityLabel("Log climb for \(name)")
+                } else {
+                    // Regular exercise log button for non-bouldering exercises
+                    Button {
+                        loggingExercise = ExerciseSelection(name: name)
+                        inputReps = ""; inputSets = ""; inputWeight = ""; inputGrade = ""; inputNotes = ""
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .labelStyle(.iconOnly)
+                    .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Log exercise details for \(name)")
                 }
-                .labelStyle(.iconOnly)
-                .controlSize(.small)
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Log exercise details for \(name)")
             }
             
             // Exercise guidance information
@@ -861,6 +907,19 @@ struct PlanDayEditor: View {
         .sheet(item: $progressExercise) { sel in
             QuickExerciseProgress(exerciseName: sel.name)
         }
+        // Climb Log sheet for bouldering exercises
+        .sheet(item: $climbLoggingExercise) { sel in
+            NavigationStack {
+                PlanClimbLogView(
+                    exerciseName: sel.name,
+                    planDay: day,
+                    onSave: {
+                        saveTick.toggle()
+                        climbLoggingExercise = nil
+                    }
+                )
+            }
+        }
     }
     
     private func saveLogEntry(exerciseName: String) {
@@ -981,6 +1040,224 @@ struct PlanDayEditor: View {
                     .lineLimit(1...3)
             }
         }
+    }
+}
+
+// MARK: Plan Climb Log View for Bouldering Exercises
+
+struct PlanClimbLogView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query private var climbStyles: [ClimbStyle]
+    @Query private var climbGyms: [ClimbGym]
+    
+    let exerciseName: String
+    let planDay: PlanDay
+    let onSave: () -> Void
+    
+    @State private var grade: String = ""
+    @State private var attempts: String = ""
+    @State private var selectedStyle: String = ""
+    @State private var selectedGym: String = ""
+    @State private var notes: String = ""
+    @State private var isWorkInProgress: Bool = false
+    
+    @State private var showingStyleAlert = false
+    @State private var showingGymAlert = false
+    @State private var newStyleName = ""
+    @State private var newGymName = ""
+    
+    // Computed properties to get available options
+    private var availableStyles: [String] {
+        // Combine seeded styles with custom styles
+        let seededStyles = ClimbingDefaults.defaultStyles
+        let customStyles = climbStyles.map { $0.name }
+        return Array(Set(seededStyles + customStyles)).sorted()
+    }
+    
+    private var availableGyms: [String] {
+        // Combine seeded gyms with custom gyms
+        let seededGyms = ClimbingDefaults.defaultGyms
+        let customGyms = climbGyms.map { $0.name }
+        return Array(Set(seededGyms + customGyms)).sorted()
+    }
+    
+    var body: some View {
+        Form {
+            Section {
+                Text("Climb Log for \(exerciseName)")
+                    .font(.headline)
+            }
+            
+            Section {
+                LabeledContent {
+                    TextField("e.g. V5, 6a+", text: $grade)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Grade", systemImage: "star")
+                }
+                
+                LabeledContent {
+                    TextField("e.g. 3", text: $attempts)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    Label("Attempts", systemImage: "repeat")
+                }
+                
+                // Style picker with add button
+                HStack {
+                    Picker("Style", selection: $selectedStyle) {
+                        Text("select").tag("")
+                        ForEach(availableStyles, id: \.self) { style in
+                            Text(style).tag(style)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    Button {
+                        showingStyleAlert = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                
+                // Gym picker with add button
+                HStack {
+                    Picker("Gym", selection: $selectedGym) {
+                        Text("select").tag("")
+                        ForEach(availableGyms, id: \.self) { gym in
+                            Text(gym).tag(gym)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    Button {
+                        showingGymAlert = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                
+                Toggle("Work in Progress", isOn: $isWorkInProgress)
+            } header: {
+                Text("Climb Details")
+            } footer: {
+                Text("Log climbing details for this bouldering exercise.")
+            }
+        }
+        .navigationTitle("Climb Log")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    saveClimbLog()
+                }
+                .disabled(grade.isEmpty && attempts.isEmpty)
+            }
+        }
+        .alert("Add Style", isPresented: $showingStyleAlert) {
+            TextField("Style name", text: $newStyleName)
+            Button("Add") {
+                if !newStyleName.isEmpty {
+                    let newStyle = ClimbStyle(name: newStyleName)
+                    context.insert(newStyle)
+                    selectedStyle = newStyleName
+                    newStyleName = ""
+                    try? context.save()
+                }
+            }
+            Button("Cancel", role: .cancel) { newStyleName = "" }
+        }
+        .alert("Add Gym", isPresented: $showingGymAlert) {
+            TextField("Gym name", text: $newGymName)
+            Button("Add") {
+                if !newGymName.isEmpty {
+                    let newGym = ClimbGym(name: newGymName)
+                    context.insert(newGym)
+                    selectedGym = newGymName
+                    newGymName = ""
+                    try? context.save()
+                }
+            }
+            Button("Cancel", role: .cancel) { newGymName = "" }
+        }
+    }
+    
+    private func saveClimbLog() {
+        // Find the parent plan
+        let planDescriptor = FetchDescriptor<Plan>()
+        let plans = (try? context.fetch(planDescriptor)) ?? []
+        let parentPlan = plans.first { plan in
+            plan.days.contains { $0.id == planDay.id }
+        }
+        
+        // 1. Create SessionItem for plan tracking
+        let session = findOrCreateSession(for: planDay.date, in: context)
+        let attemptsDouble = Double(attempts.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+        
+        session.items.append(SessionItem(
+            exerciseName: exerciseName,
+            planSourceId: parentPlan?.id,
+            planName: parentPlan?.name,
+            reps: attemptsDouble, // Store attempts as reps for consistency
+            sets: nil,
+            weightKg: nil,
+            grade: grade.isEmpty ? nil : grade,
+            notes: buildSessionNotes()
+        ))
+        
+        // 2. Create ClimbEntry for climb tracking
+        let climbEntry = ClimbEntry(
+            climbType: .boulder, // Always boulder for bouldering exercises
+            grade: grade.isEmpty ? "Unknown" : grade,
+            angleDegrees: nil, // Not specified in plan context
+            style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
+            attempts: attempts.isEmpty ? nil : attempts,
+            isWorkInProgress: isWorkInProgress,
+            gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
+            notes: notes.isEmpty ? nil : notes,
+            dateLogged: planDay.date
+        )
+        
+        context.insert(climbEntry)
+        
+        // Save everything
+        try? context.save()
+        onSave()
+        dismiss()
+    }
+    
+    private func buildSessionNotes() -> String {
+        var noteParts: [String] = ["Plan climb log"]
+        
+        if !attempts.isEmpty {
+            noteParts.append("Attempts: \(attempts)")
+        }
+        
+        if !selectedStyle.isEmpty {
+            noteParts.append("Style: \(selectedStyle)")
+        }
+        
+        if !selectedGym.isEmpty {
+            noteParts.append("Gym: \(selectedGym)")
+        }
+        
+        if isWorkInProgress {
+            noteParts.append("WIP")
+        }
+        
+        if !notes.isEmpty {
+            noteParts.append("Notes: \(notes)")
+        }
+        
+        return noteParts.joined(separator: " • ")
     }
 }
 
