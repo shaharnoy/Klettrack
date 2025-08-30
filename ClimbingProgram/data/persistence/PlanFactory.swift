@@ -24,13 +24,20 @@ struct PlanFactory {
                 return 6 * 7
             case .fourThreeTwoOne: // 10 weeks total
                 return 10 * 7
+            case .daily:
+                return 1          // single day plan
             }
         }()
 
         // Create proper pyramid structure for pyramid plans
         if kind == .threeTwoOne || kind == .fourThreeTwoOne {
             plan.days = createPyramidStructure(dayCount: dayCount, start: start, calendar: cal)
-        } else {
+        }
+        else if kind == .daily {
+            // Single day plan, default to Rest (user will set type)
+            plan.days = [PlanDay(date: start, type: .rest)]
+        }
+        else {
             // Default: rest days for weekly plans; user edits day types.
             plan.days = (0..<dayCount).map { i in PlanDay(date: addDays(i), type: .rest) }
         }

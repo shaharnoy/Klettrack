@@ -9,6 +9,7 @@ import Foundation
 import SwiftData
 
 enum PlanKind: String, Codable, CaseIterable, Identifiable {
+    case daily = "Daily"
     case weekly = "Weekly"
     case threeTwoOne = "3-2-1 (6 weeks)"
     case fourThreeTwoOne = "4-3-2-1 (10 weeks)"
@@ -19,6 +20,7 @@ enum PlanKind: String, Codable, CaseIterable, Identifiable {
         case .weekly: return 1      // repeats; end date open-ended
         case .threeTwoOne: return 6
         case .fourThreeTwoOne: return 10
+        case .daily: return 0       // single day; end date not applicable
         }
     }
 }
