@@ -68,6 +68,7 @@ struct ClimbingDefaults {
         "Slab",
         "Overhang",
         "Crimps",
+        "Slopers",
         "Coordination",
         "Tension board",
         "Kilter board"
