@@ -449,41 +449,6 @@ struct ProgressViewScreen: View {
                         }
                     }
                 }
-                
-                // Progress Over Time Chart
-                Section("Progress Over Time") {
-                    if timeSeriesData.isEmpty {
-                        Text("No data available for the selected filters")
-                            .foregroundStyle(.secondary)
-                            .frame(minHeight: 120)
-                    } else {
-                        Chart(timeSeriesData) { point in
-                            LineMark(
-                                x: .value("Date", point.date),
-                                y: .value("Count", point.count)
-                            )
-                            .foregroundStyle(.blue)
-                            
-                            PointMark(
-                                x: .value("Date", point.date),
-                                y: .value("Count", point.count)
-                            )
-                            .foregroundStyle(.blue)
-                        }
-                        .frame(minHeight: 200)
-                        .chartYAxis {
-                            AxisMarks(position: .leading)
-                        }
-                        .chartXAxis {
-                            AxisMarks(values: .stride(by: .day, count: max(1, timeSeriesData.count / 5))) { value in
-                                AxisGridLine()
-                                AxisTick()
-                                AxisValueLabel(format: .dateTime.month().day())
-                            }
-                        }
-                    }
-                }
-                
                 // Distribution Chart
                 Section("Distribution") {
                     Picker("", selection: $selectedDistributionAxis) {
@@ -526,6 +491,44 @@ struct ProgressViewScreen: View {
                                             .multilineTextAlignment(.trailing)
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+                // Progress Over Time Chart
+                Section("Climbs Over Time") {
+                    if timeSeriesData.isEmpty {
+                        Text("No data available for the selected filters")
+                            .foregroundStyle(.secondary)
+                            .frame(minHeight: 120)
+                    } else {
+                        Chart(timeSeriesData) { point in
+                            LineMark(
+                                x: .value("Date", point.date),
+                                y: .value("Count", point.count)
+                            )
+                            .foregroundStyle(.blue)
+                            .annotation(position: .automatic) {
+                                    Text(point.count, format: .number)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            
+                            PointMark(
+                                x: .value("Date", point.date),
+                                y: .value("Count", point.count)
+                            )
+                            .foregroundStyle(.blue)
+                        }
+                        .frame(minHeight: 200)
+                        .chartYAxis {
+                            AxisMarks(position: .leading)
+                        }
+                        .chartXAxis {
+                            AxisMarks(values: .stride(by: .day, count: max(1, timeSeriesData.count / 5))) { value in
+                                AxisGridLine()
+                                AxisTick()
+                                AxisValueLabel(format: .dateTime.month().day())
                             }
                         }
                     }
