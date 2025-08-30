@@ -69,7 +69,21 @@ struct ProgressViewScreen: View {
             }
         }
     }
+    private func parseAttempts(_ s: String?) -> Int {
+        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else {
+            // empty or nil → count as 1
+            return 1
+        }
+        let digits = s.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        return Int(digits) ?? 1   // if parsing fails, fall back to 1
+    }
     
+    private var totalAttempts: Int {
+        dateFilteredClimbEntries
+            .filter(applyFiltersToClimb)
+            .map { parseAttempts($0.attempts) }
+            .reduce(0, +)
+    }
     enum DateRange: String, CaseIterable, Identifiable {
         case all = "All Time"
         case last7Days = "Last 7 Days"
@@ -88,6 +102,7 @@ struct ProgressViewScreen: View {
     var dateFilteredClimbEntries: [ClimbEntry] {
         filterClimbsByDateRange(allClimbEntries)
     }
+    
     
     private func filterSessionsByDateRange(_ sessions: [Session]) -> [Session] {
         let now = Date()
@@ -415,12 +430,6 @@ struct ProgressViewScreen: View {
                 
                 // Summary Section
                 Section("Summary") {
-                    HStack {
-                        Text("Total Items")
-                        Spacer()
-                        Text("\(totalCount)")
-                    }
-                    
                     if selectedType == .exercise {
                         HStack {
                             Text("Sessions")
@@ -429,9 +438,14 @@ struct ProgressViewScreen: View {
                         }
                     } else {
                         HStack {
-                            Text("Climb Entries")
+                            Text("Total Climbs")
                             Spacer()
                             Text("\(dateFilteredClimbEntries.count)")
+                        }
+                        HStack {
+                            Text("Total Attempts")
+                            Spacer()
+                            Text("\(totalAttempts)")
                         }
                     }
                 }
