@@ -52,7 +52,6 @@ struct ProgressViewScreen: View {
         case style = "Style"
         case grade = "Grade"
         case angle = "Angle"
-        case exercise = "Exercise"
         var id: String { rawValue }
         
         // Dynamic display name based on selected type
@@ -64,8 +63,6 @@ struct ProgressViewScreen: View {
                 return "Grade"
             case .angle:
                 return "Angle"
-            case .exercise:
-                return "Exercise"
             }
         }
     }
@@ -82,6 +79,14 @@ struct ProgressViewScreen: View {
         dateFilteredClimbEntries
             .filter(applyFiltersToClimb)
             .map { parseAttempts($0.attempts) }
+            .reduce(0, +)
+    }
+    
+    private var totalexercises: Int {
+        dateFilteredSessions
+            .map { session in
+                session.items.filter { applyFiltersToExercise($0) }.count
+            }
             .reduce(0, +)
     }
     enum DateRange: String, CaseIterable, Identifiable {
@@ -297,8 +302,6 @@ struct ProgressViewScreen: View {
             return item.grade ?? "No Grade"
         case .angle:
             return "N/A" // Exercises don't have angles
-        case .exercise:
-            return item.exerciseName
         }
     }
     
@@ -310,8 +313,6 @@ struct ProgressViewScreen: View {
             return climb.grade
         case .angle:
             return climb.angleDegrees.map { "\($0)°" } ?? "No Angle"
-        case .exercise:
-            return "N/A" // Climbs don't have exercise names
         }
     }
     
@@ -432,23 +433,29 @@ struct ProgressViewScreen: View {
                 Section("Summary") {
                     if selectedType == .exercise {
                         HStack {
-                            Text("Sessions")
+                            Text("#Sessions")
                             Spacer()
                             Text("\(dateFilteredSessions.count)")
                         }
-                    } else {
                         HStack {
-                            Text("Total Climbs")
+                            Text("#Exercises")
                             Spacer()
-                            Text("\(dateFilteredClimbEntries.count)")
+                            Text("\(totalexercises)") //change to total exercises
                         }
-                        HStack {
-                            Text("Total Attempts")
-                            Spacer()
-                            Text("\(totalAttempts)")
+                    } else {
+                            HStack {
+                                Text("#Climbs")
+                                Spacer()
+                                Text("\(dateFilteredClimbEntries.count)")
+                            }
+                            HStack {
+                                Text("#Attempts")
+                                Spacer()
+                                Text("\(totalAttempts)")
+                            }
                         }
                     }
-                }
+                
                 // Distribution Chart
                 Section("Distribution") {
                     Picker("", selection: $selectedDistributionAxis) {
