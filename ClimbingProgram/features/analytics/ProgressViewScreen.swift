@@ -490,6 +490,11 @@ struct ProgressViewScreen: View {
                                 y: .value("Category", point.category)
                             )
                             .foregroundStyle(.green)
+                            .annotation(position: .trailing) {
+                                    Text(point.count, format: .number)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                         }
                         .frame(minHeight: 300)
                         .chartXAxis {
