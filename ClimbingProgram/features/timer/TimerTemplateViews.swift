@@ -157,7 +157,7 @@ struct CustomTimerSetup: View {
     let onConfigurationReady: (TimerConfiguration) -> Void
     
     @State private var timerType: TimerType = .totalTime
-    @State private var totalTimeMinutes = 10
+    @State private var totalTimeMinutes = 3
     @State private var totalTimeSeconds = 0
     @State private var intervals: [IntervalInput] = []
     @State private var isRepeating = false
@@ -272,7 +272,7 @@ struct CustomTimerSetup: View {
     
     private var repeatSection: some View {
         Section("Repeat") {
-            Toggle("Repeat intervals", isOn: $isRepeating)
+            Toggle("Repeat sets", isOn: $isRepeating)
             
             if isRepeating {
                 Stepper("Repeat \(repeatCount) times", value: $repeatCount, in: 1...20)
@@ -360,7 +360,7 @@ struct CustomTimerSetupWithContext: View {
     let onConfigurationReady: (TimerConfiguration) -> Void
     
     @State private var timerType: TimerType = .totalTime
-    @State private var totalTimeMinutes = 10
+    @State private var totalTimeMinutes = 3
     @State private var totalTimeSeconds = 0
     @State private var intervals: [IntervalInput] = []
     @State private var isRepeating = false
@@ -369,7 +369,7 @@ struct CustomTimerSetupWithContext: View {
     @State private var templateName = ""
     @State private var templateDescription = ""
     @State private var restBetweenIntervalsMinutes = 0
-    @State private var restBetweenIntervalsSeconds = 30
+    @State private var restBetweenIntervalsSeconds = 0
     
     private enum TimerType: CaseIterable {
         case totalTime
@@ -502,7 +502,7 @@ struct CustomTimerSetupWithContext: View {
     
     private var repeatSection: some View {
         Section("Repeat") {
-            Toggle("Repeat intervals", isOn: $isRepeating)
+            Toggle("Repeat sets", isOn: $isRepeating)
             
             if isRepeating {
                 Stepper("Repeat \(repeatCount) times", value: $repeatCount, in: 1...20)
@@ -713,13 +713,13 @@ struct TimerTemplateEditor: View {
     @State private var templateName = ""
     @State private var templateDescription = ""
     @State private var timerType: TimerType = .intervals
-    @State private var totalTimeMinutes = 10
+    @State private var totalTimeMinutes = 3
     @State private var totalTimeSeconds = 0
     @State private var intervals: [IntervalInput] = []
     @State private var isRepeating = false
     @State private var repeatCount = 1
     @State private var restBetweenIntervalsMinutes = 0
-    @State private var restBetweenIntervalsSeconds = 30
+    @State private var restBetweenIntervalsSeconds = 0
     @State private var showingDeleteConfirmation = false
     
     private enum TimerType: CaseIterable {
@@ -870,7 +870,7 @@ struct TimerTemplateEditor: View {
     
     private var repeatSection: some View {
         Section("Repeat") {
-            Toggle("Repeat intervals", isOn: $isRepeating)
+            Toggle("Repeat sets", isOn: $isRepeating)
             
             if isRepeating {
                 Stepper("Repeat \(repeatCount) times", value: $repeatCount, in: 1...20)

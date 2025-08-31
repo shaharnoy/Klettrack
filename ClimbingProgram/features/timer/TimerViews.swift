@@ -935,16 +935,28 @@ struct CustomTimerSetupTab: View {
     
     private var repeatSection: some View {
         Section("Repeat") {
-            Toggle("Repeat intervals", isOn: $isRepeating)
+            Toggle("Repeat sets", isOn: $isRepeating)
             
             if isRepeating {
                 Stepper("Repeat \(repeatCount) times", value: $repeatCount, in: 1...20)
                 
                 // Add rest between iterations setting
-                HStack {
-                    Text("Rest between sets:")
-                    Spacer()
-                    Stepper("\(restBetweenIterations) sec", value: $restBetweenIterations, in: 0...300, step: 5)
+                Section ("Rest Between Sets") {
+                    HStack {
+                        Picker("Minutes", selection: $restBetweenIterations) {
+                            ForEach(0...10, id: \.self) { minutes in
+                                Text("\(minutes) min").tag(minutes)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        
+                        Picker("Seconds", selection: $restBetweenIterations) {
+                            ForEach(0...59, id: \.self) { seconds in
+                                Text("\(seconds) sec").tag(seconds)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
                 }
             }
         }

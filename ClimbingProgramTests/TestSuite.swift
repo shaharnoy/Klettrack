@@ -901,7 +901,7 @@ struct CustomTimerSetupTab: View {
     
     private var repeatSection: some View {
         Section("Repeat") {
-            Toggle("Repeat intervals", isOn: $isRepeating)
+            Toggle("Repeat sets", isOn: $isRepeating)
             
             if isRepeating {
                 Stepper("Repeat \(repeatCount) times", value: $repeatCount, in: 1...20)
