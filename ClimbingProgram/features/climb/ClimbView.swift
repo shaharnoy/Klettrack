@@ -160,14 +160,15 @@ struct ClimbRowCard: View {
                 }
                 // Hold color dot - only show if not "none" and not nil
                 if let holdColor = climb.holdColor, holdColor != .none {
-                    Circle()
+                    JugHoldShape()
                         .fill(holdColor.color)
-                        .frame(width: 12, height: 12)
+                            .frame(width: 12, height: 12)
+                    //border line
                         .overlay(
-                            Circle()
-                                .stroke(Color.primary.opacity(0.6), lineWidth: 0.5)
+                            JugHoldShape()
+                                .stroke(Color.primary.opacity(0.3), lineWidth: 1)
                         )
-                        .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
+                   //other options: EdgeHoldShape() , BlobHoldShape() , HexHoldShape()
                 }
                 
                 Spacer()
@@ -485,6 +486,98 @@ struct EditClimbView: View {
         modelContext.insert(newGym)
         try? modelContext.save()
         selectedGym = gymName
+    }
+}
+
+
+// MARK: - Hold Shapes
+/// Rounded hexagon (bolt-on vibe)
+struct HexHoldShape: Shape {
+    var corner: CGFloat = 0.22
+    func path(in r: CGRect) -> Path {
+        let w = r.width, h = r.height
+        let cx = r.midX, cy = r.midY
+        let R = min(w, h) * 0.5
+        let points = (0..<6).map { i -> CGPoint in
+            let a = (CGFloat(i) * .pi / 3) - .pi/2
+            return CGPoint(x: cx + cos(a) * R, y: cy + sin(a) * R)
+        }
+        var p = Path()
+        p.addRoundedPolygon(points: points, corner: R * corner)
+        return p
+    }
+}
+
+/// Organic blob (resin style)
+struct BlobHoldShape: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let w = r.width, h = r.height
+        p.move(to: CGPoint(x: 0.55*w, y: 0.10*h))
+        p.addQuadCurve(to: CGPoint(x: 0.95*w, y: 0.45*h),
+                       control: CGPoint(x: 0.95*w, y: 0.05*h))
+        p.addQuadCurve(to: CGPoint(x: 0.60*w, y: 0.95*h),
+                       control: CGPoint(x: 1.00*w, y: 0.90*h))
+        p.addQuadCurve(to: CGPoint(x: 0.10*w, y: 0.65*h),
+                       control: CGPoint(x: 0.25*w, y: 1.05*h))
+        p.addQuadCurve(to: CGPoint(x: 0.55*w, y: 0.10*h),
+                       control: CGPoint(x: 0.05*w, y: 0.05*h))
+        return p
+    }
+}
+
+/// Jug-like: rounded triangle with a lip
+struct JugHoldShape: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let w = r.width, h = r.height
+        let a = CGPoint(x: 0.50*w, y: 0.05*h)
+        let b = CGPoint(x: 0.95*w, y: 0.75*h)
+        let c = CGPoint(x: 0.05*w, y: 0.75*h)
+        p.move(to: a)
+        p.addQuadCurve(to: b, control: CGPoint(x: 1.00*w, y: 0.20*h))
+        p.addQuadCurve(to: c, control: CGPoint(x: 0.80*w, y: 1.05*h))
+        p.addQuadCurve(to: a, control: CGPoint(x: 0.00*w, y: 0.20*h))
+        // lip
+        p.move(to: CGPoint(x: 0.30*w, y: 0.55*h))
+        p.addQuadCurve(to: CGPoint(x: 0.70*w, y: 0.55*h),
+                       control: CGPoint(x: 0.50*w, y: 0.40*h))
+        return p
+    }
+}
+
+/// Edge / crimp: soft rectangle with a small notch
+struct EdgeHoldShape: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path(roundedRect: r.insetBy(dx: r.width*0.12, dy: r.height*0.25),
+                     cornerSize: CGSize(width: r.width*0.18, height: r.height*0.18))
+        // notch
+        p.move(to: CGPoint(x: r.minX + r.width*0.25, y: r.midY))
+        p.addLine(to: CGPoint(x: r.minX + r.width*0.75, y: r.midY))
+        return p
+    }
+}
+
+// MARK: - Utilities
+
+private extension Path {
+    mutating func addRoundedPolygon(points: [CGPoint], corner: CGFloat) {
+        guard points.count > 2 else { return }
+        let n = points.count
+        for i in 0..<n {
+            let prev = points[(i - 1 + n) % n]
+            let curr = points[i]
+            let next = points[(i + 1) % n]
+            let v1 = CGVector(dx: curr.x - prev.x, dy: curr.y - prev.y)
+            let v2 = CGVector(dx: next.x - curr.x, dy: next.y - curr.y)
+            let len1 = max(hypot(v1.dx, v1.dy), 0.0001)
+            let len2 = max(hypot(v2.dx, v2.dy), 0.0001)
+            let inset1 = CGPoint(x: curr.x - v1.dx/len1 * corner, y: curr.y - v1.dy/len1 * corner)
+            let inset2 = CGPoint(x: curr.x + v2.dx/len2 * corner, y: curr.y + v2.dy/len2 * corner)
+            if i == 0 { move(to: inset1) } else { addLine(to: inset1) }
+            addQuadCurve(to: inset2, control: curr)
+        }
+        closeSubpath()
     }
 }
 
