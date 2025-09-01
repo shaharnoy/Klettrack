@@ -20,7 +20,7 @@ final class ClimbEntry {
     var style: String
     var attempts: String?
     var isWorkInProgress: Bool
-    var isPreviouslyClimbed: Bool
+    var isPreviouslyClimbed: Bool?
     var holdColor: HoldColor?
     var gym: String
     var notes: String?
@@ -34,7 +34,7 @@ final class ClimbEntry {
         style: String,
         attempts: String? = nil,
         isWorkInProgress: Bool = false,
-        isPreviouslyClimbed: Bool = false,
+        isPreviouslyClimbed: Bool? = nil,
         holdColor: HoldColor? = Optional.none,
         gym: String,
         notes: String? = nil,

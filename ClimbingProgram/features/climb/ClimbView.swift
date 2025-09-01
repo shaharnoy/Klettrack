@@ -182,7 +182,7 @@ struct ClimbRowCard: View {
                         .foregroundColor(.orange)
                         .cornerRadius(3)
                 }
-                if climb.isPreviouslyClimbed {
+                if climb.isPreviouslyClimbed == true {
                         Image(systemName: "arrow.uturn.backward.circle")
                             .foregroundColor(.orange)
                             .font(.caption)
@@ -451,7 +451,7 @@ struct EditClimbView: View {
         selectedGym = climb.gym
         notes = climb.notes ?? ""
         selectedDate = climb.dateLogged
-        isPreviouslyClimbed = climb.isPreviouslyClimbed
+        isPreviouslyClimbed = climb.isPreviouslyClimbed ?? false
         selectedHoldColor = climb.holdColor ?? .none
     }
     

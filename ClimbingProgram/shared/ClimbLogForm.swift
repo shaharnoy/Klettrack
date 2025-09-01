@@ -241,7 +241,7 @@ struct ClimbLogForm: View {
             style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
             attempts: attemptsText,
             isWorkInProgress: isWorkInProgress,
-            isPreviouslyClimbed: isPreviouslyClimbed,
+            isPreviouslyClimbed: isPreviouslyClimbed ? true : false,
             holdColor: selectedHoldColor,
             gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
             notes: notesText,
