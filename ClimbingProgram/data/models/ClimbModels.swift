@@ -19,6 +19,7 @@ final class ClimbEntry {
     var style: String
     var attempts: String?
     var isWorkInProgress: Bool
+    var isPreviouslyClimbed: Bool
     var gym: String
     var notes: String?
     var dateLogged: Date
@@ -31,6 +32,7 @@ final class ClimbEntry {
         style: String,
         attempts: String? = nil,
         isWorkInProgress: Bool = false,
+        isPreviouslyClimbed: Bool = false,
         gym: String,
         notes: String? = nil,
         dateLogged: Date = Date()
@@ -42,6 +44,7 @@ final class ClimbEntry {
         self.style = style
         self.attempts = attempts
         self.isWorkInProgress = isWorkInProgress
+        self.isPreviouslyClimbed = isPreviouslyClimbed
         self.gym = gym
         self.notes = notes
         self.dateLogged = dateLogged

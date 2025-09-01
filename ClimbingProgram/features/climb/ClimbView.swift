@@ -170,6 +170,12 @@ struct ClimbRowCard: View {
                         .foregroundColor(.orange)
                         .cornerRadius(3)
                 }
+                if climb.isPreviouslyClimbed {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 8, height: 8)
+                }
+                  
                 // Date
                 Text(climb.dateLogged.formatted(.dateTime.year().month().day()))
                     .font(.body)
@@ -260,6 +266,7 @@ struct EditClimbView: View {
     @State private var selectedGym: String = ""
     @State private var notes: String = ""
     @State private var selectedDate: Date = Date()
+    @State private var isPreviouslyClimbed: Bool = false
     
     // Computed properties to get available options
     private var availableStyles: [String] {
@@ -340,6 +347,7 @@ struct EditClimbView: View {
                     TextField("Attempts", text: $attempts)
                         .keyboardType(.numberPad)
                     Toggle("WIP?", isOn: $climb.isWorkInProgress)
+                    Toggle("Climbed before?", isOn: $isPreviouslyClimbed)
                     TextField("Notes", text: $notes)
                 }
             }
@@ -400,6 +408,7 @@ struct EditClimbView: View {
         selectedGym = climb.gym
         notes = climb.notes ?? ""
         selectedDate = climb.dateLogged
+        isPreviouslyClimbed = climb.isPreviouslyClimbed
     }
     
     private func saveChanges() {
@@ -410,6 +419,7 @@ struct EditClimbView: View {
         climb.gym = selectedGym.isEmpty ? "Unknown" : selectedGym
         climb.notes = notes.isEmpty ? nil : notes
         climb.dateLogged = selectedDate
+        climb.isPreviouslyClimbed = isPreviouslyClimbed
         
         do {
             try modelContext.save()

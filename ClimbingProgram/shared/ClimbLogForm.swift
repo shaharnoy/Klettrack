@@ -32,6 +32,7 @@ struct ClimbLogForm: View {
     @State private var selectedGym: String = ""
     @State private var notes: String = ""
     @State private var selectedDate: Date
+    @State private var isPreviouslyClimbed: Bool = false
     
     @State private var showingStyleAlert = false
     @State private var showingGymAlert = false
@@ -137,6 +138,7 @@ struct ClimbLogForm: View {
                     TextField("Attempts", text: $attempts)
                         .keyboardType(.numberPad)
                     Toggle("WIP?", isOn: $isWorkInProgress)
+                    Toggle("Previously climbed?", isOn: $isPreviouslyClimbed)
                     TextField("Notes", text: $notes)
                 }
             }
@@ -202,6 +204,7 @@ struct ClimbLogForm: View {
             style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
             attempts: attemptsText,
             isWorkInProgress: isWorkInProgress,
+            isPreviouslyClimbed: isPreviouslyClimbed,
             gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
             notes: notesText,
             dateLogged: selectedDate
