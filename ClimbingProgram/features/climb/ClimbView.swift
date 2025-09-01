@@ -41,7 +41,7 @@ struct ClimbView: View {
                     // List of climbs using card design
                     Section {
                         ForEach(climbEntries) { climb in
-                            ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) })
+                            ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) }, onEdit: { editingClimb = climb })
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
@@ -127,6 +127,7 @@ struct ClimbView: View {
 struct ClimbRowCard: View {
     let climb: ClimbEntry
     let onDelete: () -> Void
+    let onEdit: () -> Void
     
     private var climbTypeColor: Color {
         switch climb.climbType {
@@ -229,6 +230,9 @@ struct ClimbRowCard: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        }
+        .onTapGesture {
+            onEdit()
         }
     }
 }
