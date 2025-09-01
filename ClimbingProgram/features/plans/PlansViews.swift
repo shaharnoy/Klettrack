@@ -1425,17 +1425,65 @@ struct ExercisesList: View {
     let tint: Color
     let onDone: () -> Void
 
+    // Group exercises by area similar to CatalogView
+    private var exercisesByArea: [(String, [Exercise])] {
+        let grouped = Dictionary(grouping: trainingType.exercises) { $0.area ?? "" }
+        if grouped.keys.contains("Fingers") || grouped.keys.contains("Pull") {
+            // For climbing-specific exercises, maintain Fingers/Pull order
+            return ["Fingers", "Pull"].compactMap { area in
+                if let exercises = grouped[area], !exercises.isEmpty {
+                    return (area, exercises.sorted { $0.order < $1.order })
+                }
+                return nil
+            }
+        } else {
+            // For other types, just group if there are areas
+            return grouped
+                .filter { !$0.key.isEmpty }
+                .map { ($0.key, $0.value.sorted { $0.order < $1.order }) }
+                .sorted(by: { $0.0 < $1.0 })
+        }
+    }
+
+    private var ungroupedExercises: [Exercise] {
+        trainingType.exercises.filter { $0.area == nil }.sorted { $0.order < $1.order }
+    }
+
     var body: some View {
         List {
-            ForEach(trainingType.exercises) { ex in
-                ExercisePickRow(
-                    name: ex.name,
-                    subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                    reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
-                    tint: tint,
-                    isSelected: selected.contains(ex.name)
-                ) {
-                    toggle(ex.name)
+            // Show exercises grouped by area if there are any groups
+            if !exercisesByArea.isEmpty {
+                ForEach(exercisesByArea, id: \.0) { area, exercises in
+                    Section(area) {
+                        ForEach(exercises) { ex in
+                            ExercisePickRow(
+                                name: ex.name,
+                                subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
+                                reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
+                                tint: tint,
+                                isSelected: selected.contains(ex.name)
+                            ) {
+                                toggle(ex.name)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Show ungrouped exercises if any
+            if !ungroupedExercises.isEmpty {
+                Section(exercisesByArea.isEmpty ? "Exercises" : "Other") {
+                    ForEach(ungroupedExercises) { ex in
+                        ExercisePickRow(
+                            name: ex.name,
+                            subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
+                            reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
+                            tint: tint,
+                            isSelected: selected.contains(ex.name)
+                        ) {
+                            toggle(ex.name)
+                        }
+                    }
                 }
             }
         }
@@ -1745,5 +1793,3 @@ private struct ActivityGroupView: View {
         }
     }
 }
-
-// MARK: Day editor
