@@ -55,6 +55,7 @@ class TimerManager: ObservableObject {
     var isStopped: Bool { state == .stopped }
     var isCompleted: Bool { state == .completed }
     var isReset: Bool { state == .reseted }
+    var isGetReady: Bool { state == .getReady }
     
     var currentIntervalConfig: IntervalConfiguration? {
         guard let config = configuration,
@@ -65,6 +66,11 @@ class TimerManager: ObservableObject {
     /// The primary display time - counts down for total time mode, shows remaining time for current phase in interval mode
     var displayTime: Int {
         guard let config = configuration else { return 0 }
+        
+        // Handle Get Ready phase - show countdown from 5 to 1
+        if state == .getReady {
+            return max(0, 5 - currentTime)
+        }
         
         if config.hasTotalTime && !config.hasIntervals {
             // Total time mode: count down from total time
@@ -108,6 +114,8 @@ class TimerManager: ObservableObject {
                 return singleCycleTime - timeInCurrentCycle
             case .completed:
                 return 0
+            case .getReady:
+                return 5 // Get ready phase is always 5 seconds
             }
         }
     }
@@ -188,25 +196,62 @@ class TimerManager: ObservableObject {
         self.configuration = configuration
         self.session = session
         
-        startTime = Date()
-        state = .running
+        // Always start with Get Ready phase for 5 seconds
+        state = .getReady
         currentTime = 0
         totalElapsedTime = 0
         currentInterval = 0
         currentRepetition = 0
-        currentSequenceRepeat = 0 // Initialize sequence repeat counter
+        currentSequenceRepeat = 0
+        currentPhase = .getReady
+        isInBetweenIntervalRest = false
+        betweenIntervalRestStartTime = 0
+        laps = []
+        lastBeepTime = -1
         
-        // Set initial phase based on first interval configuration
-        if configuration.hasIntervals && !configuration.intervals.isEmpty {
-            let firstInterval = configuration.intervals[0]
-            // If work time is 0, start directly in rest phase
-            currentPhase = firstInterval.workTimeSeconds > 0 ? .work : .rest
-        } else {
-            currentPhase = .work
+        startTime = Date()
+        startTimer()
+        //playSound(.start) //since it always starts with 5 seconds getReady, skip the start sound
+    }
+    
+    
+    // MARK: - Get Ready Phase Management
+    private func handleGetReadyPhase() {
+        let getReadyTimeRemaining = 5 - currentTime
+        
+        // Use the same precise countdown beep logic as other phases
+        // Countdown beeps for get ready phase (all 5 seconds)
+        if getReadyTimeRemaining >= 1 && getReadyTimeRemaining <= 5 && lastBeepTime != getReadyTimeRemaining {
+            lastBeepTime = getReadyTimeRemaining
+            
+            // Schedule the beep to play precisely at the beginning of the second
+            // This helps synchronize the beep with the actual countdown timing
+            DispatchQueue.main.async { [weak self] in
+                self?.playCountdownBeep()
+            }
         }
         
-        startTimer()
-        playSound(.start)
+        // Transition from Get Ready to actual timer
+        if currentTime >= 5 {
+            state = .running
+            currentTime = 0
+            totalElapsedTime = 0
+            startTime = Date() // Reset start time for actual timer
+            
+            // Set initial phase based on configuration
+            if let config = configuration {
+                if config.hasIntervals && !config.intervals.isEmpty {
+                    let firstInterval = config.intervals[0]
+                    currentPhase = firstInterval.workTimeSeconds > 0 ? .work : .rest
+                } else {
+                    currentPhase = .work
+                }
+            }
+            
+            // Play transition sound
+            playSound(.restToWork) // Sound to indicate actual timer is starting
+            lastBeepTime = -1 // Reset beep tracking
+        }
     }
     
     func pause() {
@@ -332,6 +377,12 @@ class TimerManager: ObservableObject {
         
         currentTime = elapsed
         totalElapsedTime = elapsed
+        
+        // Handle Get Ready phase first
+        if state == .getReady {
+            handleGetReadyPhase()
+            return
+        }
         
         // Always update interval progress for interval-based timers
         if let config = configuration, config.hasIntervals {

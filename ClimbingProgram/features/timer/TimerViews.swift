@@ -138,7 +138,40 @@ struct TimerView: View {
     private var timerDisplaySection: some View {
         VStack(spacing: 16) {
             // Main phase display - this is what users care about most
-            if timerManager.configuration?.hasIntervals == true {
+            if timerManager.isGetReady {
+                // Get Ready phase display
+                VStack(spacing: 8) {
+                    // Get Ready countdown (main focus - biggest)
+                    Text(timerManager.formatTime(timerManager.displayTime))
+                        .font(.system(size: 72, weight: .ultraLight, design: .monospaced))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.blue, .blue.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .contentTransition(.numericText())
+                    
+                    // Get Ready label below
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(.blue.opacity(0.2))
+                                .frame(width: 16, height: 16)
+                            Circle()
+                                .fill(.blue)
+                                .frame(width: 10, height: 10)
+                        }
+                        
+                        Text("Get Ready")
+                            .font(.title2.weight(.semibold))
+                            .foregroundColor(.blue)
+                            .frame(minWidth: 240, alignment: .center)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+            } else if timerManager.configuration?.hasIntervals == true {
                 VStack(spacing: 8) {
                     // Phase time remaining (main focus - biggest)
                     if timerManager.currentPhaseTimeRemaining > 0 {

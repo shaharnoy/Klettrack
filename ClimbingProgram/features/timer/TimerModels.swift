@@ -11,6 +11,7 @@ import SwiftData
 // MARK: - Timer State Enums
 enum TimerState {
     case stopped
+    case getReady
     case running
     case paused
     case completed
@@ -21,6 +22,7 @@ enum IntervalPhase {
     case work
     case rest
     case completed
+    case getReady
 }
 
 // MARK: - Timer Configuration Structs
@@ -30,6 +32,21 @@ struct TimerConfiguration {
     let isRepeating: Bool
     let repeatCount: Int?
     let restTimeBetweenIntervals: Int? // Rest time between different intervals
+    let getReady: Bool // Yes/No get ready phase at start - always 5 seconds
+    
+    init(totalTimeSeconds: Int? = nil,
+         intervals: [IntervalConfiguration] = [],
+         isRepeating: Bool = false,
+         repeatCount: Int? = nil,
+         restTimeBetweenIntervals: Int? = nil,
+         getReady: Bool = true) {
+        self.totalTimeSeconds = totalTimeSeconds
+        self.intervals = intervals
+        self.isRepeating = isRepeating
+        self.repeatCount = repeatCount
+        self.restTimeBetweenIntervals = restTimeBetweenIntervals
+        self.getReady = getReady
+    }
     
     var hasIntervals: Bool {
         !intervals.isEmpty
