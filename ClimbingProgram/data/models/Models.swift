@@ -256,6 +256,8 @@ final class TimerSession {
     var completedIntervals: Int
     var laps: [TimerLap] = []
     var wasCompleted: Bool
+    var dailynotes: String?
+        
     
     init(
         id: UUID = UUID(),

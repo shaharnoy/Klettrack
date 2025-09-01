@@ -29,6 +29,7 @@ enum DayType: String, Codable, CaseIterable, Identifiable {
     case climbingFull = "Climbing + Full"
     case climbingSmall = "Climbing + Short"
     case climbingReduced = "Climbing reduced"
+    case Perclimbing = "Performance Climbing"
     case core = "Core"
     case antagonist = "Antagonist"
     case rest = "Rest"
@@ -63,8 +64,8 @@ final class PlanDay {
     @Attribute(.unique) var id: UUID
     var date: Date
     var typeRaw: String
-    /// Store chosen exercises by value (stable even if catalog changes names later)
     var chosenExercises: [String] = []
+    var dailyNotes: String? = nil
 
     var type: DayType {
         get { DayType(rawValue: typeRaw) ?? .rest }

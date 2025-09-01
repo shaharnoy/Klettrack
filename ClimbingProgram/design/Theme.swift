@@ -18,6 +18,7 @@ extension DayType {
         case .rest:           return .purple
         case .vacation:       return .yellow
         case .sick:           return .red
+        case .Perclimbing:    return .pink
         }
     }
 }

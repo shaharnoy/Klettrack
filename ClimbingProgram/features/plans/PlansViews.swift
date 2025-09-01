@@ -484,13 +484,16 @@ struct PlanDayEditor: View {
     @State private var inputGrade: String = ""
     @State private var inputNotes: String = ""
     @State private var saveTick = false
-
+    
     // Quick Progress
     @State private var progressExercise: ExerciseSelection? = nil
     
     // Climb logging for bouldering exercises
     @State private var showingClimbLog = false
     @State private var climbLoggingExercise: ExerciseSelection? = nil
+    
+    // State for daily notes to handle the optional binding
+    @State private var dailyNotesText: String = ""
     
     // Helper function to check if an exercise belongs to the Bouldering activity
     private func isBoulderingExercise(name: String) -> Bool {
@@ -820,66 +823,76 @@ struct PlanDayEditor: View {
                isBoulderingExercise(name: item.exerciseName)
     }
 
+    // Break down the chosen activities section into its own component
+    @ViewBuilder
+    private var chosenActivitiesSection: some View {
+        Section("Chosen activities") {
+            if day.chosenExercises.isEmpty {
+                Text("No activities yet").foregroundStyle(.secondary)
+            } else {
+                let groupedExercises = groupedChosenExercises()
+                ForEach(groupedExercises, id: \.activityName) { group in
+                    ActivityGroupView(
+                        group: group,
+                        day: $day,
+                        context: context,
+                        exerciseRowBuilder: exerciseRow
+                    )
+                }
+            }
+            
+            Button {
+                showingPicker = true
+            } label: {
+                Label("Add from Catalog", systemImage: "plus")
+            }
+            .textCase(nil)
+        }
+    }
+    
+    // Break down the logged exercises section
+    @ViewBuilder
+    private var loggedExercisesSection: some View {
+        Section("Logged exercises") {
+            if loggedExercisesForDay.isEmpty {
+                Text("No logs yet for this day").foregroundStyle(.secondary)
+            } else {
+                ForEach(loggedExercisesForDay) { item in
+                    loggedExerciseRow(item: item)
+                }
+            }
+        }
+    }
+    
+    // Break down daily notes section
+    @ViewBuilder
+    private var dailyNotesSection: some View {
+        Section ("Daily Notes") {
+            TextEditor(text: $dailyNotesText)
+                .frame(minHeight: 100)
+                .onAppear {
+                    // Initialize with the current value from the model
+                    dailyNotesText = day.dailyNotes ?? ""
+                }
+                .onChange(of: dailyNotesText) {
+                    // Save the notes to the model
+                    let trimmed = dailyNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    day.dailyNotes = trimmed.isEmpty ? nil : trimmed
+                    try? context.save()
+                }
+        }
+    }
+
     var body: some View {
         Form {
             Picker("Day type", selection: $day.type) {
-                ForEach(DayType.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(DayType.allCases, id: \.self) { t in
+                    Text(t.rawValue).tag(t) }
             }
-
-            Section("Chosen activities") {
-                if day.chosenExercises.isEmpty {
-                    Text("No activities yet").foregroundStyle(.secondary)
-                } else {
-                    let groupedExercises = groupedChosenExercises()
-                    ForEach(groupedExercises, id: \.activityName) { group in
-                        // Activity header
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(group.activityColor)
-                                .frame(width: 12, height: 12)
-                            Text(group.activityName)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding(.vertical, 4)
-                        .listRowSeparator(.hidden)
-                        
-                        // Exercises in this activity group
-                        ForEach(group.exercises, id: \.self) { name in
-                            exerciseRow(name: name)
-                        }
-                        .onDelete { indexSet in
-                            for index in indexSet {
-                                let exerciseToRemove = group.exercises[index]
-                                if let dayIndex = day.chosenExercises.firstIndex(of: exerciseToRemove) {
-                                    day.chosenExercises.remove(at: dayIndex)
-                                }
-                            }
-                            try? context.save()
-                        }
-                    }
-                }
-
-                Button {
-                    showingPicker = true
-                } label: {
-                    Label("Add from Catalog", systemImage: "plus")
-                }
-                .textCase(nil)
-            }
-
-            // Logged exercises section
-            Section("Logged exercises") {
-                if loggedExercisesForDay.isEmpty {
-                    Text("No logs yet for this day").foregroundStyle(.secondary)
-                } else {
-                    ForEach(loggedExercisesForDay) { item in
-                        loggedExerciseRow(item: item)
-                    }
-                }
-            }
+            
+            chosenActivitiesSection
+            loggedExercisesSection
+            dailyNotesSection
         }
         .navigationTitle(day.date.formatted(date: .abbreviated, time: .omitted))
         .listStyle(.insetGrouped)
@@ -1684,3 +1697,53 @@ private struct ClimbLogMetricRow: View {
         return (style, gym, isWIP)
     }
 }
+
+// MARK: Activity Group View Component
+private struct ActivityGroupView: View {
+    let group: (activityName: String, activityColor: Color, exercises: [String])
+    @Binding var day: PlanDay
+    let context: ModelContext
+    let exerciseRowBuilder: (String) -> AnyView
+    
+    init(group: (activityName: String, activityColor: Color, exercises: [String]),
+         day: Binding<PlanDay>,
+         context: ModelContext,
+         exerciseRowBuilder: @escaping (String) -> some View) {
+        self.group = group
+        self._day = day
+        self.context = context
+        self.exerciseRowBuilder = { name in AnyView(exerciseRowBuilder(name)) }
+    }
+    
+    var body: some View {
+        // Activity header
+        HStack(spacing: 8) {
+            Circle()
+                .fill(group.activityColor)
+                .frame(width: 12, height: 12)
+            Text(group.activityName)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+        .listRowSeparator(.hidden)
+        
+        // Exercises in this activity group
+        ForEach(group.exercises, id: \.self) { name in
+            exerciseRowBuilder(name)
+        }
+        .onDelete { indexSet in
+            for index in indexSet {
+                let exerciseToRemove = group.exercises[index]
+                if let dayIndex = day.chosenExercises.firstIndex(of: exerciseToRemove) {
+                    day.chosenExercises.remove(at: dayIndex)
+                }
+            }
+            try? context.save()
+        }
+    }
+}
+
+// MARK: Day editor
