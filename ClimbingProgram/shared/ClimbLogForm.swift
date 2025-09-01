@@ -33,6 +33,7 @@ struct ClimbLogForm: View {
     @State private var notes: String = ""
     @State private var selectedDate: Date
     @State private var isPreviouslyClimbed: Bool = false
+    @State private var selectedHoldColor: HoldColor = .none
     
     @State private var showingStyleAlert = false
     @State private var showingGymAlert = false
@@ -141,6 +142,42 @@ struct ClimbLogForm: View {
                     Toggle("Previously climbed?", isOn: $isPreviouslyClimbed)
                     TextField("Notes", text: $notes)
                 }
+                // Hold color picker
+                Section("Hold Color") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
+                        ForEach(HoldColor.allCases, id: \.self) { color in
+                            Button {
+                                selectedHoldColor = color
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Circle()
+                                        .fill(color == .none ? Color.gray.opacity(0.3) : color.color)
+                                        .frame(width: 24, height: 24)
+                                        // Always show a thin border (block circle)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.secondary.opacity(0.4), lineWidth: 2)
+                                        )
+                                        // Extra border if selected
+                                        .overlay(
+                                            Circle()
+                                                .stroke(selectedHoldColor == color ? Color.primary : Color.clear, lineWidth: 2)
+                                        )
+                                        .overlay(
+                                            // Special handling for "none" option
+                                            color == .none ?
+                                            Image(systemName: "xmark")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                            : nil
+                                        )
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -205,6 +242,7 @@ struct ClimbLogForm: View {
             attempts: attemptsText,
             isWorkInProgress: isWorkInProgress,
             isPreviouslyClimbed: isPreviouslyClimbed,
+            holdColor: selectedHoldColor,
             gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
             notes: notesText,
             dateLogged: selectedDate

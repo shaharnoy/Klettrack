@@ -158,6 +158,17 @@ struct ClimbRowCard: View {
                         .font(.body)
                         .foregroundColor(.primary)
                 }
+                // Hold color dot - only show if not "none" and not nil
+                if let holdColor = climb.holdColor, holdColor != .none {
+                    Circle()
+                        .fill(holdColor.color)
+                        .frame(width: 12, height: 12)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.primary.opacity(0.6), lineWidth: 0.5)
+                        )
+                        .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 1)
+                }
                 
                 Spacer()
                 // WIP indicator
@@ -171,18 +182,15 @@ struct ClimbRowCard: View {
                         .cornerRadius(3)
                 }
                 if climb.isPreviouslyClimbed {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 8, height: 8)
-                }
+                        Image(systemName: "arrow.uturn.backward.circle")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                    }
                   
                 // Date
                 Text(climb.dateLogged.formatted(.dateTime.year().month().day()))
                     .font(.body)
                     .foregroundColor(.secondary)
-                
-                
-               
             }
             
             // Bottom row: Style, Gym, and optional details - only show if populated
@@ -267,6 +275,7 @@ struct EditClimbView: View {
     @State private var notes: String = ""
     @State private var selectedDate: Date = Date()
     @State private var isPreviouslyClimbed: Bool = false
+    @State private var selectedHoldColor: HoldColor = .none
     
     // Computed properties to get available options
     private var availableStyles: [String] {
@@ -350,6 +359,39 @@ struct EditClimbView: View {
                     Toggle("Climbed before?", isOn: $isPreviouslyClimbed)
                     TextField("Notes", text: $notes)
                 }
+            
+                // Hold color picker
+                Section("Hold Color") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
+                        ForEach(HoldColor.allCases, id: \.self) { color in
+                            Button {
+                                selectedHoldColor = color
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Circle()
+                                        .fill(color == .none ? Color.gray.opacity(0.3) : color.color)
+                                        .frame(width: 24, height: 24)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(selectedHoldColor == color ? Color.primary : Color.clear, lineWidth: 2)
+                                        )
+                                        .overlay(
+                                            // Special handling for "none" option
+                                            color == .none ?
+                                            Image(systemName: "xmark")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                            : nil
+                                        )
+
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                
             }
             .navigationTitle("Edit Climb")
             .navigationBarTitleDisplayMode(.inline)
@@ -409,6 +451,7 @@ struct EditClimbView: View {
         notes = climb.notes ?? ""
         selectedDate = climb.dateLogged
         isPreviouslyClimbed = climb.isPreviouslyClimbed
+        selectedHoldColor = climb.holdColor ?? .none
     }
     
     private func saveChanges() {
@@ -420,6 +463,7 @@ struct EditClimbView: View {
         climb.notes = notes.isEmpty ? nil : notes
         climb.dateLogged = selectedDate
         climb.isPreviouslyClimbed = isPreviouslyClimbed
+        climb.holdColor = selectedHoldColor
         
         do {
             try modelContext.save()
