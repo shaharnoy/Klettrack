@@ -14,14 +14,40 @@ struct ClimbView: View {
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
     @State private var showingAddClimb = false
     @State private var editingClimb: ClimbEntry? = nil
+    // NEW: filter state
+    @State private var showOnlyWIP = false
+    @State private var hidePreviouslyClimbed = false
+    
+    // Computed filtered climbs
+    private var filteredClimbs: [ClimbEntry] {
+        var result = climbEntries
+        if showOnlyWIP {
+            result = result.filter { $0.isWorkInProgress }
+        }
+        if hidePreviouslyClimbed {
+            result = result.filter { !($0.isPreviouslyClimbed ?? false) }
+        }
+        return result
+    }
     
     var body: some View {
         NavigationStack {
-            if climbEntries.isEmpty {
-                // Empty state using consistent design
+            if climbEntries.isEmpty { // base dataset empty (not just filters)
                 emptyStateCard
             } else {
                 List {
+                    // FILTER TOGGLES SECTION
+                    Section {
+                        HStack(spacing: 8) {
+                            filterToggle(isOn: $showOnlyWIP, label: "WIP Only", onSymbol: "flame.fill", offSymbol: "flame")
+                            filterToggle(isOn: $hidePreviouslyClimbed, label: "Hide Repeats", onSymbol: "eye.slash.fill", offSymbol: "eye.slash")
+                            Spacer(minLength: 0)
+                        }
+                        .font(.caption)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
+                    
                     // Add climb button at the top when there are existing climbs
                     Section {
                         Button {
@@ -38,27 +64,42 @@ struct ClimbView: View {
                         .listRowSeparator(.hidden)
                     }
                     
-                    // List of climbs using card design
+                    // List of climbs using card design (filtered)
                     Section {
-                        ForEach(climbEntries) { climb in
-                            ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) }, onEdit: { editingClimb = climb })
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
-                                .swipeActions(edge: .trailing) {
-                                    Button(role: .destructive) {
-                                        deleteClimb(climb)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
+                        if filteredClimbs.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "line.3.horizontal.decrease.circle")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                                Text("No climbs match filters")
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 24)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                        } else {
+                            ForEach(filteredClimbs) { climb in
+                                ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) }, onEdit: { editingClimb = climb })
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
+                                    .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) {
+                                            deleteClimb(climb)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                        
+                                        Button {
+                                            editingClimb = climb
+                                        } label: {
+                                            Label("Edit", systemImage: "pencil")
+                                        }
+                                        .tint(.blue)
                                     }
-                                    
-                                    Button {
-                                        editingClimb = climb
-                                    } label: {
-                                        Label("Edit", systemImage: "pencil")
-                                    }
-                                    .tint(.blue)
-                                }
+                            }
                         }
                     }
                 }
@@ -88,6 +129,28 @@ struct ClimbView: View {
         .opacity(isDataReady ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isDataReady)
         .navigationTitle("CLIMB")
+    }
+    
+    // Filter toggle helper
+    @ViewBuilder
+    private func filterToggle(isOn: Binding<Bool>, label: String, onSymbol: String, offSymbol: String) -> some View {
+        let active = isOn.wrappedValue
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) { isOn.wrappedValue.toggle() }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: active ? onSymbol : offSymbol)
+                Text(label)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(active ? CatalogHue.climbing.color.opacity(0.2) : Color.secondary.opacity(0.12))
+            .foregroundColor(active ? CatalogHue.climbing.color : .primary)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityValue(active ? "On" : "Off")
     }
     
     
