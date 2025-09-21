@@ -54,7 +54,7 @@ enum LogCSV {
         // Fetch all plans to look up day types
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes"] // Updated header
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes"] // Updated header
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -85,6 +85,7 @@ enum LogCSV {
                     "", // climb_type (empty for exercises)
                     csvEscape(i.grade ?? ""), // grade
                     "", // angle (empty for exercises)
+                    "", //hold color (empty for exercises)
                     "", // style (empty for exercises)
                     "", // attempts (empty for exercises)
                     "", // wip (empty for exercises)
@@ -111,6 +112,7 @@ enum LogCSV {
                 csvEscape(climb.climbType.rawValue), // climb_type
                 csvEscape(climb.grade), // grade
                 climb.angleDegrees.map { String($0) } ?? "", // angle
+                csvEscape(climb.holdColor?.rawValue ?? ""), // hold color (converted from HoldColor?)
                 csvEscape(climb.style), // style
                 csvEscape(climb.attempts ?? ""), // attempts
                 climb.isWorkInProgress ? "true" : "false", // wip
@@ -200,17 +202,18 @@ enum LogCSV {
             let climbTypeStr = parts[safe: 3] ?? ""
             let gradeStr     = parts[safe: 4] ?? ""
             let angleStr     = parts[safe: 5] ?? ""
-            let styleStr     = parts[safe: 6] ?? ""
-            let attemptsStr  = parts[safe: 7] ?? ""
-            let wipStr       = parts[safe: 8] ?? ""
-            let gymStr       = parts[safe: 9] ?? ""
-            let repsStr      = parts[safe: 10] ?? ""
-            let setsStr      = parts[safe: 11] ?? ""
-            let weightStr    = parts[safe: 12] ?? ""
-            let planIdStr    = parts[safe: 13] ?? ""
-            let planName     = parts[safe: 14] ?? ""
-            let dayTypeStr   = parts[safe: 15] ?? ""
-            let notesRaw     = parts[safe: 16] ?? ""
+            let holdColorStr = parts[safe: 6] ?? ""
+            let styleStr     = parts[safe: 7] ?? ""
+            let attemptsStr  = parts[safe: 8] ?? ""
+            let wipStr       = parts[safe: 9] ?? ""
+            let gymStr       = parts[safe: 10] ?? ""
+            let repsStr      = parts[safe: 11] ?? ""
+            let setsStr      = parts[safe: 12] ?? ""
+            let weightStr    = parts[safe: 13] ?? ""
+            let planIdStr    = parts[safe: 14] ?? ""
+            let planName     = parts[safe: 15] ?? ""
+            let dayTypeStr   = parts[safe: 16] ?? ""
+            let notesRaw     = parts[safe: 17] ?? ""
 
             guard
                 let dayDate = df.date(from: dateStr),
@@ -227,6 +230,7 @@ enum LogCSV {
             let type = typeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
             let angle = angleStr.isEmpty ? nil : Int(angleStr)
+            let holdColor = holdColorStr.isEmpty ? nil : holdColorStr
             let style = styleStr.trimmingCharacters(in: .whitespacesAndNewlines)
             let attempts = attemptsStr.trimmingCharacters(in: .whitespacesAndNewlines)
             let isWIP = wipStr.lowercased() == "true"
@@ -251,6 +255,7 @@ enum LogCSV {
                 climbType: climbTypeStr.isEmpty ? nil : climbTypeStr,
                 grade: grade.isEmpty ? nil : grade,
                 angle: angle,
+                holdColor: holdColor,
                 style: style.isEmpty ? nil : style,
                 attempts: attempts.isEmpty ? nil : attempts,
                 isWIP: isWIP,
@@ -406,6 +411,7 @@ enum LogCSV {
                         climbType: climbType,
                         grade: grade,
                         angle: e.angle,
+                        holdColor: e.holdColor, // e.holdColor is already String?
                         style: e.style ?? "",
                         attempts: e.attempts,
                         isWIP: e.isWIP,
@@ -425,6 +431,7 @@ enum LogCSV {
                             climbType: climb.climbType,
                             grade: climb.grade,
                             angle: climb.angleDegrees,
+                            holdColor: climb.holdColor?.rawValue, // convert HoldColor? -> String?
                             style: climb.style,
                             attempts: climb.attempts,
                             isWIP: climb.isWorkInProgress,
@@ -445,6 +452,7 @@ enum LogCSV {
                     style: e.style?.isEmpty == false ? e.style! : "Unknown",
                     attempts: e.attempts,
                     isWorkInProgress: e.isWIP,
+                    holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) }, // map String? to HoldColor?
                     gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                     notes: e.notes,
                     dateLogged: startOfDay
@@ -551,6 +559,7 @@ private func climbSignature(date: Date,
                            climbType: ClimbType,
                            grade: String,
                            angle: Int?,
+                            holdColor: String?,
                            style: String,
                            attempts: String?,
                            isWIP: Bool,
@@ -567,6 +576,7 @@ private func climbSignature(date: Date,
         climbType.rawValue,
         norm(grade),
         angle?.description ?? "",
+        norm(holdColor),
         norm(style),
         norm(attempts),
         isWIP ? "true" : "false",
@@ -591,6 +601,7 @@ extension LogCSV {
         let climbType: String? // Added climb-specific fields
         let grade: String?
         let angle: Int?
+        let holdColor: String?
         let style: String?
         let attempts: String?
         let isWIP: Bool
@@ -655,17 +666,18 @@ extension LogCSV {
                 let climbTypeStr = parts[safe: 3] ?? ""
                 let gradeStr     = parts[safe: 4] ?? ""
                 let angleStr     = parts[safe: 5] ?? ""
-                let styleStr     = parts[safe: 6] ?? ""
-                let attemptsStr  = parts[safe: 7] ?? ""
-                let wipStr       = parts[safe: 8] ?? ""
-                let gymStr       = parts[safe: 9] ?? ""
-                let repsStr      = parts[safe: 10] ?? ""
-                let setsStr      = parts[safe: 11] ?? ""
-                let weightStr    = parts[safe: 12] ?? ""
-                let planIdStr    = parts[safe: 13] ?? ""
-                let planName     = parts[safe: 14] ?? ""
-                let dayTypeStr   = parts[safe: 15] ?? ""
-                let notesRaw     = parts[safe: 16] ?? ""
+                let holdColorStr = parts[safe: 6] ?? ""
+                let styleStr     = parts[safe: 7] ?? ""
+                let attemptsStr  = parts[safe: 8] ?? ""
+                let wipStr       = parts[safe: 9] ?? ""
+                let gymStr       = parts[safe: 10] ?? ""
+                let repsStr      = parts[safe: 11] ?? ""
+                let setsStr      = parts[safe: 12] ?? ""
+                let weightStr    = parts[safe: 13] ?? ""
+                let planIdStr    = parts[safe: 14] ?? ""
+                let planName     = parts[safe: 15] ?? ""
+                let dayTypeStr   = parts[safe: 16] ?? ""
+                let notesRaw     = parts[safe: 17] ?? ""
                 
                 guard
                     let dayDate = df.date(from: dateStr),
@@ -675,6 +687,7 @@ extension LogCSV {
                 let type = typeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let angle = angleStr.isEmpty ? nil : Int(angleStr)
+                let holdColor = holdColorStr.isEmpty ? nil : holdColorStr
                 let style = styleStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let attempts = attemptsStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let isWIP = wipStr.lowercased() == "true"
@@ -699,6 +712,7 @@ extension LogCSV {
                     climbType: climbTypeStr.isEmpty ? nil : climbTypeStr,
                     grade: grade.isEmpty ? nil : grade,
                     angle: angle,
+                    holdColor: holdColor,
                     style: style.isEmpty ? nil : style,
                     attempts: attempts.isEmpty ? nil : attempts,
                     isWIP: isWIP,
@@ -870,6 +884,7 @@ extension LogCSV {
                         climbType: climbType,
                         grade: grade,
                         angle: e.angle,
+                        holdColor: e.holdColor,
                         style: e.style ?? "",
                         attempts: e.attempts,
                         isWIP: e.isWIP,
@@ -889,6 +904,7 @@ extension LogCSV {
                             climbType: climb.climbType,
                             grade: climb.grade,
                             angle: climb.angleDegrees,
+                            holdColor: climb.holdColor?.rawValue,
                             style: climb.style,
                             attempts: climb.attempts,
                             isWIP: climb.isWorkInProgress,
@@ -911,6 +927,7 @@ extension LogCSV {
                     style: e.style?.isEmpty == false ? e.style! : "Unknown",
                     attempts: e.attempts,
                     isWorkInProgress: e.isWIP,
+                    holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
                     gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                     notes: e.notes,
                     dateLogged: startOfDay
