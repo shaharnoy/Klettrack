@@ -52,7 +52,20 @@ struct ProgressViewScreen: View {
         case style = "Style"
         case grade = "Grade"
         case angle = "Angle"
+        case weight = "Weight"
+        case reps = "Reps"
+        case sets = "Sets"
         var id: String { rawValue }
+        
+        // Get available axes based on log type
+        static func availableAxes(for logType: LogType) -> [DistributionAxis] {
+            switch logType {
+            case .exercise:
+                return [.weight, .reps, .sets]
+            case .climb:
+                return [.style, .grade, .angle]
+            }
+        }
         
         // Dynamic display name based on selected type
         func displayName(for logType: LogType) -> String {
@@ -63,6 +76,12 @@ struct ProgressViewScreen: View {
                 return "Grade"
             case .angle:
                 return "Angle"
+            case .weight:
+                return "Weight (kg)"
+            case .reps:
+                return "Reps"
+            case .sets:
+                return "Sets"
             }
         }
     }
@@ -302,6 +321,62 @@ struct ProgressViewScreen: View {
             return item.grade ?? "No Grade"
         case .angle:
             return "N/A" // Exercises don't have angles
+        case .weight:
+            if let weight = item.weightKg {
+                // Group weights into ranges for better visualization
+                if weight == 0 {
+                    return "Bodyweight"
+                } else if weight < 5 {
+                    return "< 5kg"
+                } else if weight < 10 {
+                    return "5-10kg"
+                } else if weight < 20 {
+                    return "10-20kg"
+                } else if weight < 50 {
+                    return "20-50kg"
+                } else {
+                    return "50kg+"
+                }
+            } else {
+                return "No Weight"
+            }
+        case .reps:
+            if let reps = item.reps {
+                // Group reps into ranges
+                let repsInt = Int(reps)
+                if repsInt == 0 {
+                    return "0 reps"
+                } else if repsInt <= 5 {
+                    return "1-5 reps"
+                } else if repsInt <= 10 {
+                    return "6-10 reps"
+                } else if repsInt <= 15 {
+                    return "11-15 reps"
+                } else if repsInt <= 20 {
+                    return "16-20 reps"
+                } else {
+                    return "20+ reps"
+                }
+            } else {
+                return "No Reps"
+            }
+        case .sets:
+            if let sets = item.sets {
+                let setsInt = Int(sets)
+                if setsInt == 0 {
+                    return "0 sets"
+                } else if setsInt == 1 {
+                    return "1 set"
+                } else if setsInt <= 3 {
+                    return "2-3 sets"
+                } else if setsInt <= 5 {
+                    return "4-5 sets"
+                } else {
+                    return "6+ sets"
+                }
+            } else {
+                return "No Sets"
+            }
         }
     }
     
@@ -313,6 +388,8 @@ struct ProgressViewScreen: View {
             return climb.grade
         case .angle:
             return climb.angleDegrees.map { "\($0)°" } ?? "No Angle"
+        case .weight, .reps, .sets:
+            return "N/A" // Climbs don't have these attributes
         }
     }
     
@@ -401,6 +478,15 @@ struct ProgressViewScreen: View {
                                 }
                             }
                         }
+                        
+                        if !availableGrades.isEmpty {
+                            Picker("Grade", selection: $selectedGrade) {
+                                Text("All grades").tag("")
+                                ForEach(availableGrades, id: \.self) { grade in
+                                    Text(grade).tag(grade)
+                                }
+                            }
+                        }
                     }
                     
                     // Common filters
@@ -409,15 +495,6 @@ struct ProgressViewScreen: View {
                             Text(selectedType == .exercise ? "All exercises" : "All styles").tag("")
                             ForEach(availableStyles, id: \.self) { style in
                                 Text(style).tag(style)
-                            }
-                        }
-                    }
-                    
-                    if !availableGrades.isEmpty {
-                        Picker("Grade", selection: $selectedGrade) {
-                            Text("All grades").tag("")
-                            ForEach(availableGrades, id: \.self) { grade in
-                                Text(grade).tag(grade)
                             }
                         }
                     }
@@ -459,11 +536,17 @@ struct ProgressViewScreen: View {
                 // Distribution Chart
                 Section("Distribution") {
                     Picker("", selection: $selectedDistributionAxis) {
-                        ForEach(DistributionAxis.allCases) { axis in
+                        ForEach(DistributionAxis.availableAxes(for: selectedType), id: \.self) { axis in
                             Text(axis.displayName(for: selectedType)).tag(axis)
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: selectedType) { _, newType in
+                        // Reset to first available axis when type changes
+                        if let firstAxis = DistributionAxis.availableAxes(for: newType).first {
+                            selectedDistributionAxis = firstAxis
+                        }
+                    }
                     
                     if distributionData.isEmpty {
                         Text("No data available for the selected filters")
