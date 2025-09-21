@@ -23,6 +23,9 @@ class TimerManager: ObservableObject {
     @Published var laps: [TimerLap] = []
     @Published var isInBetweenIntervalRest: Bool = false // New state for rest between intervals
     
+    // MARK: - Lap timing properties
+    private var lastLapTime: Int = 0 // Track when the last lap was taken
+    
     private var timer: Timer?
     private var startTime: Date?
     private var pausedTime: Date?
@@ -73,8 +76,8 @@ class TimerManager: ObservableObject {
         }
         
         if config.hasTotalTime && !config.hasIntervals {
-            // Total time mode: count down from total time
-            return max(0, config.totalTimeSeconds! - totalElapsedTime)
+            // Total time mode with iOS-like lap behavior: show time since last lap
+            return totalElapsedTime - lastLapTime
         } else {
             // Interval mode: show current phase time remaining
             return currentPhaseTimeRemaining
@@ -181,6 +184,7 @@ class TimerManager: ObservableObject {
         currentRepetition = 0
         currentPhase = configuration.hasIntervals ? .work : .work
         laps = []
+        lastLapTime = 0 // Reset lap timing
         
         // Clear any existing session
         session = nil
@@ -308,6 +312,7 @@ class TimerManager: ObservableObject {
     }
     
     func addLap(notes: String? = nil) {
+        // Create lap record with current total elapsed time
         let lap = TimerLap(
             lapNumber: laps.count + 1,
             elapsedSeconds: totalElapsedTime,
@@ -318,6 +323,13 @@ class TimerManager: ObservableObject {
         
         // Add to session if exists
         session?.laps.append(lap)
+        
+        // For total time timers (iOS-like behavior): reset lap timer
+        // This makes the main display start counting from 0 again
+        if let config = configuration, config.hasTotalTime && !config.hasIntervals {
+            lastLapTime = totalElapsedTime
+            playSound(.lap)
+        }
     }
     
     // MARK: - Restart Functionality
@@ -642,6 +654,7 @@ class TimerManager: ObservableObject {
         currentPhase = .work
         isInBetweenIntervalRest = false // Reset between-interval rest state
         betweenIntervalRestStartTime = 0 // Reset rest start time
+        lastLapTime = 0 // Reset lap timing
         startTime = nil
         pausedTime = nil
         configuration = nil
