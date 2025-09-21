@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "53229DCD2E573C2200D1A229"
-               BuildableName = "ClimbingProgram.app"
+               BuildableName = "klettrack.app"
                BlueprintName = "ClimbingProgram"
                ReferencedContainer = "container:ClimbingProgram.xcodeproj">
             </BuildableReference>
@@ -58,7 +58,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "53229DCD2E573C2200D1A229"
-            BuildableName = "ClimbingProgram.app"
+            BuildableName = "klettrack.app"
             BlueprintName = "ClimbingProgram"
             ReferencedContainer = "container:ClimbingProgram.xcodeproj">
          </BuildableReference>
@@ -75,7 +75,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "53229DCD2E573C2200D1A229"
-            BuildableName = "ClimbingProgram.app"
+            BuildableName = "klettrack.app"
             BlueprintName = "ClimbingProgram"
             ReferencedContainer = "container:ClimbingProgram.xcodeproj">
          </BuildableReference>

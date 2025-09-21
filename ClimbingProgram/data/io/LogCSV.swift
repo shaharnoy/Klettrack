@@ -135,6 +135,8 @@ enum LogCSV {
     ///   - tag: optional tag applied to each imported item, e.g. "import:2025-08-22"
     ///   - dedupe: if true, avoids inserting exact-duplicate rows (same day+name+numbers+notes)
     /// - Returns: number of inserted items
+    /// Import CSV rows into SwiftData. Creates (or merges into) Sessions by date.
+    /// Synchronous version that *applies* parsed entries to the store (mirrors importCSVAsync behavior).
     @discardableResult
     static func importCSV(
         from url: URL,
@@ -169,30 +171,22 @@ enum LogCSV {
 
         let df = ISO8601DateFormatter()
         df.formatOptions = [.withFullDate] // YYYY-MM-DD
-        let calendar = Calendar.current
 
-        // Track plans we create during import
-        var knownPlans: [UUID: Plan] = [:]
-        // Track exercises by date for each plan to reconstruct plan structure
-        var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
-        // Track day types by date for each plan to preserve day type information
-        var planDayTypesByDate: [UUID: [Date: DayType]] = [:]
-        
-        // Array to collect parsed entries
-        var out: [Entry] = []
-        
-        var inserted = 0
+        // Parse → entries (off-model, in-memory)
+        var entries: [Entry] = []
+        entries.reserveCapacity(max(0, lines.count - startIdx))
+
         var hasValidRows = false
 
         for idx in startIdx..<lines.count {
             let parts = parseCSVLine(lines[idx])
-            
+
             // Skip empty lines
             if parts.isEmpty || parts.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
                 continue
             }
 
-            // Expect new format: date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes
+            // Expect: date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes
             guard parts.count >= 3 else {
                 if !hasValidRows {
                     throw CocoaError(.fileReadCorruptFile)
@@ -200,7 +194,6 @@ enum LogCSV {
                 continue
             }
 
-            // Parse new format: date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes
             let dateStr      = parts[safe: 0] ?? ""
             let typeStr      = parts[safe: 1] ?? ""
             let exerciseName = parts[safe: 2] ?? ""
@@ -228,8 +221,9 @@ enum LogCSV {
                 }
                 continue
             }
-            
+
             hasValidRows = true
+
             let type = typeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
             let angle = angleStr.isEmpty ? nil : Int(angleStr)
@@ -250,7 +244,7 @@ enum LogCSV {
             let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
             let notesOpt = notes.isEmpty ? nil : notes
 
-            out.append(Entry(
+            entries.append(Entry(
                 date: dayDate,
                 type: type,
                 name: name,
@@ -271,28 +265,206 @@ enum LogCSV {
             ))
         }
 
-        // If no valid rows were found, throw an error
-        if !hasValidRows {
+        if !hasValidRows || entries.isEmpty {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        // After processing all rows, populate the plans with their days and exercises
+        // APPLY to SwiftData (mirrors importCSVAsync)
+        let cal = Calendar.current
+        var inserted = 0
+
+        // Cache sessions per day
+        var sessionCache: [Date: Session] = [:]
+        sessionCache.reserveCapacity(32)
+
+        // Cache plans we create/find during import
+        var knownPlans: [UUID: Plan] = [:]
+
+        // Cache signature sets per session for dedupe
+        var sigCache: [ObjectIdentifier: Set<String>] = [:]
+
+        // Track exercises by date for each plan to reconstruct plan structure
+        var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
+
+        // Track day types by date for each plan to preserve day type information
+        var planDayTypesByDate: [UUID: [Date: DayType]] = [:]
+
+        for e in entries {
+            let startOfDay = cal.startOfDay(for: e.date)
+
+            if e.type == "exercise" {
+                guard !e.name.isEmpty else { continue }
+
+                // Find or create session for this day
+                let session: Session
+                if let cached = sessionCache[startOfDay] {
+                    session = cached
+                } else {
+                    let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay)!
+                    let fetch = FetchDescriptor<Session>(predicate: #Predicate {
+                        $0.date >= startOfDay && $0.date < endOfDay
+                    })
+                    let matches = (try? context.fetch(fetch)) ?? []
+                    if let found = matches.first {
+                        session = found
+                    } else {
+                        let s = Session(date: startOfDay)
+                        context.insert(s)
+                        session = s
+                    }
+                    sessionCache[startOfDay] = session
+                }
+
+                // Handle plan reference if present (create if missing, requires id + name)
+                if let planId = e.planId, !knownPlans.keys.contains(planId), let planName = e.planName {
+                    let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == planId })
+                    if let existing = try? context.fetch(planDescriptor).first {
+                        knownPlans[planId] = existing
+                    } else {
+                        let plan = Plan(id: planId, name: planName, kind: .weekly, startDate: startOfDay)
+                        context.insert(plan)
+                        knownPlans[planId] = plan
+                    }
+                }
+
+                // Track exercises for plan reconstruction if planId exists
+                if let planId = e.planId {
+                    if planExercisesByDate[planId] == nil {
+                        planExercisesByDate[planId] = [:]
+                    }
+                    if planExercisesByDate[planId]![startOfDay] == nil {
+                        planExercisesByDate[planId]![startOfDay] = Set()
+                    }
+                    planExercisesByDate[planId]![startOfDay]!.insert(e.name)
+
+                    if let dayType = e.dayType {
+                        if planDayTypesByDate[planId] == nil { planDayTypesByDate[planId] = [:] }
+                        planDayTypesByDate[planId]![startOfDay] = dayType
+                    }
+                }
+
+                // Build/get signature set for dedupe
+                let sid = ObjectIdentifier(session)
+                var existing = sigCache[sid]
+                if existing == nil {
+                    existing = Set(session.items.map {
+                        itemSignature(date: session.date,
+                                      name: $0.exerciseName,
+                                      reps: $0.reps,
+                                      sets: $0.sets,
+                                      weight: $0.weightKg,
+                                      planId: $0.planSourceId,
+                                      planName: $0.planName,
+                                      notes: $0.notes)
+                    })
+                }
+
+                let sig = itemSignature(date: session.date,
+                                        name: e.name,
+                                        reps: e.reps,
+                                        sets: e.sets,
+                                        weight: e.weight,
+                                        planId: e.planId,
+                                        planName: e.planName,
+                                        notes: e.notes)
+
+                if !dedupe || !(existing?.contains(sig) ?? false) {
+                    let item = SessionItem(
+                        exerciseName: e.name,
+                        planSourceId: e.planId,
+                        planName: e.planName,
+                        reps: e.reps,
+                        sets: e.sets,
+                        weightKg: e.weight,
+                        grade: e.grade,
+                        notes: e.notes
+                    )
+                    item.sourceTag = tag
+                    session.items.append(item)
+                    existing?.insert(sig)
+                    inserted += 1
+                }
+
+                sigCache[sid] = existing ?? []
+
+            } else if e.type == "climb" {
+                // Handle climb entries
+                guard let grade = e.grade, !grade.isEmpty else { continue }
+
+                // Parse climb type (default .boulder)
+                let climbType: ClimbType
+                if let climbTypeStr = e.climbType, let parsedType = ClimbType(rawValue: climbTypeStr) {
+                    climbType = parsedType
+                } else {
+                    climbType = .boulder
+                }
+
+                // DEDUPE climb entries if enabled
+                if dedupe {
+                    let climbSig = climbSignature(
+                        date: startOfDay,
+                        climbType: climbType,
+                        grade: grade,
+                        angle: e.angle,
+                        style: e.style ?? "",
+                        attempts: e.attempts,
+                        isWIP: e.isWIP,
+                        gym: e.gym ?? "",
+                        notes: e.notes
+                    )
+
+                    let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay)!
+                    let climbDescriptor = FetchDescriptor<ClimbEntry>(predicate: #Predicate<ClimbEntry> {
+                        $0.dateLogged >= startOfDay && $0.dateLogged < endOfDay
+                    })
+                    let existingClimbs = (try? context.fetch(climbDescriptor)) ?? []
+
+                    let duplicate = existingClimbs.first { climb in
+                        let existingSig = climbSignature(
+                            date: Calendar.current.startOfDay(for: climb.dateLogged),
+                            climbType: climb.climbType,
+                            grade: climb.grade,
+                            angle: climb.angleDegrees,
+                            style: climb.style,
+                            attempts: climb.attempts,
+                            isWIP: climb.isWorkInProgress,
+                            gym: climb.gym,
+                            notes: climb.notes
+                        )
+                        return existingSig == climbSig
+                    }
+
+                    if duplicate != nil { continue }
+                }
+
+                // Create climb entry
+                let climbEntry = ClimbEntry(
+                    climbType: climbType,
+                    grade: grade,
+                    angleDegrees: e.angle,
+                    style: e.style?.isEmpty == false ? e.style! : "Unknown",
+                    attempts: e.attempts,
+                    isWorkInProgress: e.isWIP,
+                    gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
+                    notes: e.notes,
+                    dateLogged: startOfDay
+                )
+
+                context.insert(climbEntry)
+                inserted += 1
+            }
+        }
+
+        // Rebuild plan days (only if the plan currently has no days)
         for (planId, exercisesByDate) in planExercisesByDate {
             guard let plan = knownPlans[planId] else { continue }
-            
-            // Only populate if the plan doesn't already have days (avoid overwriting existing plans)
             if plan.days.isEmpty {
                 let sortedDates = Array(exercisesByDate.keys).sorted()
-                
                 for date in sortedDates {
                     let exercises = Array(exercisesByDate[date] ?? [])
                     if !exercises.isEmpty {
-                        // Use the imported day type if available, otherwise default to climbingFull
                         let dayType = planDayTypesByDate[planId]?[date] ?? .climbingFull
-                        let planDay = PlanDay(
-                            date: date,
-                            type: dayType
-                        )
+                        let planDay = PlanDay(date: date, type: dayType)
                         planDay.chosenExercises = exercises
                         plan.days.append(planDay)
                     }
@@ -303,6 +475,7 @@ enum LogCSV {
         try context.save()
         return inserted
     }
+
 
 }
 

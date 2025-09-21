@@ -24,7 +24,7 @@ func applyCatalogUpdates(_ ctx: ModelContext) {
     CatalogSeeder.ensureExercise("3 problems V3–V4", in: max, rest: "3 min/send", notes: "rest block 6 min")
     CatalogSeeder.ensureExercise("3 problems V4–V5", in: max, rest: "3 min/send", notes: "rest block 6 min")
     CatalogSeeder.ensureExercise("3–5 problems V5–V6", in: max, rest: "5 min/send", notes: "rest block 6 min")
-    CatalogSeeder.ensureExercise("Moon/Kilter", in: max, reps: "45 min", rest: "3 min/attempt")
+    CatalogSeeder.ensureExercise("Board", in: max, reps: "45 min", rest: "3 min/attempt")
     CatalogSeeder.ensureExercise("Work on 1–3 “limit” boulders (again)", in: max, reps: "30 min")
 
     // Strength-Endurance (Bouldering)

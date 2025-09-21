@@ -147,7 +147,8 @@ struct ClimbingDefaults {
         "Bouldergarten",
         "Elektra",
         "Magic mountain",
-        "Der Kegel"
+        "Der Kegel",
+        "Outdoor"
     ]
 }
 

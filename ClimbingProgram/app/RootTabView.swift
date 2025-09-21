@@ -162,7 +162,7 @@ struct RootTabView: View {
             
             SeedData.loadIfNeeded(context)
             
-            // Seed timer templates
+            // Seed timer templates 
             SeedTimerTemplates.loadIfNeeded(context)
             
             // Non-destructive catalog deltas migration (run once per key)

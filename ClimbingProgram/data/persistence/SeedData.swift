@@ -141,7 +141,7 @@ struct SeedData {
                 ]
                 let comb4 = BoulderCombination(name: "Combination 4", comboDescription: "Boards & limit boulders")
                 comb4.exercises = [
-                    Exercise(name: "Moon/Kilter", order: 2, repsText: "45 min", restText: "3 min/attempt"),
+                    Exercise(name: "Board", order: 2, repsText: "45 min", restText: "3 min/attempt"),
                     Exercise(name: "Work on 1–3 limit boulders", order: 1, repsText: "30 min")
                 ]
                 bMax.combinations = [comb1, comb2, comb3, comb4]
@@ -163,7 +163,7 @@ struct SeedData {
                     Exercise(name: "8. 3 problems V3–V4", order: 8, repsText: "no rest between sends", notes: "rest block 6 min")
                 ]
                 let combSE4 = BoulderCombination(name: "Combination 4")
-                combSE4.exercises = [ Exercise(name: "Tension board 3×6", order: 1, notes: "see protocol") ]
+                combSE4.exercises = [ Exercise(name: "Board 3×6", order: 1, notes: "see protocol") ]
 
                 bSE.combinations = [combSE1, combSE2, combSE3, combSE4]
 
