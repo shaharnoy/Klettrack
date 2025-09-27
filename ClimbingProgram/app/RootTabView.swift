@@ -12,7 +12,7 @@ import Combine
 // Shared timer state to ensure only one timer instance
 @MainActor
 class TimerAppState: ObservableObject {
-    @Published var selectedTab: Int = 0
+    @Published var selectedTab: Int = 2
     @Published var currentPlanDay: PlanDay? = nil
     
     // Navigation path storage for each tab to preserve navigation state

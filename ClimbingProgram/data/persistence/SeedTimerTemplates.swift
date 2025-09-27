@@ -33,6 +33,16 @@ struct SeedTimerTemplates {
         )
         dailyBasic.intervals.append(basicInterval)
         
+        // Create the 3mins rest template
+        let threerest = TimerTemplate(
+            name: "3mins Rest",
+            templateDescription: "Just rest for 3 mins",
+            totalTimeSeconds: 180,
+            isRepeating: false,
+            repeatCount: nil,
+            restTimeBetweenIntervals: nil
+        )
+        
         // Create "One-Arm, One-Leg" template
         let oneArmOneLeg = TimerTemplate(
             name: "One-Arm, One-Leg",
@@ -185,9 +195,28 @@ struct SeedTimerTemplates {
         )
         pullUpInterval.intervals.append(pullUpInt)
         
+        // Create Wide pinch wrist extension template
+        let wpwextention = TimerTemplate(
+            name: "Wide Pinch Wrist",
+            templateDescription: "Wrist extension with wide pinch grip",
+            totalTimeSeconds: nil,
+            isRepeating: true,
+            repeatCount: 5,
+            restTimeBetweenIntervals: 90 // 90 seconds
+        )
+        
+        let wpwextentionint = TimerInterval(
+            name: "Wide Pinch Wrist interval",
+            workTimeSeconds: 30,     // 30 seconds work
+            restTimeSeconds: 5,     // 5 seconds to switch hands
+            repetitions: 2,         // 20 repeats
+            order: 0
+        )
+        wpwextention.intervals.append(wpwextentionint)
+        
         // Insert all templates and intervals into the context
-        let templates = [dailyBasic, oneArmOneLeg, minEdgeFB, maxWeight10, maxWeight753,
-                        shortRepeaters, longRepeaters, bouldering4x4, pullUpInterval]
+        let templates = [dailyBasic,threerest, oneArmOneLeg, minEdgeFB, maxWeight10, maxWeight753,
+                        shortRepeaters,wpwextention ,longRepeaters, bouldering4x4, pullUpInterval]
         
         for template in templates {
             context.insert(template)
