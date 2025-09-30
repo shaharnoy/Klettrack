@@ -83,6 +83,7 @@ struct ClimbView: View {
                     } label: {
                         Text("TB2 Login")
                     }
+                    Divider()
                     Button {
                         openCredentialsEditor(for: .kilter)
                     } label: {
