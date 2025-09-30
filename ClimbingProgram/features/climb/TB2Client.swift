@@ -8,7 +8,13 @@ import Foundation
 struct TB2Client {
     enum Board: String {
         case tension
-        var hostBase: String { "tensionboardapp2" }
+        case kilter
+        var hostBase: String {
+            switch self {
+            case .tension: return "tensionboardapp2"
+            case .kilter:  return "kilterboardapp"
+            }
+        }
         var webBaseURL: URL { URL(string: "https://\(hostBase).com")! }
     }
     
@@ -239,146 +245,3 @@ struct TB2Client {
     }
 }
 
-// MARK: - Grade mapper (left part of CSV label)
-
-struct TB2GradeMapper {
-    static let mappingCSV = """
-    difficulty,grade_label
-    1,1a/V0
-    2,1b/V0
-    3,1c/V0
-    4,2a/V0
-    5,2b/V0
-    6,2c/V0
-    7,3a/V0
-    8,3b/V0
-    9,3c/V0
-    10,4a/V0
-    11,4b/V0
-    12,4c/V0
-    13,5a/V1
-    14,5b/V1
-    15,5c/V2
-    16,6a/V3
-    17,6a+/V3
-    18,6b/V4
-    19,6b+/V4
-    20,6c/V5
-    21,6c+/V5
-    22,7a/V6
-    23,7a+/V7
-    24,7b/V8
-    25,7b+/V8
-    26,7c/V9
-    27,7c+/V10
-    28,8a/V11
-    29,8a+/V12
-    30,8b/V13
-    31,8b+/V14
-    32,8c/V15
-    33,8c+/V16
-    34,9a/V17
-    35,9a+/V18
-    36,9b/V19
-    37,9b+/V20
-    38,9c/V21
-    39,9c+/V22
-    """
-    
-    static let diffToGrade: [Int: String] = {
-        var out: [Int: String] = [:]
-        for line in mappingCSV.split(separator: "\n") {
-            let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if t.isEmpty || t.hasPrefix("#") || t.lowercased().hasPrefix("difficulty") { continue }
-            let parts = t.split(separator: ",", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
-            guard parts.count >= 2, let n = Int(parts[0]) else { continue }
-            let left = leftPart(of: parts[1])
-            out[n] = left
-        }
-        return out
-    }()
-    
-    static func leftPart(of label: String) -> String {
-        let first = label.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).first ?? Substring("")
-        let leftDot = first.split(separator: "·", maxSplits: 1, omittingEmptySubsequences: false).first ?? Substring("")
-        return String(leftDot).trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    
-    static func grade(of number: Any?) -> String? {
-        guard let n = number else { return nil }
-        let value: Double?
-        if let i = n as? Int { value = Double(i) }
-        else if let d = n as? Double { value = d }
-        else if let s = n as? String { value = Double(s) }
-        else { value = nil }
-        guard let v = value else { return nil }
-        let key = Int((v).rounded())
-        return diffToGrade[key]
-    }
-}
-
-// MARK: - Date parsing
-
-enum TB2DateParser {
-    // ISO8601 variants
-    static let isoFull: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-    static let isoBasic: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-    
-    // Common custom patterns (UTC)
-    private static func makeFormatter(_ fmt: String, tzUTC: Bool = true) -> DateFormatter {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = tzUTC ? TimeZone(secondsFromGMT: 0) : TimeZone.current
-        f.dateFormat = fmt
-        return f
-    }
-    static let f1 = makeFormatter("yyyy-MM-dd HH:mm:ss.SSSSSSXXXXX") // 2025-01-21 13:01:14.123456+00:00
-    static let f2 = makeFormatter("yyyy-MM-dd HH:mm:ss.SSSSSSxxxx")  // 2025-01-21 13:01:14.123456+0000
-    static let f3 = makeFormatter("yyyy-MM-dd HH:mm:ss.SSSSSS")      // 2025-01-21 13:01:14.123456
-    static let f4 = makeFormatter("yyyy-MM-dd HH:mm:ssXXXXX")        // 2025-01-21 13:01:14+00:00
-    static let f5 = makeFormatter("yyyy-MM-dd HH:mm:ssxxxx")         // 2025-01-21 13:01:14+0000
-    static let f6 = makeFormatter("yyyy-MM-dd HH:mm:ss")             // 2025-01-21 13:01:14
-    static let f7 = makeFormatter("yyyy-MM-dd")                      // 2025-01-21
-    static let f8 = makeFormatter("yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXXXX")
-    static let f9 = makeFormatter("yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX")
-    static let f10 = makeFormatter("yyyy-MM-dd'T'HH:mm:ssXXXXX")
-    
-    static func parse(_ s: String?) -> Date? {
-        guard var s = s?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
-        
-        // Numeric epoch seconds or milliseconds
-        if CharacterSet.decimalDigits.isSuperset(of: CharacterSet(charactersIn: s)) {
-            if let v = Double(s) {
-                if s.count >= 13 { return Date(timeIntervalSince1970: v / 1000.0) }
-                if s.count >= 10 { return Date(timeIntervalSince1970: v) }
-            }
-        }
-        
-        // Try ISO8601
-        if let d = isoFull.date(from: s) { return d }
-        if let d = isoBasic.date(from: s) { return d }
-        
-        // Some services emit "Z" without colon in offset; DateFormatter with XXXXX expects colon
-        // Already handled by isoBasic/isoFull above, but keep fallbacks:
-        for f in [f1,f2,f3,f4,f5,f6,f7,f8,f9,f10] {
-            if let d = f.date(from: s) { return d }
-        }
-        
-        // Some APIs use " UTC" suffix; strip and retry
-        if s.hasSuffix(" UTC") {
-            s.removeLast(4)
-            for f in [f3, f6, f7] {
-                if let d = f.date(from: s) { return d }
-            }
-        }
-        return nil
-    }
-}

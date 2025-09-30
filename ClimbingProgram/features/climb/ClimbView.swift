@@ -25,6 +25,10 @@ struct ClimbView: View {
     @State private var isSyncing = false
     @State private var syncMessage: String? = nil
     
+    // NEW: board picker + pending sync target
+    @State private var showingBoardPicker = false
+    @State private var pendingBoard: TB2Client.Board? = nil
+    
     // Computed filtered climbs
     private var filteredClimbs: [ClimbEntry] {
         var result = climbEntries
@@ -37,78 +41,23 @@ struct ClimbView: View {
         return result
     }
     
+    // Small helper to avoid heavy inline Binding construction in .alert
+    private var isShowingSyncAlert: Binding<Bool> {
+        Binding(
+            get: { syncMessage != nil },
+            set: { if !$0 { syncMessage = nil } }
+        )
+    }
+    
     var body: some View {
         NavigationStack {
             if climbEntries.isEmpty { // base dataset empty (not just filters)
                 emptyStateCard
             } else {
                 List {
-                    // FILTER TOGGLES SECTION
-                    Section {
-                        HStack(spacing: 8) {
-                            filterToggle(isOn: $showOnlyWIP, label: "WIP Only", onSymbol: "flame.fill", offSymbol: "flame")
-                            filterToggle(isOn: $hidePreviouslyClimbed, label: "Hide Repeats", onSymbol: "eye.slash.fill", offSymbol: "eye.slash")
-                            Spacer(minLength: 0)
-                        }
-                        .font(.caption)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                    }
-                    
-                    // Add climb button at the top when there are existing climbs
-                    Section {
-                        Button {
-                            guard isDataReady else { return }
-                            showingAddClimb = true
-                        } label: {
-                            Text("Log a Climb")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.accentColor)
-                        .disabled(!isDataReady)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                    }
-                    
-                    // List of climbs using card design (filtered)
-                    Section {
-                        if filteredClimbs.isEmpty {
-                            VStack(spacing: 8) {
-                                Image(systemName: "line.3.horizontal.decrease.circle")
-                                    .font(.title2)
-                                    .foregroundColor(.secondary)
-                                Text("No climbs match filters")
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 24)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                        } else {
-                            ForEach(filteredClimbs) { climb in
-                                ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) }, onEdit: { editingClimb = climb })
-                                    .listRowBackground(Color.clear)
-                                    .listRowSeparator(.hidden)
-                                    .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
-                                    .swipeActions(edge: .trailing) {
-                                        Button(role: .destructive) {
-                                            deleteClimb(climb)
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
-                                        
-                                        Button {
-                                            editingClimb = climb
-                                        } label: {
-                                            Label("Edit", systemImage: "pencil")
-                                        }
-                                        .tint(.blue)
-                                    }
-                            }
-                        }
-                    }
+                    filterSection
+                    addClimbSection
+                    climbsSection
                 }
                 .listStyle(.plain)
                 .listRowSpacing(4)
@@ -130,22 +79,17 @@ struct ClimbView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
-                        // Open credentials editor (prefill if saved)
-                        if let creds = CredentialsStore.loadTB2Credentials() {
-                            credsUsername = creds.username
-                            credsPassword = creds.password
-                        } else {
-                            credsUsername = ""
-                            credsPassword = ""
-                        }
-                        isEditingCredentials = true
-                        showingCredentialsSheet = true
+                        openCredentialsEditor(for: .tension)
                     } label: {
-                        Label("Edit Tension Board 2 Login…", systemImage: "person.crop.circle")
+                        Text("TB2 Login")
                     }
-                    // Future boards could be added here (e.g., Kilter Board)
+                    Button {
+                        openCredentialsEditor(for: .kilter)
+                    } label: {
+                        Text("Kilter Login")
+                    }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "lock.circle")
                 }
                 .disabled(!isDataReady)
             }
@@ -159,20 +103,21 @@ struct ClimbView: View {
         // Credentials prompt sheet
         .sheet(isPresented: $showingCredentialsSheet) {
             TB2CredentialsSheet(
-                header: "Tension board 2 login details",
+                header: (pendingBoard == .kilter) ? "Kilter login details" : "TB2 login details",
                 username: $credsUsername,
                 password: $credsPassword,
                 onSave: {
                     let username = credsUsername.trimmingCharacters(in: .whitespacesAndNewlines)
                     let password = credsPassword
-                    guard !username.isEmpty, !password.isEmpty else { return }
+                    guard !username.isEmpty, !password.isEmpty, let board = pendingBoard else { return }
                     do {
-                        try CredentialsStore.saveTB2Credentials(username: username, password: password)
-                        // If we came here via Sync, optionally kick off sync now
+                        try CredentialsStore.saveBoardCredentials(for: board, username: username, password: password)
+                        // If we came here via Sync, optionally kick off sync now for the pending board
                         if !isEditingCredentials {
-                            Task { await runSyncIfPossible() }
+                            Task { await runSyncIfPossible(board: board) }
                         }
                         isEditingCredentials = false
+                        pendingBoard = nil
                         showingCredentialsSheet = false
                     } catch {
                         syncMessage = "Failed to save credentials: \(error.localizedDescription)"
@@ -180,14 +125,12 @@ struct ClimbView: View {
                 },
                 onCancel: {
                     isEditingCredentials = false
+                    pendingBoard = nil
                     showingCredentialsSheet = false
                 }
             )
         }
-        .alert(syncMessage ?? "", isPresented: Binding(
-            get: { syncMessage != nil },
-            set: { if !$0 { syncMessage = nil } }
-        )) {
+        .alert(syncMessage ?? "", isPresented: isShowingSyncAlert) {
             Button("OK", role: .cancel) { }
         }
         .opacity(isDataReady ? 1 : 0)
@@ -201,32 +144,132 @@ struct ClimbView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+        // Board picker dialog
+        .confirmationDialog("Sync", isPresented: $showingBoardPicker, titleVisibility: .visible) {
+            Button("TB2") { startSync(board: .tension) }
+            Button("Kilter") { startSync(board: .kilter) }
+            Button("Cancel", role: .cancel) { }
+        }
+    }
+    
+    // MARK: - Sections (split to help the type-checker)
+    
+    @ViewBuilder
+    private var filterSection: some View {
+        Section {
+            HStack(spacing: 8) {
+                filterToggle(isOn: $showOnlyWIP, label: "WIP Only", onSymbol: "flame.fill", offSymbol: "flame")
+                filterToggle(isOn: $hidePreviouslyClimbed, label: "Hide Repeats", onSymbol: "eye.slash.fill", offSymbol: "eye.slash")
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+    
+    @ViewBuilder
+    private var addClimbSection: some View {
+        Section {
+            Button {
+                guard isDataReady else { return }
+                showingAddClimb = true
+            } label: {
+                Text("Log a Climb")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.accentColor)
+            .disabled(!isDataReady)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+    
+    @ViewBuilder
+    private var climbsSection: some View {
+        Section {
+            if filteredClimbs.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                    Text("No climbs match filters")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 24)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            } else {
+                ForEach(filteredClimbs) { climb in
+                    ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) }, onEdit: { editingClimb = climb })
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                deleteClimb(climb)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            
+                            Button {
+                                editingClimb = climb
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
+                }
+            }
+        }
     }
     
     // MARK: - Actions
     
     private func onSyncTapped() {
         guard isDataReady else { return }
-        if let _ = CredentialsStore.loadTB2Credentials() {
-            Task { await runSyncIfPossible() }
+        showingBoardPicker = true
+    }
+    
+    private func openCredentialsEditor(for board: TB2Client.Board) {
+        // Prefill if saved for that board
+        if let creds = CredentialsStore.loadBoardCredentials(for: board) {
+            credsUsername = creds.username
+            credsPassword = creds.password
         } else {
-            // Prompt for credentials
+            credsUsername = ""
+            credsPassword = ""
+        }
+        pendingBoard = board
+        isEditingCredentials = true
+        showingCredentialsSheet = true
+    }
+    
+    private func startSync(board: TB2Client.Board) {
+        if let _ = CredentialsStore.loadBoardCredentials(for: board) {
+            Task { await runSyncIfPossible(board: board) }
+        } else {
+            // Prompt for credentials for this board, then run sync after saving
             credsUsername = ""
             credsPassword = ""
             isEditingCredentials = false
+            pendingBoard = board
             showingCredentialsSheet = true
         }
     }
     
-    private func runSyncIfPossible() async {
-        guard let creds = CredentialsStore.loadTB2Credentials() else {
-            syncMessage = "Please enter your Tension Board 2 credentials."
+    private func runSyncIfPossible(board: TB2Client.Board) async {
+        guard let creds = CredentialsStore.loadBoardCredentials(for: board) else {
+            syncMessage = "Please enter your \(board == .kilter ? "Kilter" : "Tension") board credentials."
             return
         }
         isSyncing = true
         defer { isSyncing = false }
         do {
-            try await TB2SyncManager.sync(using: creds, into: modelContext)
+            try await TB2SyncManager.sync(using: creds, board: board, into: modelContext)
             syncMessage = "Sync completed."
         } catch {
             syncMessage = "Sync failed: \(error.localizedDescription)"
