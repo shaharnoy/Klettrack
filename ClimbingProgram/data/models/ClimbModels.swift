@@ -26,6 +26,9 @@ final class ClimbEntry {
     var notes: String?
     var dateLogged: Date
     
+    // New: TB2 climb UUID to enable "previously climbed" detection
+    var tb2ClimbUUID: String?
+    
     init(
         id: UUID = UUID(),
         climbType: ClimbType,
@@ -38,7 +41,8 @@ final class ClimbEntry {
         holdColor: HoldColor? = Optional.none,
         gym: String,
         notes: String? = nil,
-        dateLogged: Date = Date()
+        dateLogged: Date = Date(),
+        tb2ClimbUUID: String? = nil
     ) {
         self.id = id
         self.climbType = climbType
@@ -52,6 +56,7 @@ final class ClimbEntry {
         self.gym = gym
         self.notes = notes
         self.dateLogged = dateLogged
+        self.tb2ClimbUUID = tb2ClimbUUID
     }
 }
 
@@ -179,3 +184,4 @@ final class ClimbGym {
         self.isDefault = isDefault
     }
 }
+

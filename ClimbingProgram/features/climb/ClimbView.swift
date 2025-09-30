@@ -1,7 +1,6 @@
-//
-//  ClimbView.swift
-//  ClimbingProgram
-//
+// when I export logs (incl. climb) each record get it unique ID to make sure we don't import duplicated entries
+// When we sync data from TB2, we also get unique IDs for each entry.
+// problem - after syncing with tb2, when I export logs, then delete one record from the tension board item, then import the previous export, then sync tb2 - the TB2 sync will not recognize that this climb is already there. I assume it's beacuse the export changes the UUID of the record which doesn't work with the tb2 sync.
 //  Created by AI Assistant on 27.08.25.
 //
 
@@ -17,6 +16,14 @@ struct ClimbView: View {
     // NEW: filter state
     @State private var showOnlyWIP = false
     @State private var hidePreviouslyClimbed = false
+    
+    // NEW: credentials + sync state
+    @State private var showingCredentialsSheet = false
+    @State private var credsUsername: String = ""
+    @State private var credsPassword: String = ""
+    @State private var isEditingCredentials = false
+    @State private var isSyncing = false
+    @State private var syncMessage: String? = nil
     
     // Computed filtered climbs
     private var filteredClimbs: [ClimbEntry] {
@@ -110,12 +117,35 @@ struct ClimbView: View {
             }
         }
         .toolbar {
+            // SYNC BUTTON (replaces the old "+")
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    guard isDataReady else { return }
-                    showingAddClimb = true
+                    onSyncTapped()
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+                .disabled(!isDataReady || isSyncing)
+            }
+            // OPTIONS MENU ("…")
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        // Open credentials editor (prefill if saved)
+                        if let creds = CredentialsStore.loadTB2Credentials() {
+                            credsUsername = creds.username
+                            credsPassword = creds.password
+                        } else {
+                            credsUsername = ""
+                            credsPassword = ""
+                        }
+                        isEditingCredentials = true
+                        showingCredentialsSheet = true
+                    } label: {
+                        Label("Edit Tension Board 2 Login…", systemImage: "person.crop.circle")
+                    }
+                    // Future boards could be added here (e.g., Kilter Board)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
                 .disabled(!isDataReady)
             }
@@ -126,9 +156,81 @@ struct ClimbView: View {
         .sheet(item: $editingClimb) { climb in
             EditClimbView(climb: climb)
         }
+        // Credentials prompt sheet
+        .sheet(isPresented: $showingCredentialsSheet) {
+            TB2CredentialsSheet(
+                header: "Tension board 2 login details",
+                username: $credsUsername,
+                password: $credsPassword,
+                onSave: {
+                    let username = credsUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let password = credsPassword
+                    guard !username.isEmpty, !password.isEmpty else { return }
+                    do {
+                        try CredentialsStore.saveTB2Credentials(username: username, password: password)
+                        // If we came here via Sync, optionally kick off sync now
+                        if !isEditingCredentials {
+                            Task { await runSyncIfPossible() }
+                        }
+                        isEditingCredentials = false
+                        showingCredentialsSheet = false
+                    } catch {
+                        syncMessage = "Failed to save credentials: \(error.localizedDescription)"
+                    }
+                },
+                onCancel: {
+                    isEditingCredentials = false
+                    showingCredentialsSheet = false
+                }
+            )
+        }
+        .alert(syncMessage ?? "", isPresented: Binding(
+            get: { syncMessage != nil },
+            set: { if !$0 { syncMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { }
+        }
         .opacity(isDataReady ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isDataReady)
         .navigationTitle("CLIMB")
+        // Optional small overlay to show syncing in progress
+        .overlay {
+            if isSyncing {
+                ProgressView("Syncing…")
+                    .padding(12)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+    
+    // MARK: - Actions
+    
+    private func onSyncTapped() {
+        guard isDataReady else { return }
+        if let _ = CredentialsStore.loadTB2Credentials() {
+            Task { await runSyncIfPossible() }
+        } else {
+            // Prompt for credentials
+            credsUsername = ""
+            credsPassword = ""
+            isEditingCredentials = false
+            showingCredentialsSheet = true
+        }
+    }
+    
+    private func runSyncIfPossible() async {
+        guard let creds = CredentialsStore.loadTB2Credentials() else {
+            syncMessage = "Please enter your Tension Board 2 credentials."
+            return
+        }
+        isSyncing = true
+        defer { isSyncing = false }
+        do {
+            try await TB2SyncManager.sync(using: creds, into: modelContext)
+            syncMessage = "Sync completed."
+        } catch {
+            syncMessage = "Sync failed: \(error.localizedDescription)"
+        }
     }
     
     // Filter toggle helper
@@ -287,7 +389,7 @@ struct ClimbRowCard: View {
                                 .font(.body)
                                 .foregroundColor(.secondary)
                         }
-                        Text("@\(climb.gym)")
+                        Text("\(climb.gym)")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -641,6 +743,50 @@ private extension Path {
             addQuadCurve(to: inset2, control: curr)
         }
         closeSubpath()
+    }
+}
+
+// MARK: - TB2 Credentials Sheet
+
+private struct TB2CredentialsSheet: View {
+    let header: String
+    @Binding var username: String
+    @Binding var password: String
+    let onSave: () -> Void
+    let onCancel: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(header)
+                        .font(.headline)
+                }
+                Section {
+                    TextField("Username", text: $username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                    SecureField("Password", text: $password)
+                }
+            }
+            .navigationTitle("Login")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        onCancel()
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave()
+                    }
+                    .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                }
+            }
+        }
     }
 }
 

@@ -7,6 +7,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import CryptoKit
 
 // MARK: - CSV FileDocument for export/share
 
@@ -54,12 +55,13 @@ enum LogCSV {
         // Fetch all plans to look up day types
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes"] // Updated header
+        // Header extended with climb_id and tb2_uuid at the end (backward compatible)
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
-        df.timeZone = TimeZone.current // Use current timezone consistently
-        df.locale = Locale(identifier: "en_US_POSIX") // Ensure consistent formatting
+        df.timeZone = TimeZone.current
+        df.locale = Locale(identifier: "en_US_POSIX")
 
         // Export exercises
         for s in sessions {
@@ -68,7 +70,6 @@ enum LogCSV {
                 // Find the day type for this session item
                 var dayType = ""
                 if let planId = i.planSourceId {
-                    // Find the plan and the corresponding day
                     if let plan = plans.first(where: { $0.id == planId }) {
                         let calendar = Calendar.current
                         let sessionStartOfDay = calendar.startOfDay(for: s.date)
@@ -82,21 +83,23 @@ enum LogCSV {
                     d,
                     "exercise", // type
                     csvEscape(i.exerciseName), // exercise_name
-                    "", // climb_type (empty for exercises)
+                    "", // climb_type
                     csvEscape(i.grade ?? ""), // grade
-                    "", // angle (empty for exercises)
-                    "", //hold color (empty for exercises)
-                    "", // style (empty for exercises)
-                    "", // attempts (empty for exercises)
-                    "", // wip (empty for exercises)
-                    "", // gym (empty for exercises)
+                    "", // angle
+                    "", // holdColor
+                    "", // style
+                    "", // attempts
+                    "", // wip
+                    "", // gym
                     i.reps.map{ String(format: "%.3f", $0) } ?? "",
                     i.sets.map{ String(format: "%.3f", $0) } ?? "",
                     i.weightKg.map { String(format: "%.3f", $0) } ?? "",
                     i.planSourceId?.uuidString ?? "",
                     csvEscape(i.planName ?? ""),
                     csvEscape(dayType),
-                    csvEscape(i.notes ?? "")
+                    csvEscape(i.notes ?? ""),
+                    "", // climb_id (exercises don't use this)
+                    ""  // tb2_uuid (exercises don't use this)
                 ].joined(separator: ","))
             }
         }
@@ -107,23 +110,25 @@ enum LogCSV {
             
             rows.append([
                 d,
-                "climb", // type
-                "", // exercise_name (empty for climbs)
-                csvEscape(climb.climbType.rawValue), // climb_type
-                csvEscape(climb.grade), // grade
-                climb.angleDegrees.map { String($0) } ?? "", // angle
-                csvEscape(climb.holdColor?.rawValue ?? ""), // hold color (converted from HoldColor?)
-                csvEscape(climb.style), // style
-                csvEscape(climb.attempts ?? ""), // attempts
-                climb.isWorkInProgress ? "true" : "false", // wip
-                csvEscape(climb.gym), // gym
-                "", // reps (empty for climbs)
-                "", // sets (empty for climbs)
-                "", // weight_kg (empty for climbs)
-                "", // plan_id (empty for climbs)
-                "", // plan_name (empty for climbs)
-                "", // day_type (empty for climbs)
-                csvEscape(climb.notes ?? "")
+                "climb",
+                "", // exercise_name
+                csvEscape(climb.climbType.rawValue),
+                csvEscape(climb.grade),
+                climb.angleDegrees.map { String($0) } ?? "",
+                csvEscape(climb.holdColor?.rawValue ?? ""),
+                csvEscape(climb.style),
+                csvEscape(climb.attempts ?? ""),
+                climb.isWorkInProgress ? "true" : "false",
+                csvEscape(climb.gym),
+                "", // reps
+                "", // sets
+                "", // weight_kg
+                "", // plan_id
+                "", // plan_name
+                "", // day_type
+                csvEscape(climb.notes ?? ""),
+                climb.id.uuidString,                  // climb_id
+                csvEscape(climb.tb2ClimbUUID ?? "")   // tb2_uuid
             ].joined(separator: ","))
         }
         
@@ -137,7 +142,6 @@ enum LogCSV {
     ///   - tag: optional tag applied to each imported item, e.g. "import:2025-08-22"
     ///   - dedupe: if true, avoids inserting exact-duplicate rows (same day+name+numbers+notes)
     /// - Returns: number of inserted items
-    /// Import CSV rows into SwiftData. Creates (or merges into) Sessions by date.
     /// Synchronous version that *applies* parsed entries to the store (mirrors importCSVAsync behavior).
     @discardableResult
     static func importCSV(
@@ -188,7 +192,7 @@ enum LogCSV {
                 continue
             }
 
-            // Expect: date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes
+            // Expect minimal columns present
             guard parts.count >= 3 else {
                 if !hasValidRows {
                     throw CocoaError(.fileReadCorruptFile)
@@ -196,6 +200,7 @@ enum LogCSV {
                 continue
             }
 
+            // date,type,exercise_name,climb_type,grade,angle,holdColor,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid
             let dateStr      = parts[safe: 0] ?? ""
             let typeStr      = parts[safe: 1] ?? ""
             let exerciseName = parts[safe: 2] ?? ""
@@ -214,6 +219,8 @@ enum LogCSV {
             let planName     = parts[safe: 15] ?? ""
             let dayTypeStr   = parts[safe: 16] ?? ""
             let notesRaw     = parts[safe: 17] ?? ""
+            let climbIdStr   = parts[safe: 18] ?? ""
+            let tb2UUIDStr   = parts[safe: 19] ?? ""
 
             guard
                 let dayDate = df.date(from: dateStr),
@@ -247,6 +254,9 @@ enum LogCSV {
             let dayType = !dayTypeStr.isEmpty ? DayType(rawValue: dayTypeStr) : nil
             let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
             let notesOpt = notes.isEmpty ? nil : notes
+            let climbId = UUID(uuidString: climbIdStr)
+            let tb2uuid = tb2UUIDStr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let tb2uuidOpt = tb2uuid.isEmpty ? nil : tb2uuid
 
             entries.append(Entry(
                 date: dayDate,
@@ -266,7 +276,9 @@ enum LogCSV {
                 planId: planId,
                 planName: planName.isEmpty ? nil : planName,
                 dayType: dayType,
-                notes: notesOpt
+                notes: notesOpt,
+                climbId: climbId,
+                tb2UUID: tb2uuidOpt
             ))
         }
 
@@ -403,15 +415,102 @@ enum LogCSV {
                 } else {
                     climbType = .boulder
                 }
+                
+                // 1) Upsert by explicit climb_id if provided
+                if let providedId = e.climbId {
+                    // Try fetch by id
+                    let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == providedId })
+                    if let existing = (try? context.fetch(fetch))?.first {
+                        // Update existing
+                        existing.climbType = climbType
+                        existing.grade = grade
+                        existing.angleDegrees = e.angle
+                        existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
+                        existing.attempts = e.attempts
+                        existing.isWorkInProgress = e.isWIP
+                        existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
+                        existing.notes = e.notes
+                        existing.dateLogged = startOfDay
+                        if let tb2 = e.tb2UUID { existing.tb2ClimbUUID = tb2 }
+                        // No insert count
+                        continue
+                    } else {
+                        // Insert new with provided id
+                        let climbEntry = ClimbEntry(
+                            id: providedId,
+                            climbType: climbType,
+                            grade: grade,
+                            angleDegrees: e.angle,
+                            style: e.style?.isEmpty == false ? e.style! : "Unknown",
+                            attempts: e.attempts,
+                            isWorkInProgress: e.isWIP,
+                            holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
+                            gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
+                            notes: e.notes,
+                            dateLogged: startOfDay,
+                            tb2ClimbUUID: e.tb2UUID
+                        )
+                        context.insert(climbEntry)
+                        inserted += 1
+                        continue
+                    }
+                }
+                
+                // 2) If no id but we have tb2 uuid, compute TB2-stable id and upsert
+                if let tb2 = e.tb2UUID {
+                    let stable = stableID(
+                        climbUUID: tb2,
+                        day: startOfDay,
+                        angle: e.angle,
+                        isMirror: false,
+                        isAscent: !e.isWIP
+                    )
+                    let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == stable })
+                    if let existing = (try? context.fetch(fetch))?.first {
+                        // Update existing
+                        existing.climbType = climbType
+                        existing.grade = grade
+                        existing.angleDegrees = e.angle
+                        existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
+                        existing.attempts = e.attempts
+                        existing.isWorkInProgress = e.isWIP
+                        existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
+                        existing.notes = e.notes
+                        existing.dateLogged = startOfDay
+                        existing.tb2ClimbUUID = tb2
+                        continue
+                    } else {
+                        // Insert with stable id
+                        let climbEntry = ClimbEntry(
+                            id: stable,
+                            climbType: climbType,
+                            grade: grade,
+                            angleDegrees: e.angle,
+                            style: e.style?.isEmpty == false ? e.style! : "Unknown",
+                            attempts: e.attempts,
+                            isWorkInProgress: e.isWIP,
+                            holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
+                            gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
+                            notes: e.notes,
+                            dateLogged: startOfDay,
+                            tb2ClimbUUID: tb2
+                        )
+                        context.insert(climbEntry)
+                        inserted += 1
+                        continue
+                    }
+                }
 
-                // DEDUPE climb entries if enabled
+                // 3) Fallback: DEDUPE by content signature (legacy CSVs)
                 if dedupe {
                     let climbSig = climbSignature(
                         date: startOfDay,
                         climbType: climbType,
                         grade: grade,
                         angle: e.angle,
-                        holdColor: e.holdColor, // e.holdColor is already String?
+                        holdColor: e.holdColor,
                         style: e.style ?? "",
                         attempts: e.attempts,
                         isWIP: e.isWIP,
@@ -431,7 +530,7 @@ enum LogCSV {
                             climbType: climb.climbType,
                             grade: climb.grade,
                             angle: climb.angleDegrees,
-                            holdColor: climb.holdColor?.rawValue, // convert HoldColor? -> String?
+                            holdColor: climb.holdColor?.rawValue,
                             style: climb.style,
                             attempts: climb.attempts,
                             isWIP: climb.isWorkInProgress,
@@ -444,7 +543,7 @@ enum LogCSV {
                     if duplicate != nil { continue }
                 }
 
-                // Create climb entry
+                // Create climb entry (no id / no tb2 uuid path)
                 let climbEntry = ClimbEntry(
                     climbType: climbType,
                     grade: grade,
@@ -452,7 +551,7 @@ enum LogCSV {
                     style: e.style?.isEmpty == false ? e.style! : "Unknown",
                     attempts: e.attempts,
                     isWorkInProgress: e.isWIP,
-                    holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) }, // map String? to HoldColor?
+                    holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
                     gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                     notes: e.notes,
                     dateLogged: startOfDay
@@ -596,9 +695,9 @@ extension LogCSV {
     
     struct Entry {
         let date: Date
-        let type: String // Added type field
+        let type: String // "exercise" or "climb"
         let name: String
-        let climbType: String? // Added climb-specific fields
+        let climbType: String?
         let grade: String?
         let angle: Int?
         let holdColor: String?
@@ -613,6 +712,9 @@ extension LogCSV {
         let planName: String?
         let dayType: DayType?
         let notes: String?
+        // New for climbs
+        let climbId: UUID?
+        let tb2UUID: String?
     }
     
     /// Async importer: parses off-main, then mutates SwiftData on the main actor.
@@ -659,7 +761,7 @@ extension LogCSV {
                 
                 guard parts.count >= 2 else { continue }
                 
-                // Parse new format: date,type,exercise_name,climb_type,grade,angle,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes
+                // date,type,exercise_name,climb_type,grade,angle,holdColor,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid
                 let dateStr      = parts[safe: 0] ?? ""
                 let typeStr      = parts[safe: 1] ?? ""
                 let exerciseName = parts[safe: 2] ?? ""
@@ -678,6 +780,8 @@ extension LogCSV {
                 let planName     = parts[safe: 15] ?? ""
                 let dayTypeStr   = parts[safe: 16] ?? ""
                 let notesRaw     = parts[safe: 17] ?? ""
+                let climbIdStr   = parts[safe: 18] ?? ""
+                let tb2UUIDStr   = parts[safe: 19] ?? ""
                 
                 guard
                     let dayDate = df.date(from: dateStr),
@@ -704,6 +808,9 @@ extension LogCSV {
                 let dayType = !dayTypeStr.isEmpty ? DayType(rawValue: dayTypeStr) : nil
                 let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
                 let notesOpt = notes.isEmpty ? nil : notes
+                let climbId = UUID(uuidString: climbIdStr)
+                let tb2uuid = tb2UUIDStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let tb2uuidOpt = tb2uuid.isEmpty ? nil : tb2uuid
                 
                 out.append(Entry(
                     date: dayDate,
@@ -723,7 +830,9 @@ extension LogCSV {
                     planId: planId,
                     planName: planName.isEmpty ? nil : planName,
                     dayType: dayType,
-                    notes: notesOpt
+                    notes: notesOpt,
+                    climbId: climbId,
+                    tb2UUID: tb2uuidOpt
                 ))
             }
             
@@ -877,7 +986,88 @@ extension LogCSV {
                     climbType = .boulder // default
                 }
                 
-                // DEDUPE climb entries if enabled
+                // 1) Upsert by explicit climb_id if provided
+                if let providedId = e.climbId {
+                    let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == providedId })
+                    if let existing = (try? context.fetch(fetch))?.first {
+                        existing.climbType = climbType
+                        existing.grade = grade
+                        existing.angleDegrees = e.angle
+                        existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
+                        existing.attempts = e.attempts
+                        existing.isWorkInProgress = e.isWIP
+                        existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
+                        existing.notes = e.notes
+                        existing.dateLogged = startOfDay
+                        if let tb2 = e.tb2UUID { existing.tb2ClimbUUID = tb2 }
+                        continue
+                    } else {
+                        let climbEntry = ClimbEntry(
+                            id: providedId,
+                            climbType: climbType,
+                            grade: grade,
+                            angleDegrees: e.angle,
+                            style: e.style?.isEmpty == false ? e.style! : "Unknown",
+                            attempts: e.attempts,
+                            isWorkInProgress: e.isWIP,
+                            holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
+                            gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
+                            notes: e.notes,
+                            dateLogged: startOfDay,
+                            tb2ClimbUUID: e.tb2UUID
+                        )
+                        context.insert(climbEntry)
+                        inserted += 1
+                        continue
+                    }
+                }
+                
+                // 2) If no id but we have tb2 uuid, compute TB2-stable id and upsert
+                if let tb2 = e.tb2UUID {
+                    let stable = stableID(
+                        climbUUID: tb2,
+                        day: startOfDay,
+                        angle: e.angle,
+                        isMirror: false,
+                        isAscent: !e.isWIP
+                    )
+                    let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == stable })
+                    if let existing = (try? context.fetch(fetch))?.first {
+                        existing.climbType = climbType
+                        existing.grade = grade
+                        existing.angleDegrees = e.angle
+                        existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
+                        existing.attempts = e.attempts
+                        existing.isWorkInProgress = e.isWIP
+                        existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
+                        existing.notes = e.notes
+                        existing.dateLogged = startOfDay
+                        existing.tb2ClimbUUID = tb2
+                        continue
+                    } else {
+                        let climbEntry = ClimbEntry(
+                            id: stable,
+                            climbType: climbType,
+                            grade: grade,
+                            angleDegrees: e.angle,
+                            style: e.style?.isEmpty == false ? e.style! : "Unknown",
+                            attempts: e.attempts,
+                            isWorkInProgress: e.isWIP,
+                            holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
+                            gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
+                            notes: e.notes,
+                            dateLogged: startOfDay,
+                            tb2ClimbUUID: tb2
+                        )
+                        context.insert(climbEntry)
+                        inserted += 1
+                        continue
+                    }
+                }
+                
+                // 3) Fallback: DEDUPE by content signature (legacy CSVs)
                 if dedupe {
                     let climbSig = climbSignature(
                         date: startOfDay,
@@ -919,7 +1109,7 @@ extension LogCSV {
                     }
                 }
                 
-                // Create climb entry
+                // Create climb entry (no id / no tb2 uuid path)
                 let climbEntry = ClimbEntry(
                     climbType: climbType,
                     grade: grade,
@@ -965,4 +1155,19 @@ extension LogCSV {
         try context.save()
         return inserted
     }
+}
+
+// MARK: - Deterministic ID helpers (TB2 parity)
+
+private func stableID(climbUUID: String, day: Date, angle: Int?, isMirror: Bool?, isAscent: Bool) -> UUID {
+    let dayEpoch = Int((day.timeIntervalSince1970 / 86400.0).rounded(.down))
+    let key = "tb2|\(climbUUID)|\(dayEpoch)|\(angle ?? -999)|\((isMirror ?? false) ? 1 : 0)|\((isAscent) ? 1 : 0)"
+    return deterministicUUID(from: key)
+}
+
+private func deterministicUUID(from string: String) -> UUID {
+    let hash = SHA256.hash(data: Data(string.utf8))
+    let bytes = Array(hash.prefix(16))
+    let uuid = uuid_t(bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15])
+    return UUID(uuid: uuid)
 }
