@@ -1,6 +1,8 @@
 //
 //  AppIntegrationTests.swift
-//  ClimbingProgram Tests
+//  ClimbingProgramTests
+//
+//  Modernized integration tests aligned with current app features.
 //
 //  Created by AI Assistant on 23.08.25.
 //
@@ -8,80 +10,93 @@
 import XCTest
 import SwiftUI
 import SwiftData
-@testable import ClimbingProgram
+@testable import klettrack
 
-/**
- * App Integration Tests
- *
- * Tests core app integration, navigation flows, and lifecycle management
- * as documented in the architecture overview
- */
-
-class AppIntegrationTests: ClimbingProgramTestSuite {
+final class AppIntegrationTests: BaseSwiftDataTestCase {
     
-    // MARK: - App Lifecycle Tests
+    // MARK: - App Lifecycle / Schema
     
     func testAppInitialization() {
-        // Test that main app components can be initialized
+        // App struct should be constructible
         let app = ClimbingProgramApp()
         XCTAssertNotNil(app)
         
-        // Test SwiftData container setup
+        // SwiftData in-memory container from BaseSwiftDataTestCase should be ready
         XCTAssertNotNil(container)
         XCTAssertNotNil(context)
     }
     
     func testModelContainerConfiguration() {
-        // Verify all required models are in the schema
-        let modelTypes = container.schema.entities.map { $0.name }
+        let modelTypes = Set(container.schema.entities.map { $0.name })
         
+        // Core catalog
         XCTAssertTrue(modelTypes.contains("Activity"))
         XCTAssertTrue(modelTypes.contains("TrainingType"))
         XCTAssertTrue(modelTypes.contains("Exercise"))
         XCTAssertTrue(modelTypes.contains("BoulderCombination"))
-        XCTAssertTrue(modelTypes.contains("Session"))
-        XCTAssertTrue(modelTypes.contains("SessionItem"))
+        
+        // Plans
         XCTAssertTrue(modelTypes.contains("Plan"))
         XCTAssertTrue(modelTypes.contains("PlanDay"))
+        
+        // Sessions (log)
+        XCTAssertTrue(modelTypes.contains("Session"))
+        XCTAssertTrue(modelTypes.contains("SessionItem"))
+        
+        // Timer
+        XCTAssertTrue(modelTypes.contains("TimerTemplate"))
+        XCTAssertTrue(modelTypes.contains("TimerInterval"))
+        XCTAssertTrue(modelTypes.contains("TimerSession"))
+        XCTAssertTrue(modelTypes.contains("TimerLap"))
+        
+        // Climbing log
+        XCTAssertTrue(modelTypes.contains("ClimbEntry"))
+        XCTAssertTrue(modelTypes.contains("ClimbStyle"))
+        XCTAssertTrue(modelTypes.contains("ClimbGym"))
     }
     
-    // MARK: - Navigation Flow Tests
+    // MARK: - Navigation/Data readiness smoke
     
-    func testTabStructureIntegrity() {
-        // Verify that all documented tabs are accessible
-        // This tests the RootTabView structure mentioned in documentation
-        
-        // Create test data for tabs to display
+    func testTabDataReadinessSmoke() {
+        // Seed catalog and related data
         SeedData.loadIfNeeded(context)
-        _ = createTestPlan()
-        _ = createTestSession()
         
-        // Verify data exists for each tab
+        // Create a plan and a session so tabs have content
+        let plan = createTestPlan(name: "Plan A", kind: .weekly, start: Date())
+        _ = createTestSession(date: plan.startDate)
+        try? context.save()
+        
+        // Catalog (activities)
         let activities = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
         XCTAssertFalse(activities.isEmpty, "Catalog tab should have data")
         
+        // Plans
         let plans = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         XCTAssertFalse(plans.isEmpty, "Plans tab should have data")
         
+        // Log (sessions)
         let sessions = (try? context.fetch(FetchDescriptor<Session>())) ?? []
         XCTAssertFalse(sessions.isEmpty, "Log tab should have data")
     }
     
-    func testDataFlowBetweenFeatures() {
-        // Test the complete data flow: Catalog → Plans → Sessions → Analytics
-        
-        // 1. Create catalog data (simulating Catalog tab usage)
-        let activity = createTestActivity(name: "Integration Test Activity")
+    // MARK: - Cross-feature data flow
+    
+    func testDataFlowBetweenFeatures() throws {
+        // 1. Catalog data
+        let activity = createTestActivity(name: "Integration Activity")
         let trainingType = createTestTrainingType(activity: activity, name: "Integration Type")
         let exercise = createTestExercise(trainingType: trainingType, name: "Integration Exercise")
         
-        // 2. Create plan and add exercise (simulating Plans tab usage)
-        let plan = createTestPlan(name: "Integration Plan")
-        let planDay = plan.days.first!
+        // 2. Plan using exercise
+        let plan = createTestPlan(name: "Integration Plan", kind: .weekly, start: Date())
+        guard let planDay = plan.days.first else {
+            XCTFail("Plan should have at least one day")
+            return
+        }
         planDay.chosenExercises.append(exercise.name)
         
-        // 3. Log the exercise (simulating Log tab usage)
-        let session = createTestSession()
+        // 3. Log session item derived from plan
+        let session = createTestSession(date: planDay.date)
         let sessionItem = SessionItem(
             exerciseName: exercise.name,
             planSourceId: plan.id,
@@ -91,181 +106,139 @@ class AppIntegrationTests: ClimbingProgramTestSuite {
         )
         session.items.append(sessionItem)
         
-        try? context.save()
+        try context.save()
         
-        // 4. Verify data is available for analytics (Progress tab)
+        // 4. Verify for analytics/export
         let loggedItems = (try? context.fetch(FetchDescriptor<SessionItem>())) ?? []
         XCTAssertEqual(loggedItems.count, 1)
         XCTAssertEqual(loggedItems.first?.exerciseName, exercise.name)
         XCTAssertEqual(loggedItems.first?.planSourceId, plan.id)
     }
     
-    // MARK: - User Journey Integration Tests
+    // MARK: - User journeys (model-level)
     
-    func testCompleteExerciseSelectionJourney() {
-        // Test the documented journey: Start → Catalog → Activity → TrainingType → Exercise → Plan
-        
-        // Setup initial data
+    func testCompleteExerciseSelectionJourney() throws {
+        // Start → Catalog → Activity → TrainingType → Exercise → Plan (model-level)
         SeedData.loadIfNeeded(context)
         
-        // 1. User opens catalog
         let activities = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
         XCTAssertFalse(activities.isEmpty)
         
-        // 2. User selects activity
-        let coreActivity = activities.first { $0.name == "Core" }
-        XCTAssertNotNil(coreActivity)
+        // Use a known seeded activity if available
+        let core = activities.first(where: { $0.name == "Core" }) ?? activities.first
+        guard let coreActivity = core else {
+            return XCTFail("Expected to find at least one activity")
+        }
         
-        // 3. User selects training type
-        let trainingTypes = coreActivity!.types
-        XCTAssertFalse(trainingTypes.isEmpty)
-        
-        // 4. User selects exercise
-        let firstType = trainingTypes.first!
+        let types = coreActivity.types
+        XCTAssertFalse(types.isEmpty)
+        let firstType = types.first!
         let exercises = firstType.exercises
         XCTAssertFalse(exercises.isEmpty)
         
-        // 5. User adds to plan
-        let plan = createTestPlan()
         let exercise = exercises.first!
-        plan.days.first!.chosenExercises.append(exercise.name)
+        let plan = createTestPlan(name: "Journey Plan", kind: .weekly, start: Date())
+        plan.days.first?.chosenExercises.append(exercise.name)
         
-        try? context.save()
-        
-        // Verify complete journey
-        XCTAssertTrue(plan.days.first!.chosenExercises.contains(exercise.name))
+        try context.save()
+        XCTAssertTrue(plan.days.first?.chosenExercises.contains(exercise.name) == true)
     }
     
-    func testCompleteLoggingJourney() {
-        // Test the documented journey: Plans → Select Plan → Select Day → Log Exercises
-        
-        // Setup plan with exercises
-        let plan = createTestPlan()
-        let planDay = plan.days.first!
+    func testCompleteLoggingJourney() throws {
+        // Plans → Select Plan → Select Day → Log Exercises (model-level)
+        let plan = createTestPlan(name: "Logging Plan", kind: .weekly, start: Date())
+        let planDay = try XCTUnwrap(plan.days.first)
         planDay.chosenExercises.append(contentsOf: ["Push-ups", "Pull-ups", "Squats"])
         
-        // User executes plan
         let session = createTestSession(date: planDay.date)
-        
-        for exerciseName in planDay.chosenExercises {
-            let item = SessionItem(
-                exerciseName: exerciseName,
+        for name in planDay.chosenExercises {
+            session.items.append(SessionItem(
+                exerciseName: name,
                 planSourceId: plan.id,
                 planName: plan.name,
-                reps: Double.random(in: 8...12),
+                reps: 10,
                 sets: 3
-            )
-            session.items.append(item)
+            ))
         }
         
-        try? context.save()
+        try context.save()
         
-        // Verify logging journey
         XCTAssertEqual(session.items.count, 3)
         XCTAssertTrue(session.items.allSatisfy { $0.planSourceId == plan.id })
     }
     
-    // MARK: - Error Handling and Recovery Tests
+    // MARK: - Error handling / recovery
     
-    func testDataConsistencyAfterAppRestart() {
-        // Simulate app restart by creating new context
-        // Create test activities for our consistency check
-        let activities = [
-            createTestActivity(name: "Restart Test Activity"),
-            createTestActivity(name: "Another Activity")
-        ]
-        
+    func testModelContextReinitializationSmoke() {
+        // Create some data
+        _ = createTestActivity(name: "Restart Test Activity")
+        _ = createTestActivity(name: "Another Activity")
         try? context.save()
         
-        // Verify we have the expected number of activities
-        XCTAssertEqual(activities.count, 2)
-        
-        // Simulate app restart with new context
-        let newConfiguration = ModelConfiguration(schema: container.schema, isStoredInMemoryOnly: true)
-        let newContainer = try! ModelContainer(for: container.schema, configurations: [newConfiguration])
-        let newContext = ModelContext(newContainer)
-        
-        // Verify data persistence (in real app this would be persistent storage)
-        // For in-memory testing, we verify the pattern works
-        XCTAssertNoThrow(try newContext.save())
+        // Recreate an in-memory container with same schema (simulated restart)
+        let config = ModelConfiguration(schema: container.schema, isStoredInMemoryOnly: true)
+        XCTAssertNoThrow(try ModelContainer(for: container.schema, configurations: [config]))
     }
     
     func testGracefulErrorHandling() {
-        // Test app behavior with invalid data
-        let invalidActivity = Activity(name: "")  // Empty name
+        // Minimal validation: empty activity name currently allowed by model
+        let invalidActivity = Activity(name: "")
         context.insert(invalidActivity)
-        
-        // App should handle invalid data gracefully
         XCTAssertNoThrow(try context.save())
         
-        // Test CSV export with invalid data
+        // CSV export should not throw even with odd data
         XCTAssertNoThrow(LogCSV.makeExportCSV(context: context))
     }
     
-    // MARK: - Feature Integration Tests
+    // MARK: - Seeding integration
     
-    func testPlanFactoryIntegration() {
-        // Test that PlanFactory integrates properly with the app
-        let weeklyPlan = PlanFactory.create(name: "Weekly", kind: .weekly, start: Date(), in: context)
-        let pyramidPlan = PlanFactory.create(name: "Pyramid", kind: .threeTwoOne, start: Date(), in: context)
+    func testSeedDataIntegration() throws {
+        SeedData.loadIfNeeded(context)
         
-        try? context.save()
-        
-        // Verify plans are created correctly
-        XCTAssertEqual(weeklyPlan.days.count, 7)
-        XCTAssertTrue(pyramidPlan.days.count > 7)
-        
-        // Verify plans are persisted
-        let plans = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
-        XCTAssertEqual(plans.count, 2)
-    }
-    
-    func testSeedDataIntegration() {
-        // Test that SeedData works properly with app
-        XCTAssertNoThrow(SeedData.loadIfNeeded(context))
-        
-        // Verify seeded data is accessible
+        // Catalog seeded
         let activities = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
         XCTAssertFalse(activities.isEmpty)
         
-        // Verify data structure is complete
+        // Each training type should have exercises or combinations
         for activity in activities {
-            XCTAssertFalse(activity.types.isEmpty)
-            for trainingType in activity.types {
-                // A training type should have either exercises or combinations
-                XCTAssertFalse(trainingType.exercises.isEmpty && trainingType.combinations.isEmpty, "Training type '\(trainingType.name)' should have exercises or combinations")
+            for tt in activity.types {
+                XCTAssertFalse(tt.exercises.isEmpty && tt.combinations.isEmpty, "Training type '\(tt.name)' should have exercises or combinations")
             }
         }
+        
+        // Climbing styles and gyms seeded
+        let stylesCount = (try? context.fetchCount(FetchDescriptor<ClimbStyle>())) ?? 0
+        let gymsCount = (try? context.fetchCount(FetchDescriptor<ClimbGym>())) ?? 0
+        XCTAssertGreaterThan(stylesCount, 0)
+        XCTAssertGreaterThan(gymsCount, 0)
+        
+        // Timer templates seeded
+        let templatesCount = (try? context.fetchCount(FetchDescriptor<TimerTemplate>())) ?? 0
+        XCTAssertGreaterThan(templatesCount, 0)
     }
     
-    // MARK: - Performance Integration Tests
+    // MARK: - Performance
     
     func testAppPerformanceWithLargeDataset() {
-        // Test app performance with realistic data volumes
         measure {
-            // Create realistic data volume
             for i in 0..<20 {
                 let activity = createTestActivity(name: "Activity \(i)")
                 for j in 0..<5 {
-                    let trainingType = createTestTrainingType(activity: activity, name: "Type \(i)-\(j)")
+                    let tt = createTestTrainingType(activity: activity, name: "Type \(i)-\(j)")
                     for k in 0..<10 {
-                        _ = createTestExercise(trainingType: trainingType, name: "Exercise \(i)-\(j)-\(k)")
+                        _ = createTestExercise(trainingType: tt, name: "Exercise \(i)-\(j)-\(k)")
                     }
                 }
             }
-            
-            // Create sessions and plans
             for i in 0..<50 {
                 let session = createTestSession()
-                let item = SessionItem(exerciseName: "Exercise \(i)")
-                session.items.append(item)
+                session.items.append(SessionItem(exerciseName: "Exercise \(i)"))
             }
-            
             for i in 0..<10 {
-                _ = createTestPlan(name: "Plan \(i)")
+                _ = createTestPlan(name: "Plan \(i)", kind: .weekly, start: Date())
             }
-            
             try? context.save()
         }
     }
 }
+

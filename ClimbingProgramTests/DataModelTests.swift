@@ -1,13 +1,13 @@
 //
 //  DataModelTests.swift
-//  ClimbingProgram Tests
+//  klettrack Tests
 //
 //  Created by AI Assistant on 23.08.25.
 //
 
 import XCTest
 import SwiftData
-@testable import ClimbingProgram
+@testable import klettrack
 
 /**
  * Data Model Tests
