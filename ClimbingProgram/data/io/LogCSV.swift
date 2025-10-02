@@ -1,6 +1,7 @@
 //
 //  LogCSV.swift
-//  ClimbingProgram
+//  Klettrack
+//  Created by Shahar Noy on 02.09.25.
 //
 
 import Foundation

@@ -1,8 +1,7 @@
 //
 //  Theme.swift
-//  ClimbingProgram
-//
-//  Created by Shahar Private on 21.08.25.
+//  Klettrack
+//  Created by Shahar Noy on 21.08.25.
 //
 
 import SwiftUI

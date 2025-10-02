@@ -1,8 +1,7 @@
 //
 //  CustomTabBar.swift
-//  ClimbingProgram
-//
-//  Created by AI Assistant on 27.08.25.
+//  Klettrack
+//  Created by Shahar Noy on 27.08.25.
 //
 
 import SwiftUI

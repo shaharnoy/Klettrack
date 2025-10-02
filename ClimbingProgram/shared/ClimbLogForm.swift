@@ -1,8 +1,7 @@
 //
 //  ClimbLogForm.swift
-//  ClimbingProgram
-//
-//  Created by AI Assistant on 29.08.25.
+//  Klettrack
+//  Created by Shahar Noy on 29.08.25.
 //
 
 import SwiftUI

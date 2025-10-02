@@ -1,6 +1,7 @@
 //
 //  CredentialsStore.swift
-//  ClimbingProgram
+//  Klettrack
+//  Created by Shahar Noy on 29.09.25.
 //
 
 import Foundation

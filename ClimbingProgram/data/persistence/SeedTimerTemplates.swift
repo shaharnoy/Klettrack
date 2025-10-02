@@ -1,8 +1,7 @@
 //
 //  SeedTimerTemplates.swift
-//  ClimbingProgram
-//
-//  Created by AI Assistant on 26.08.25.
+//  Klettrack
+//  Created by Shahar Noy on 26.08.25.
 //
 
 import SwiftData

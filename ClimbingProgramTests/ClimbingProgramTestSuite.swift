@@ -1,5 +1,6 @@
 // ClimbingProgramTestSuite.swift
-// Add this file to the klettrack Tests target.
+//  klettrack tests
+//  Created by Shahar Noy on 30.09.25.
 
 import XCTest
 import SwiftData

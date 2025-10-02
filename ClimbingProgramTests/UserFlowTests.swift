@@ -1,22 +1,12 @@
 //
 //  UserFlowTests.swift
 //  klettrack Tests
-//
-//  Created by AI Assistant on 23.08.25.
-//
+//  Created by Shahar Noy on 30.09.25
 
 import XCTest
 import SwiftData
 @testable import klettrack
 
-/**
- * User Flow Tests
- *
- * Tests all documented user journeys and workflows from README.md:
- * - Exercise Selection Journey
- * - Workout Logging Journey
- * - Plan Management Journey
- */
 
 class UserFlowTests: ClimbingProgramTestSuite {
     

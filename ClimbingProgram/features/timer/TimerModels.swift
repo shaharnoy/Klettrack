@@ -1,8 +1,7 @@
 //
 //  TimerModels.swift
-//  ClimbingProgram
-//
-//  Created by AI Assistant on 25.08.25.
+//  Klettrack
+//  Created by Shahar Noy on 25.08.25.
 //
 
 import Foundation

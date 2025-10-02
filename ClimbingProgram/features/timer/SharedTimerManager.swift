@@ -1,8 +1,7 @@
 //
 //  SharedTimerManager.swift
-//  ClimbingProgram
-//
-//  Created by AI Assistant on 28.08.25.
+//  Klettrack
+//  Created by Shahar Noy on 28.08.25.
 //
 
 import Foundation

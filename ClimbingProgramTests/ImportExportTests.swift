@@ -1,8 +1,7 @@
 //
 //  ImportExportTests.swift
 //  klettrack Tests
-//
-//  Created by AI Assistant on 23.08.25.
+//  Created by Shahar Noy on 30.09.25.
 //
 
 import XCTest
@@ -18,7 +17,6 @@ private func testDeterministicUUID(from string: String) -> UUID {
     let hash = SHA256.hash(data: Data(string.utf8))
     let bytes = Array(hash.prefix(16))
     #else
-    // Fallback: simple deterministic hash (not cryptographic, but stable for tests)
     var hasher = Hasher()
     hasher.combine(string)
     let seed = UInt64(bitPattern: Int64(hasher.finalize()))

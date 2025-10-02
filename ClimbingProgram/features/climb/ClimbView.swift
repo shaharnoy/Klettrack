@@ -1,7 +1,6 @@
-// when I export logs (incl. climb) each record get it unique ID to make sure we don't import duplicated entries
-// When we sync data from TB2, we also get unique IDs for each entry.
-// problem - after syncing with tb2, when I export logs, then delete one record from the tension board item, then import the previous export, then sync tb2 - the TB2 sync will not recognize that this climb is already there. I assume it's beacuse the export changes the UUID of the record which doesn't work with the tb2 sync.
-//  Created by AI Assistant on 27.08.25.
+//  ClimbView.swift
+//  Klettrack
+//  Created by Shahar Noy on 30.08.25.
 //
 
 import SwiftUI

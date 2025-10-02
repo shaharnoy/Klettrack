@@ -1,6 +1,7 @@
 //
 //  CatalogView.swift
-//  ClimbingProgram
+//  Klettrack
+//  Created by Shahar Noy on 21.08.25.
 //
 
 import SwiftUI

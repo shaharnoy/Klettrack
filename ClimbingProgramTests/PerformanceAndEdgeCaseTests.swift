@@ -2,7 +2,7 @@
 //  PerformanceAndEdgeCaseTests.swift
 //  klettrack Tests
 //
-//  Created by AI Assistant on 23.08.25.
+//  Created by Shahar Noy on 30.09.25.
 //
 
 import XCTest

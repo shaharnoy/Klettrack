@@ -1,9 +1,7 @@
 //
 //  DevTools.swift
-//  ClimbingProgram
-//
-//  Created by Shahar Private on 21.08.25.
-// If you want a quick reset during development:
+//  Klettrack
+//  Created by Shahar Noy on 21.08.25.
 
 import SwiftData
 

@@ -1,10 +1,7 @@
 //
 //  AppIntegrationTests.swift
-//  ClimbingProgramTests
-//
-//  Modernized integration tests aligned with current app features.
-//
-//  Created by AI Assistant on 23.08.25.
+//  klettrack tests
+//  Created by Shahar Noy on 28.08.25.
 //
 
 import XCTest
