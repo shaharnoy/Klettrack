@@ -21,6 +21,22 @@ Pods/
 # Accio dependency manager
 /.accio/
 
+# Xcode user data
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+xcdebugger/
+
+# Workspace
+*.xcworkspace/xcuserdata/
+*.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+*.xcworkspace/contents.xcworkspacedata
+
+# Schemes - keep only shared
+*.xcscheme
+!xcshareddata/xcschemes/*.xcscheme
+
+
 # Fastlane
 fastlane/report.xml
 fastlane/Preview.html
