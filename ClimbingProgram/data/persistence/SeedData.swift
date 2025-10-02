@@ -14,7 +14,7 @@ struct SeedData {
                 // ========== CORE ==========
                 let core = Activity(name: "Core")
 
-                let anterior = TrainingType(name: "Anterior Core", typeDescription: "pick 2-3 exercises per sessions (pg. 148)")
+                let anterior = TrainingType(name: "Anterior Core", typeDescription: "pick 2-3 exercises per sessions")
                 anterior.exercises = [
                     Exercise(name: "Abdominal Crunches", order: 1, repsText: "25-100", setsText: "2", restText:"3 mins"),
                     Exercise(name: "Hanging Knee Lifts", order: 2, repsText: "15-20", setsText: "2-3", restText:"3 mins"),
@@ -23,7 +23,7 @@ struct SeedData {
                     Exercise(name: "Front Lever", order: 5, repsText: "2-5", setsText: "1-2", restText:"3 mins"),
                 ]
 
-                let posterior = TrainingType(name: "Posterior Core", typeDescription: "pick 2-3 exercises per sessions (pg. 152)")
+                let posterior = TrainingType(name: "Posterior Core", typeDescription: "pick 2-3 exercises per sessions ")
                 posterior.exercises = [
                     Exercise(name: "Superman", order: 1, repsText: "20", setsText: "2", restText:"3 mins"),
                     Exercise(name: "Reverse Plank", order: 2, repsText: "20-60 sec", setsText: "1-2", restText:"3 mins"),
@@ -31,7 +31,7 @@ struct SeedData {
                     Exercise(name: "Side Hip Raises", order: 4, repsText: "10-20", setsText: "2", restText:"1 mins"),
                 ]
 
-                let chain = TrainingType(name: "Total/Posterior Chain", typeDescription: "pick one of them if you're in the mood (pg. 155)")
+                let chain = TrainingType(name: "Total/Posterior Chain", typeDescription: "pick one of them if you're in the mood")
                 chain.exercises = [
                     Exercise(name: "Sumo Deadlift", order: 1, repsText: "10-15", setsText: "2", restText:"3 mins"),
                     Exercise(name: "Dumbbell Snatch", order: 2, repsText: "5-8", setsText: "2-3", restText:"3 mins"),
@@ -43,7 +43,7 @@ struct SeedData {
                 // ========== ANTAGONIST ==========
                 let ant = Activity(name: "Antagonist & Stabilizer")
 
-                let wrist = TrainingType(name: "Wrist Stabilizers", typeDescription: "pick 2-3 exercises per sessions (pg. 133)")
+                let wrist = TrainingType(name: "Wrist Stabilizers", typeDescription: "pick 2-3 exercises per sessions")
                 wrist.exercises = [
                     Exercise(name: "Reverse Wrist Curls", order: 1, repsText: "15–25", setsText: "2–3", restText:"3 mins"),
                     Exercise(name: "Pronator Isolation", order: 2, repsText: "20–25", setsText: "2 in each hand", restText:"2 mins"),
@@ -52,7 +52,7 @@ struct SeedData {
                     Exercise(name: "Wide Pinch Wrist Extention", order: 5, repsText: "30 seconds", setsText: "3–5", restText:"2 mins")
                 ]
 
-                let cuff = TrainingType(name: "Rotator Cuff & Scap Stabilizers", typeDescription: "pick 2 exercises per sessions (pg. 139)")
+                let cuff = TrainingType(name: "Rotator Cuff & Scap Stabilizers", typeDescription: "pick 2 exercises per sessions")
                 cuff.exercises = [
                     Exercise(name: "DB Internal Rotation", order: 1, repsText: "25", setsText: "2 each hand"),
                     Exercise(name: "DB External Rotation", order: 2, repsText: "25", setsText: "2 each hand"),
@@ -62,7 +62,7 @@ struct SeedData {
                     Exercise(name: "Scapular Pull-Up", order: 6, repsText: "8–12", setsText: "1")
                 ]
 
-                let push = TrainingType(name: "Antagonist (Push) Muscles", typeDescription: "pick 1 exercise per session (pg. 144)")
+                let push = TrainingType(name: "Antagonist (Push) Muscles", typeDescription: "pick 1 exercise per session")
                 push.exercises = [
                     Exercise(name: "Shoulder Press", order: 1, repsText: "15–20", setsText: "1–2",restText:"3 mins"),
                     Exercise(name: "Push-Up", order: 2, repsText: "15–25", setsText: "1–2",restText:"3 mins")

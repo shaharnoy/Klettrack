@@ -21,9 +21,22 @@
 		536190D72E5B1211008A8555 /* ClimbingProgramTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClimbingProgramTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		532A871B2E8F1130002781AE /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				LICENSE.md,
+			);
+			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		53229DD02E573C2200D1A229 /* ClimbingProgram */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				532A871B2E8F1130002781AE /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */,
+			);
 			path = ClimbingProgram;
 			sourceTree = "<group>";
 		};
