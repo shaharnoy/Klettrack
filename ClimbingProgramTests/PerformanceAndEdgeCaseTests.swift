@@ -101,9 +101,7 @@ class PerformanceAndEdgeCaseTests: ClimbingProgramTestSuite {
         
         let activity = Activity(name: longString)
         context.insert(activity)
-        
-        let exercise = Exercise(name: longString, notes: longString)
-        
+                
         let session = createTestSession()
         let item = SessionItem(exerciseName: longString, notes: longString)
         session.items.append(item)
@@ -122,9 +120,7 @@ class PerformanceAndEdgeCaseTests: ClimbingProgramTestSuite {
         
         let activity = Activity(name: mixedString)
         context.insert(activity)
-        
-        let exercise = Exercise(name: mixedString, notes: mixedString)
-        
+                
         let session = createTestSession()
         let item = SessionItem(exerciseName: mixedString, notes: mixedString)
         session.items.append(item)
