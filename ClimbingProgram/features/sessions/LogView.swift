@@ -9,6 +9,43 @@ import SwiftData
 import UniformTypeIdentifiers
 import UIKit // uses ShareSheet from your Plans module (or provide a local one)
 
+// MARK: - Session helpers (deletion)
+
+extension Session {
+    @MainActor
+    func removeItem(_ item: SessionItem, in context: ModelContext, deleteEmptySession: Bool = true) throws {
+        print("🧹 removeItem called for session:", id, "item:", item.id)
+        print("   Items before:", items.map(\.id))
+
+        let foundIdx = items.firstIndex(where: { $0.id == item.id })
+        print("   Found index:", String(describing: foundIdx))
+
+        if let idx = foundIdx {
+            items.remove(at: idx)
+            print("   ✅ Removed by index at:", idx)
+        } else {
+            // Fallback: if the item isn't in this session array (shouldn't happen), try deleting it directly
+            print("   ⚠️ Item not found in session.items; deleting directly from context")
+            context.delete(item)
+        }
+
+        if deleteEmptySession && items.isEmpty {
+            print("   🗑️ Session now empty; deleting session:", id)
+            context.delete(self)
+        }
+
+        do {
+            try context.save()
+            print("   💾 Context save OK after delete")
+        } catch {
+            print("   ❌ Context save failed:", error.localizedDescription)
+            throw error
+        }
+
+        print("   Items after:", items.map(\.id))
+    }
+}
+
 // MARK: - Log (list of sessions)
 
 struct LogView: View {
@@ -398,15 +435,16 @@ struct SessionDetailView: View {
                         SessionItemRow(item: item)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
-                                    guard isDataReady else { return }
-                                    if let index = session.items.firstIndex(where: { $0.id == item.id }) {
-                                        session.items.remove(at: index)
-                                        try? context.save()
+                                    guard isDataReady else {
+                                        return
+                                    }
+                                    do {
+                                        try session.removeItem(item, in: context)
+                                    } catch {
                                     }
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
-                                
                                 NavigationLink {
                                     EditSessionItemView(item: item)
                                 } label: {
@@ -755,10 +793,16 @@ private struct CombinedDayDetailView: View {
                         SessionItemRow(item: item)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
-                                    guard isDataReady else { return }
-                                    if let index = session.items.firstIndex(where: { $0.id == item.id }) {
-                                        session.items.remove(at: index)
-                                        try? context.save()
+                                    print("🗑️ Delete tapped (Combined). isDataReady:", isDataReady, "session:", session.id, "item:", item.id)
+                                    guard isDataReady else {
+                                        print("   ⚠️ isDataReady is false; aborting delete")
+                                        return
+                                    }
+                                    do {
+                                        try session.removeItem(item, in: context)
+                                        print("   ✅ Delete completed (Combined). session.items.count now:", session.items.count)
+                                    } catch {
+                                        print("   ❌ Delete failed (Combined):", error.localizedDescription)
                                     }
                                 } label: {
                                     Label("Delete", systemImage: "trash")

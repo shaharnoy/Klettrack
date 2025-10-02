@@ -97,42 +97,28 @@ struct RootTabView: View {
                 case 0:
                     NavigationStack(path: $timerAppState.catalogNavigationPath) {
                         CatalogView()
-                            .environment(\.isDataReady, isDataReady)
-                            .environmentObject(timerAppState)
                     }
                 case 1:
                     NavigationStack(path: $timerAppState.plansNavigationPath) {
                         PlansListView()
-                            .environment(\.isDataReady, isDataReady)
-                            .environmentObject(timerAppState)
                     }
                 case 2:
                     NavigationStack(path: $timerAppState.climbNavigationPath) {
                         ClimbView()
-                            .environment(\.isDataReady, isDataReady)
-                            .environmentObject(timerAppState)
                     }
                 case 3:
                     NavigationStack(path: $timerAppState.logNavigationPath) {
                         LogView()
-                            .environment(\.isDataReady, isDataReady)
-                            .environmentObject(timerAppState)
                     }
                 case 4:
                     NavigationStack(path: $timerAppState.progressNavigationPath) {
                         ProgressViewScreen()
-                            .environment(\.isDataReady, isDataReady)
-                            .environmentObject(timerAppState)
                     }
                 case 5:
                     TimerView(planDay: timerAppState.currentPlanDay)
-                        .environment(\.isDataReady, isDataReady)
-                        .environmentObject(timerAppState)
                 default:
                     NavigationStack(path: $timerAppState.catalogNavigationPath) {
                         CatalogView()
-                            .environment(\.isDataReady, isDataReady)
-                            .environmentObject(timerAppState)
                     }
                 }
             }
@@ -140,6 +126,9 @@ struct RootTabView: View {
             // Custom tab bar
             CustomTabBar(selectedTab: $timerAppState.selectedTab)
         }
+        // Inject shared environment once for the whole subtree
+        .environment(\.isDataReady, isDataReady)
+        .environmentObject(timerAppState)
         .task {
             await initializeData()
             //SeedData.nukeAndReseed(context) // Uncomment this line to reset data during development
