@@ -575,7 +575,7 @@ struct EditSessionItemView: View {
             await initializeView()
         }
         // If plans load/update after we initialized, try to preselect the plan by id
-        .onChange(of: plans) { _ in
+        .onChange(of: plans) {
             updateSelectedPlanIfNeeded()
         }
     }
