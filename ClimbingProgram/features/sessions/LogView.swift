@@ -437,8 +437,8 @@ struct SessionDetailView: View {
     }
 }
 
-// Replace sheet-based editing with NavigationLink-based editing
 struct EditSessionItemView: View {
+    
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
@@ -456,101 +456,105 @@ struct EditSessionItemView: View {
     @State private var isInitialized = false
 
     var body: some View {
-        if !isDataReady || !isInitialized {
-            VStack(spacing: 16) {
-                ProgressView()
-                Text("Loading...")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle("Edit Exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cancel") { dismiss() }
+        Group {
+            if !isInitialized {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Loading...")
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .task {
-                await initializeView()
-            }
-        } else {
-            Form {
-                Button {
-                    showingCatalogPicker = true
-                } label: {
-                    HStack {
-                        Text("Exercise")
-                        Spacer()
-                        if let name = selectedCatalogName, !name.isEmpty {
-                            Text(name).foregroundStyle(.secondary)
-                        } else {
-                            Text("Choose…").foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Edit Exercise")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Cancel") { dismiss() }
+                    }
+                }
+            } else {
+                Form {
+                    Button {
+                        showingCatalogPicker = true
+                    } label: {
+                        HStack {
+                            Text("Exercise")
+                            Spacer()
+                            if let name = selectedCatalogName, !name.isEmpty {
+                                Text(name).foregroundStyle(.secondary)
+                            } else {
+                                Text("Choose…").foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .sheet(isPresented: $showingCatalogPicker) {
+                        SingleCatalogExercisePicker(selected: $selectedCatalogName)
+                    }
+                    
+                    // Plan selection
+                    Picker("Plan (optional)", selection: $selectedPlan) {
+                        Text("No Plan").tag(Optional<Plan>.none)
+                        ForEach(plans) { plan in
+                            Text(plan.name).tag(Optional(plan))
+                        }
+                    }
+                    
+                    Section("Details") {
+                        TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
+                        TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
+                        TextField("Weight (kg)", text: $inputWeight).keyboardType(.decimalPad)
+                        TextField("Grade (e.g., 6a+)", text: $inputGrade)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        TextField("Notes", text: $inputNotes)
+                    }
+                }
+                .navigationTitle("Edit Exercise")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Save") {
+                            guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
+                            item.exerciseName = selectedName
+                            item.planSourceId = selectedPlan?.id
+                            item.planName = selectedPlan?.name
+                            item.reps = Double(inputReps.replacingOccurrences(of: ",", with: ".")
+                                .trimmingCharacters(in: .whitespaces))
+                            item.sets = Double(inputSets.replacingOccurrences(of: ",", with: ".")
+                                .trimmingCharacters(in: .whitespaces))
+                            item.weightKg = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
+                                .trimmingCharacters(in: .whitespaces))
+                            item.grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
+                            item.notes = inputNotes.isEmpty ? nil : inputNotes
+                            try? context.save()
+                            dismiss()
                         }
                     }
                 }
-                .sheet(isPresented: $showingCatalogPicker) {
-                    SingleCatalogExercisePicker(selected: $selectedCatalogName)
-                }
-                
-                // Plan selection
-                Picker("Plan (optional)", selection: $selectedPlan) {
-                    Text("No Plan").tag(Optional<Plan>.none)
-                    ForEach(plans) { plan in
-                        Text(plan.name).tag(Optional(plan))
-                    }
-                }
-                
-                Section("Details") {
-                    TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
-                    TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
-                    TextField("Weight (kg)", text: $inputWeight).keyboardType(.decimalPad)
-                    TextField("Grade (e.g., 6a+)", text: $inputGrade)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                    TextField("Notes", text: $inputNotes)
-                }
             }
-            .navigationTitle("Edit Exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
-                        item.exerciseName = selectedName
-                        item.planSourceId = selectedPlan?.id
-                        item.planName = selectedPlan?.name
-                        item.reps = Double(inputReps.replacingOccurrences(of: ",", with: ".")
-                            .trimmingCharacters(in: .whitespaces))
-                        item.sets = Double(inputSets.replacingOccurrences(of: ",", with: ".")
-                            .trimmingCharacters(in: .whitespaces))
-                        item.weightKg = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
-                            .trimmingCharacters(in: .whitespaces))
-                        item.grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
-                        item.notes = inputNotes.isEmpty ? nil : inputNotes
-                        try? context.save()
-                        dismiss()
-                    }
-                }
-            }
+        }
+        // Initialize immediately on appear (no dependency on isDataReady)
+        .task {
+            await initializeView()
+        }
+        // If plans load/update after we initialized, try to preselect the plan by id
+        .onChange(of: plans) { _ in
+            updateSelectedPlanIfNeeded()
         }
     }
     
     @MainActor
     private func initializeView() async {
-        // Wait for data to be ready
-        while !isDataReady {
-            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
-        }
+        guard !isInitialized else { return }
         
-        // Additional small delay to ensure context is stable
-        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        // Small delay to ensure SwiftUI has mounted the view
+        try? await Task.sleep(nanoseconds: 30_000_000) // 0.03s
         
-        // Initialize form fields
+        // Initialize from the current item immediately
         selectedCatalogName = item.exerciseName
-        // Find the plan if one exists
-        if let planId = item.planSourceId {
-            selectedPlan = plans.first { $0.id == planId }
-        }
+        
+        // Preselect plan if we already have it in the query
+        updateSelectedPlanIfNeeded()
+        
         inputReps = item.reps.map { String($0) } ?? ""
         inputSets = item.sets.map { String($0) } ?? ""
         inputWeight = item.weightKg.map { String($0) } ?? ""
@@ -558,6 +562,14 @@ struct EditSessionItemView: View {
         inputNotes = item.notes ?? ""
         
         isInitialized = true
+    }
+    
+    @MainActor
+    private func updateSelectedPlanIfNeeded() {
+        guard selectedPlan == nil, let planId = item.planSourceId else { return }
+        if let match = plans.first(where: { $0.id == planId }) {
+            selectedPlan = match
+        }
     }
 }
 

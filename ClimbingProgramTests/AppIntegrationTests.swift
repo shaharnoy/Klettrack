@@ -1,4 +1,3 @@
-//
 //  AppIntegrationTests.swift
 //  klettrack tests
 //  Created by Shahar Noy on 28.08.25.
@@ -165,6 +164,76 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         XCTAssertTrue(session.items.allSatisfy { $0.planSourceId == plan.id })
     }
     
+    // create a plan with a day and chosen exercises, log them all in a session
+    // delete one logged item the same way the UI does (remove from array, delete child, save)
+    // verify count is N-1 and the removed child no longer exists
+    func testDeleteOneLoggedItemReducesCount() throws {
+        // Arrange: create a plan with a day and chosen exercises
+        let date = Calendar.current.startOfDay(for: Date())
+        let plan = Plan(name: "Test Plan", kind: .weekly, startDate: date)
+        let day = PlanDay(date: date, type: .climbingFull)
+        day.chosenExercises = ["Push-ups", "Pull-ups", "Squats"]
+        plan.days.append(day)
+        context.insert(plan)
+        try context.save()
+        
+        // Find or create a session for that day (startOfDay)
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: day.date)
+        let end = cal.date(byAdding: .day, value: 1, to: start)!
+        let fetch = FetchDescriptor<Session>(predicate: #Predicate {
+            $0.date >= start && $0.date < end
+        })
+        let session: Session
+        if let existing = try context.fetch(fetch).first {
+            session = existing
+        } else {
+            let s = Session(date: start)
+            context.insert(s)
+            try context.save()
+            session = s
+        }
+        
+        // Log all chosen exercises for that day
+        for name in day.chosenExercises {
+            let item = SessionItem(
+                exerciseName: name,
+                planSourceId: plan.id,
+                planName: plan.name,
+                reps: 10,
+                sets: 3,
+                weightKg: nil,
+                grade: nil,
+                notes: "Logged from test"
+            )
+            session.items.append(item)
+        }
+        try context.save()
+        
+        // Sanity check
+        XCTAssertEqual(session.items.count, day.chosenExercises.count)
+        
+        // Act: delete one item the same way the UI does (remove from array, delete child, save)
+        let removed = session.items.remove(at: 1)
+        context.delete(removed)
+        try context.save()
+        
+        // Refresh and assert: count is N-1
+        let sessionID = session.id
+        let refetchSession = try context.fetch(
+            FetchDescriptor<Session>(predicate: #Predicate { $0.id == sessionID })
+        ).first
+        let countAfter = refetchSession?.items.count ?? -1
+        XCTAssertEqual(countAfter, day.chosenExercises.count - 1)
+        
+        // And the removed child no longer exists
+        let removedID = removed.id
+        let removedFetch = try context.fetch(
+            FetchDescriptor<SessionItem>(predicate: #Predicate { $0.id == removedID })
+        )
+        XCTAssertTrue(removedFetch.isEmpty)
+    }
+    
     // MARK: - Error handling / recovery
     
     func testModelContextReinitializationSmoke() {
@@ -239,4 +308,3 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         }
     }
 }
-
