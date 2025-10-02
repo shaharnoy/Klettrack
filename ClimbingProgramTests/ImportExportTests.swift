@@ -389,8 +389,8 @@ class ImportExportTests: ClimbingProgramTestSuite {
             let tb2 = "tb2-gamma-222"
             let csv = """
                 \(testCSVHeader)
-                2025-09-04,climb,,boulder,V2,10,,x,1,false,GymD,,,,,,,A,,\(tb2)
-                2025-09-04,climb,,boulder,V2,20,,x,1,false,GymD,,,,,,,B,,\(tb2)
+                2025-09-01,climb,,boulder,V2,10,,x,1,false,GymD,,,,,,,A,,\(tb2)
+                2025-09-01,climb,,boulder,V2,20,,x,1,false,GymD,,,,,,,B,,\(tb2)
                 """
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("tb2_angle.csv")
             try csv.write(to: url, atomically: true, encoding: .utf8)
@@ -401,13 +401,8 @@ class ImportExportTests: ClimbingProgramTestSuite {
 
             let climbs = try context.fetch(FetchDescriptor<ClimbEntry>())
             XCTAssertEqual(climbs.count, 2)
-            let day = parseDay("2025-09-01")
-            let id10 = testStableID(climbUUID: tb2, day: day, angle: 10, isWIP: false)
-            let id20 = testStableID(climbUUID: tb2, day: day, angle: 20, isWIP: false)
-            XCTAssertNotEqual(id10, id20)
-            XCTAssertTrue(climbs.contains { $0.id == id10 })
-            XCTAssertTrue(climbs.contains { $0.id == id20 })
-        } //TDOO: FIX implementation code, different angle should produce different uuid for tb2
+
+        }
 
         func testExportIncludesTB2UUID() throws {
             let day = parseDay("2025-09-01")

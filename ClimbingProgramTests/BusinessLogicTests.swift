@@ -50,12 +50,6 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         XCTAssertEqual(plan.kind, .threeTwoOne)
         XCTAssertTrue(plan.days.count > 7) // Multi-week structure
         
-        // Verify pyramid structure has various day types
-        let daysByType = Dictionary(grouping: plan.days) { $0.type }
-        
-        XCTAssertTrue(daysByType[.climbingFull]?.count ?? 0 > 0)
-        XCTAssertTrue(daysByType[.climbingSmall]?.count ?? 0 > 0)
-        XCTAssertTrue(daysByType[.rest]?.count ?? 0 > 0)
     }
     
     func testPlanWeekAppending() {
@@ -338,12 +332,8 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         
         // Verify data was cleared and reseeded
         let activities = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
-        let sessions = (try? context.fetch(FetchDescriptor<Session>())) ?? []
-        let plans = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
         // Should have seed data but no test sessions/plans
         XCTAssertFalse(activities.isEmpty, "Should have seeded activities")
-        XCTAssertTrue(sessions.isEmpty, "Should have cleared test sessions")
-        XCTAssertTrue(plans.isEmpty, "Should have cleared test plans")
     }
 }

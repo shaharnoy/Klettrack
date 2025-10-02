@@ -72,10 +72,11 @@ final class LogCSVTests: BaseSwiftDataTestCase {
         let row1 = "\(day),climb,,Boulder,6A,20,Red,Power,3,false,Ostbloc,,,,,,,,\(climbId.uuidString),"
         let row1Update = "\(day),climb,,Boulder,6A+,25,Blue,Power,4,true,Ostbloc,,,,,,,,\(climbId.uuidString),"
         
-        // 2) With TB2 uuid (no climb_id)
+        // 2) With TB2 uuid and climb_id
         let tb2 = "tb2-uuid-123"
-        let row2 = "\(day),climb,,Boulder,6B,30,Green,Technical,2,false,Ostbloc,,,,,,,,,\(tb2)"
-        let row2Update = "\(day),climb,,Boulder,6B+,35,Green,Technical,2,false,Ostbloc,,,,,,,,,\(tb2)"
+        let climbId2 = UUID()
+        let row2 = "\(day),climb,,Boulder,6B,30,Green,Technical,2,false,Ostbloc,,,,,,,,\(climbId2.uuidString),\(tb2)"
+        let row2Update = "\(day),climb,,Boulder,6B+,35,Green,Technical,2,false,Ostbloc,,,,,,,,\(climbId2.uuidString),\(tb2)"
         
         func writeCSV(_ rows: [String]) throws -> URL {
             let text = ([header] + rows).joined(separator: "\n")

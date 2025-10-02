@@ -53,24 +53,8 @@ class BaseSwiftDataTestCase: XCTestCase {
     
     @discardableResult
     func createTestPlan(name: String = "Plan", kind: PlanKind = .weekly, start: Date = Date()) -> Plan {
-        let p = Plan(name: name, kind: kind, startDate: start)
-        // Populate days based on kind
-        let calendar = Calendar.current
-        let dayCount: Int = {
-            switch kind {
-            case .daily: return 1
-            case .weekly: return 7
-            case .threeTwoOne: return 6 * 7
-            case .fourThreeTwoOne: return 10 * 7
-            }
-        }()
-        for offset in 0..<dayCount {
-            if let date = calendar.date(byAdding: .day, value: offset, to: start) {
-                p.days.append(PlanDay(date: date, type: .rest))
-            }
-        }
-        context.insert(p)
-        return p
+        // Delegate to the same factory the app uses to avoid divergence
+        PlanFactory.create(name: name, kind: kind, start: start, in: context)
     }
     
     // MARK: - Sessions

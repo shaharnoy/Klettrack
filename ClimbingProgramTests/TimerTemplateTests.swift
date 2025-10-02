@@ -9,19 +9,23 @@ final class TimerTemplateTests: BaseSwiftDataTestCase {
         // base per cycle = 180, rest between intervals = 4 * 60 = 240
         // total = (180 * 5) + 240 = 900 + 240 = 1140
         let tmpl = TimerTemplate(
-            name: "Repeaters",
+            name: "One-Arm, One-Leg",
             templateDescription: nil,
             totalTimeSeconds: nil,
             isRepeating: true,
             repeatCount: 5,
             restTimeBetweenIntervals: 60
         )
-        tmpl.intervals.append(TimerInterval(
-            name: "Set",
+        
+        let tmplinterval = TimerInterval(
+            name: "One-Arm Hold",
             workTimeSeconds: 10,
             restTimeSeconds: 20,
-            repetitions: 6
-        ))
+            repetitions: 6,
+            order: 0
+        )
+        tmpl.intervals.append(tmplinterval)
+
         context.insert(tmpl)
         XCTAssertEqual(tmpl.effectiveTotalTimeSeconds, 1140)
     }

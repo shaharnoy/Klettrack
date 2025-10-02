@@ -164,7 +164,8 @@ final class TimerTemplate {
     var intervals: [TimerInterval] = []
     var isRepeating: Bool
     var repeatCount: Int?
-    var restTimeBetweenIntervals: Int? // Rest time between different intervals
+    /// Rest time between repeated cycles (applied between repeats when isRepeating is true)
+    var restTimeBetweenIntervals: Int?
     
     // Metadata
     var createdDate: Date
@@ -201,20 +202,19 @@ final class TimerTemplate {
         // Otherwise, calculate from intervals
         guard !intervals.isEmpty else { return nil }
         
-        let intervalTime = intervals.reduce(0) { total, interval in
+        // Per-cycle time from configured intervals
+        let perCycleTime = intervals.reduce(0) { total, interval in
             let singleCycleTime = (interval.workTimeSeconds + interval.restTimeSeconds) * interval.repetitions
             return total + singleCycleTime
         }
         
-        // Add rest time between intervals (if any)
-        let restBetweenTime = intervals.count > 1 ? (restTimeBetweenIntervals ?? 0) * (intervals.count - 1) : 0
+        // Handle repeats and rest between cycles (repeats)
+        guard isRepeating, let repeats = repeatCount, repeats > 1 else {
+            return perCycleTime
+        }
         
-        let baseTime = intervalTime + restBetweenTime
-        
-        // Multiply by repeat count if repeating
-        let totalRepeats = isRepeating ? (repeatCount ?? 1) : 1
-        
-        return baseTime * totalRepeats
+        let restBetweenCycles = (restTimeBetweenIntervals ?? 0) * (repeats - 1)
+        return (perCycleTime * repeats) + restBetweenCycles
     }
 }
 

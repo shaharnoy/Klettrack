@@ -137,7 +137,8 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         XCTAssertFalse(exercises.isEmpty)
         
         let exercise = exercises.first!
-        let plan = createTestPlan(name: "Journey Plan", kind: .weekly, start: Date())
+        let startDate = Date()
+        let plan = PlanFactory.create(name: "Journey Plan", kind: .weekly, start: startDate, in: context)
         plan.days.first?.chosenExercises.append(exercise.name)
         
         try context.save()

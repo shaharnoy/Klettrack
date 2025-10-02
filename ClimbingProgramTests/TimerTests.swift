@@ -34,11 +34,5 @@ class TimerTests: BaseSwiftDataTestCase {
         timerManager = nil
         super.tearDown()
     }
-    
-    // The rest of your TimerTests content can remain as-is, since
-    // createTestTimerTemplate(...) is now provided by BaseSwiftDataTestCase.
-    // If any test refers to missing types, we can adjust after a test run.
-    
-    // ... keep all existing tests from your TimerTests file here unchanged ...
 }
 
