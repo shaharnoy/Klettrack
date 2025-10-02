@@ -116,7 +116,7 @@ Just create a branch, commit your changes, add tests if applicable, and open a P
 
 Klettrack exercise catalog is inspired by the climbing and training principles shared by:  
 - [Eric Hörst – Training for Climbing](https://trainingforclimbing.com/)  
-- *Training for Climbing* [book] (https://physivantage.com/products/training-for-climbing)  
+- *Training for Climbing* [book](https://physivantage.com/products/training-for-climbing)  
 A huge thanks to Eric for his decades of work advancing training knowledge in the climbing community.
 
 
