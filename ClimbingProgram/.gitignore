@@ -1,6 +1,19 @@
 
 # Xcode
+# macOS
 .DS_Store
+
+# Xcode user-specific stuff (never commit)
+*.xcuserstate
+*.xcbkptlist
+xcuserdata/
+ClimbingProgram.xcodeproj/xcuserdata/
+ClimbingProgram.xcodeproj/project.xcworkspace/xcuserdata/
+**/xcschemes/xcschememanagement.plist
+
+*.xcscheme
+!**/xcshareddata/xcschemes/*.xcscheme
+
 build/
 DerivedData/
 xcuserdata/
