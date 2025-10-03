@@ -33,7 +33,11 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				.gitignore,
-				LICENSE.md,
+				docs/media/addExerciseAndLog.gif,
+				docs/media/logaClimb.gif,
+				docs/media/Stats.gif,
+				docs/media/synctb2.gif,
+				docs/media/Timer_repeater.gif,
 			);
 			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
 		};

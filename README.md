@@ -25,23 +25,22 @@ SwiftUI-based iOS app for planning, logging, and analyzing climbing and training
 
 ## 📱 Demos
 
+
 <p align="center">
-  <a href="https://youtube.com/shorts/Z2EATMizRM0" target="_blank" title="Climb demo">
-    <img src="https://img.youtube.com/vi/Z2EATMizRM0/hqdefault.jpg" width="300" alt="Klettrack – Climb demo">
-  </a>
-  <a href="https://youtube.com/shorts/WMj7tOfgHJE" target="_blank" title="Train demo" style="margin-left:12px">
-    <img src="https://img.youtube.com/vi/WMj7tOfgHJE/hqdefault.jpg" width="300" alt="Klettrack – Train demo">
-  </a>
-</p>
-<p align="center">
-  <a href="https://youtube.com/shorts/J-eWVT-WLcE" target="_blank" title="Timer demo">
-    <img src="https://img.youtube.com/vi/J-eWVT-WLcE/hqdefault.jpg" width="300" alt="Klettrack – Timer demo">
-  </a>
-  <a href="https://youtube.com/shorts/SYKjRVYiIfc" target="_blank" title="Stats demo" style="margin-left:12px">
-    <img src="https://img.youtube.com/vi/SYKjRVYiIfc/hqdefault.jpg" width="300" alt="Klettrack – Stats demo">
-  </a>
+  <img src="docs/media/logaClimb.gif" width="300" alt="Log a Climb">
+    <img src="docs/media/synctb2.gif" width="300" alt="Sync Tensionboard 2">
+  
+  
 </p>
 
+<p align="center">
+    <img src="docs/media/addExerciseAndLog.gif" width="300" alt="Add Exercise and Log">
+      <img src="docs/media/Timer_repeater.gif" width="300" alt="Timer Repeater">
+</p>
+
+<p align="center">
+    <img src="docs/media/Stats.gif" width="300" alt="Stats">
+</p>
 
 ---
 ## 📖 Table of Contents
