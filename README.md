@@ -27,20 +27,15 @@ SwiftUI-based iOS app for planning, logging, and analyzing climbing and training
 
 <p align="center">
   <video width="300" controls muted playsinline>
-    <source src="https://raw.githubusercontent.com/shaharnoy/Klettrack/main/ClimbingProgram/docs/media/demo_climb.MP4" type="video/mp4" />
+    <source src="https://github.com/user-attachments/assets/754ac096-8f0e-4a40-a062-44298d054fcf" type="video/mp4" />
+    Your browser does not support the video tag.
   </video>
   <video width="300" controls muted playsinline>
-    <source src="https://raw.githubusercontent.com/shaharnoy/Klettrack/main/ClimbingProgram/docs/media/demo_train.MP4" type="video/mp4" />
+    <source src="https://github.com/user-attachments/assets/a3e9b448-fedb-49e1-ab4d-be226b871b1d" type="video/mp4" />
+    Your browser does not support the video tag.
   </video>
 </p>
-<p align="center">
-  <video width="300" controls muted playsinline>
-    <source src="https://raw.githubusercontent.com/shaharnoy/Klettrack/main/ClimbingProgram/docs/media/demo_timer.MP4" type="video/mp4" />
-  </video>
-  <video width="300" controls muted playsinline>
-    <source src="https://raw.githubusercontent.com/shaharnoy/Klettrack/main/ClimbingProgram/docs/media/demo_progress.MP4" type="video/mp4" />
-  </video>
-</p>
+
 
 
 ---
