@@ -26,13 +26,22 @@ SwiftUI-based iOS app for planning, logging, and analyzing climbing and training
 ## 📱 Demos
 
 <p align="center">
-  <video src="ClimbingProgram/docs/media/demo_climn.MP4" width="300" autoplay loop muted playsinline></video>
-  <video src="ClimbingProgram/docs/media/demo_train.MP4" width="300" autoplay loop muted playsinline></video>
+  <video width="300" controls muted playsinline>
+    <source src="https://raw.githubusercontent.com/shaharnoy/Klettrack/main/ClimbingProgram/docs/media/demo_climb.MP4" type="video/mp4" />
+  </video>
+  <video width="300" controls muted playsinline>
+    <source src="https://raw.githubusercontent.com/shaharnoy/Klettrack/main/ClimbingProgram/docs/media/demo_train.MP4" type="video/mp4" />
+  </video>
 </p>
 <p align="center">
-  <video src="ClimbingProgram/docs/media/demo_timer.MP4" width="300" autoplay loop muted playsinline></video>
-  <video src="ClimbingProgram/docs/media/demo_progress.MP4" width="300" autoplay loop muted playsinline></video>
+  <video width="300" controls muted playsinline>
+    <source src="https://raw.githubusercontent.com/shaharnoy/Klettrack/main/ClimbingProgram/docs/media/demo_timer.MP4" type="video/mp4" />
+  </video>
+  <video width="300" controls muted playsinline>
+    <source src="https://raw.githubusercontent.com/shaharnoy/Klettrack/main/ClimbingProgram/docs/media/demo_progress.MP4" type="video/mp4" />
+  </video>
 </p>
+
 
 ---
 ## 📖 Table of Contents
