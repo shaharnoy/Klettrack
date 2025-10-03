@@ -66,12 +66,12 @@ This is a **community-driven project**: created for climbers, shaped by feedback
 ## 📖 Table of Contents
 
 * [Overview](#overview)
-* [Screenshots](#screenshots)
 * [Requirements](#requirements)
 * [Getting Started](#getting-started)
 * [Project Structure](#project-structure)
 * [Testing](#testing)
 * [Contributing](#contributing)
+* [Credits](#credits)
 * [License](#license)
 
 ---
@@ -161,7 +161,7 @@ Klettrack exercise catalog is inspired by the climbing and training principles s
 - [Eric Hörst – Training for Climbing](https://trainingforclimbing.com/)  
 - *Training for Climbing* [book] (https://physivantage.com/products/training-for-climbing)  
 
-Klettrack’s boards integration is inspired by [BoardLib](https://github.com/lemeryfertitta/BoardLib) by [@lemeryfertitta](https://github.com/lemeryfertitta).
+Klettrack’s boards integration sourced from [BoardLib](https://github.com/lemeryfertitta/BoardLib) by [@lemeryfertitta](https://github.com/lemeryfertitta).
 
 
 
