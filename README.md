@@ -26,16 +26,21 @@ SwiftUI-based iOS app for planning, logging, and analyzing climbing and training
 ## 📱 Demos
 
 <p align="center">
-  <video width="300" controls muted playsinline>
-    <source src="https://github.com/user-attachments/assets/754ac096-8f0e-4a40-a062-44298d054fcf" type="video/mp4" />
-    Your browser does not support the video tag.
-  </video>
-  <video width="300" controls muted playsinline>
-    <source src="https://github.com/user-attachments/assets/a3e9b448-fedb-49e1-ab4d-be226b871b1d" type="video/mp4" />
-    Your browser does not support the video tag.
-  </video>
+  <a href="https://youtube.com/shorts/Z2EATMizRM0" target="_blank" title="Climb demo">
+    <img src="https://img.youtube.com/vi/Z2EATMizRM0/hqdefault.jpg" width="300" alt="Klettrack – Climb demo">
+  </a>
+  <a href="https://youtube.com/shorts/WMj7tOfgHJE" target="_blank" title="Train demo" style="margin-left:12px">
+    <img src="https://img.youtube.com/vi/WMj7tOfgHJE/hqdefault.jpg" width="300" alt="Klettrack – Train demo">
+  </a>
 </p>
-
+<p align="center">
+  <a href="https://youtube.com/shorts/J-eWVT-WLcE" target="_blank" title="Timer demo">
+    <img src="https://img.youtube.com/vi/J-eWVT-WLcE/hqdefault.jpg" width="300" alt="Klettrack – Timer demo">
+  </a>
+  <a href="https://youtube.com/shorts/SYKjRVYiIfc" target="_blank" title="Stats demo" style="margin-left:12px">
+    <img src="https://img.youtube.com/vi/SYKjRVYiIfc/hqdefault.jpg" width="300" alt="Klettrack – Stats demo">
+  </a>
+</p>
 
 
 ---
