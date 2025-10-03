@@ -33,10 +33,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				.gitignore,
-				docs/media/demo_climb.MP4,
-				docs/media/demo_progress.MP4,
-				docs/media/demo_timer.MP4,
-				docs/media/demo_train.MP4,
 				LICENSE.md,
 			);
 			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
