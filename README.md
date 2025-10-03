@@ -1,15 +1,9 @@
 # Klettrack
 
-SwiftUI-based iOS app for planning, logging, and analyzing climbing and training.
+SwiftUI-based iOS app for planning, logging, and analyzing climbing and training.  
+This is a **community-driven project**: created for climbers, shaped by feedback, and it will **always remain free**.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)  
-![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)  
-![iOS](https://img.shields.io/badge/iOS-17+-lightgrey.svg)  
-![Xcode](https://img.shields.io/badge/Xcode-15.3+-blue.svg)  
-
-* **Platforms:** iOS 17+
-* **Language:** Swift 5.9+
-* **Frameworks:** SwiftUI, SwiftData, AVFoundation (audio cues), Charts (for analytics)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)  ![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)  ![iOS](https://img.shields.io/badge/iOS-17+-lightgrey.svg)   ![Xcode](https://img.shields.io/badge/Xcode-15.3+-blue.svg)  
 
 ---
 
@@ -23,26 +17,52 @@ SwiftUI-based iOS app for planning, logging, and analyzing climbing and training
 
 ---
 
-## 📱 Demos
+## 📱 Some Examples
 
+<table>
+  <tr>
+    <td align="center" width="300">
+      <b>Log a Climb</b><br>
+      <img src="ClimbingProgram/docs/media/logaClimb.gif" width="300" alt="Log a Climb">
+    </td>
+    <td width="40" align="center">|</td>
+    <td align="center" width="300">
+      <b>Sync Tension Board</b><br>
+      <img src="ClimbingProgram/docs/media/synctb2.gif" width="300" alt="Sync TB2">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="300">
+      <b>Add Exercise and Log</b><br>
+      <img src="ClimbingProgram/docs/media/addExerciseAndLog.gif" width="300" alt="Add Exercise and Log">
+    </td>
+    <td width="40" align="center">|</td>
+    <td align="center" width="300">
+      <b>Timer Repeater</b><br>
+      <img src="ClimbingProgram/docs/media/Timer_repeater.gif" width="300" alt="Timer Repeater">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="3">
+      <b>Stats</b><br>
+      <img src="ClimbingProgram/docs/media/Stats.gif" width="300" alt="Stats">
+    </td>
+  </tr>
+</table>
+---
 
-<p align="center">
-  <img src="docs/media/logaClimb.gif" width="300" alt="Log a Climb">
-    <img src="docs/media/synctb2.gif" width="300" alt="Sync Tensionboard 2">
-  
-  
-</p>
+## 🗺️ Roadmap
 
-<p align="center">
-    <img src="docs/media/addExerciseAndLog.gif" width="300" alt="Add Exercise and Log">
-      <img src="docs/media/Timer_repeater.gif" width="300" alt="Timer Repeater">
-</p>
-
-<p align="center">
-    <img src="docs/media/Stats.gif" width="300" alt="Stats">
-</p>
+- [ ] Get initial traction and validate community need
+- [ ] Publish the app to the App Store  
+      _Note: I’m a data engineer (not a professional iOS dev). Much of the code was written with AI assistance; a refactor will likely be required to meet App Store standards._
+- [ ] Add Lock Screen timer widget
+- [ ] Extend integration to more system boards
+- [ ] Integrate with outdoor tracking platforms (e.g., theCrag.com, 27crags, etc.)
+- [ ] Incorporate more feedback (open to issues & PRs!)
 
 ---
+
 ## 📖 Table of Contents
 
 * [Overview](#overview)
