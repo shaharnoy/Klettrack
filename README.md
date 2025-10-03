@@ -2,7 +2,15 @@
 
 SwiftUI-based iOS app for planning, logging, and analyzing climbing and training.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)  ![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)  ![iOS](https://img.shields.io/badge/iOS-17+-lightgrey.svg)  ![Xcode](https://img.shields.io/badge/Xcode-15.3+-blue.svg)  
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)  
+![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)  
+![iOS](https://img.shields.io/badge/iOS-17+-lightgrey.svg)  
+![Xcode](https://img.shields.io/badge/Xcode-15.3+-blue.svg)  
+
+* **Platforms:** iOS 17+
+* **Language:** Swift 5.9+
+* **Frameworks:** SwiftUI, SwiftData, AVFoundation (audio cues), Charts (for analytics)
+
 ---
 
 ## ✨ Key Features
@@ -36,12 +44,6 @@ Klettrack helps climbers and trainers to:
 * Analyze progress with charts and stats.
 * Use timers with audio cues for interval training.
 * Export/import training data via CSV.
-
----
-
-## 📱 Screenshots
-
-*Add screenshots or GIFs of the app here (recommended: catalog, plan builder, session logging, analytics, timer).*
 
 ---
 
@@ -80,7 +82,7 @@ ClimbingProgram
 ├── features/             # Modular feature groups
 ├── shared/               # Reusable UI components
 ├── Assets.xcassets       # Images, colors, symbols
-ClimbingProgramTests
+└── ClimbingProgramTests/ # Unit & integration tests
 ```
 
 ---
@@ -114,10 +116,12 @@ Just create a branch, commit your changes, add tests if applicable, and open a P
 
 ## 🙌 Credits  
 
-Klettrack exercise catalog is inspired by the climbing and training principles shared by:  
+Klettrack exercise catalog is inspired by the climbing and training principles shared by: 
 - [Eric Hörst – Training for Climbing](https://trainingforclimbing.com/)  
-- *Training for Climbing* [book](https://physivantage.com/products/training-for-climbing)  
-A huge thanks to Eric for his decades of work advancing training knowledge in the climbing community.
+- *Training for Climbing* [book] (https://physivantage.com/products/training-for-climbing)  
+
+Klettrack’s boards integration is inspired by [BoardLib](https://github.com/lemeryfertitta/BoardLib) by [@lemeryfertitta](https://github.com/lemeryfertitta).
+
 
 
 ## 📄 License  
