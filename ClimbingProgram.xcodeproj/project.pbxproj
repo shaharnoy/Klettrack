@@ -30,6 +30,7 @@
 		532A871B2E8F1130002781AE /* Exceptions for "ClimbingProgram" folder in "ClimbingProgram" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				.gitignore,
 				LICENSE.md,
 			);
 			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
