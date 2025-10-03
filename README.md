@@ -21,7 +21,20 @@ SwiftUI-based iOS app for planning, logging, and analyzing climbing and training
 - Track progress **over time** with analytics, filters, and charts.  
 - **Privacy-first:** all data stays local on your device — nothing leaves your phone.  
 
+---
 
+## 📱 Demos
+
+<p align="center">
+  <video src="ClimbingProgram/docs/media/demo_climn.MP4" width="300" autoplay loop muted playsinline></video>
+  <video src="ClimbingProgram/docs/media/demo_train.MP4" width="300" autoplay loop muted playsinline></video>
+</p>
+<p align="center">
+  <video src="ClimbingProgram/docs/media/demo_timer.MP4" width="300" autoplay loop muted playsinline></video>
+  <video src="ClimbingProgram/docs/media/demo_progress.MP4" width="300" autoplay loop muted playsinline></video>
+</p>
+
+---
 ## 📖 Table of Contents
 
 * [Overview](#overview)
@@ -82,7 +95,7 @@ ClimbingProgram
 ├── features/             # Modular feature groups
 ├── shared/               # Reusable UI components
 ├── Assets.xcassets       # Images, colors, symbols
-└── ClimbingProgramTests/ # Unit & integration tests
+ClimbingProgramTests
 ```
 
 ---

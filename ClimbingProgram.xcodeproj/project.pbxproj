@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		532A871D2E8F1648002781AE /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 532A871C2E8F1642002781AE /* .gitignore */; };
+		532A872D2E8FC278002781AE /* .gitattributes in Resources */ = {isa = PBXBuildFile; fileRef = 532A872C2E8FC276002781AE /* .gitattributes */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -23,6 +24,7 @@
 /* Begin PBXFileReference section */
 		53229DCE2E573C2200D1A229 /* klettrack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = klettrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		532A871C2E8F1642002781AE /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		532A872C2E8FC276002781AE /* .gitattributes */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitattributes; sourceTree = "<group>"; };
 		536190D72E5B1211008A8555 /* ClimbingProgramTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClimbingProgramTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -74,6 +76,7 @@
 		53229DC52E573C2200D1A229 = {
 			isa = PBXGroup;
 			children = (
+				532A872C2E8FC276002781AE /* .gitattributes */,
 				53229DD02E573C2200D1A229 /* ClimbingProgram */,
 				536190D82E5B1211008A8555 /* ClimbingProgramTests */,
 				53229DCF2E573C2200D1A229 /* Products */,
@@ -183,6 +186,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				532A871D2E8F1648002781AE /* .gitignore in Resources */,
+				532A872D2E8FC278002781AE /* .gitattributes in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
