@@ -1040,8 +1040,8 @@ struct PlanDayEditor: View {
 
                 LabeledContent {
                     TextField("e.g. 6a+", text: $inputGrade)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
                         .multilineTextAlignment(.trailing)
                 } label: {
                     Label("Grade", systemImage: "star")
@@ -1792,3 +1792,4 @@ private struct ActivityGroupView: View {
         }
     }
 }
+

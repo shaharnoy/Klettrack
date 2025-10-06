@@ -9,6 +9,7 @@ import SwiftData
 struct ClimbView: View {
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.undoManager) private var undoManager
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
     @State private var showingAddClimb = false
     @State private var editingClimb: ClimbEntry? = nil
@@ -28,6 +29,15 @@ struct ClimbView: View {
     @State private var showingBoardPicker = false
     @State private var pendingBoard: TB2Client.Board? = nil
     
+    // NEW: visible Undo banner state
+    @State private var showUndoBanner = false
+    @State private var undoBannerTask: Task<Void, Never>? = nil
+    @State private var undoBannerMessage: String = "Climb deleted"
+    
+    // Track last-deleted item to validate restore on undo
+    @State private var lastDeletedClimbID: UUID? = nil
+    @State private var lastDeletedClimbSnapshot: ClimbEntrySnapshot? = nil
+    
     // Computed filtered climbs
     private var filteredClimbs: [ClimbEntry] {
         var result = climbEntries
@@ -46,6 +56,21 @@ struct ClimbView: View {
             get: { syncMessage != nil },
             set: { if !$0 { syncMessage = nil } }
         )
+    }
+
+    // MARK: - Debug helper
+    private func debugPtr(_ any: AnyObject?) -> String {
+        guard let any else { return "nil" }
+        return String(describing: Unmanaged.passUnretained(any).toOpaque())
+    }
+    private func dumpUndoContext(_ label: String) {
+        let envUM = undoManager
+        let ctxUM = modelContext.undoManager
+        let ctxPtr = debugPtr(modelContext)
+        let envPtr = debugPtr(envUM)
+        let ctxUMPtr = debugPtr(ctxUM)
+        let thread = Thread.isMainThread ? "main" : "background"
+        print("UndoCtx[\(label)] thread=\(thread) modelContext=\(ctxPtr) envUM=\(envPtr) ctxUM=\(ctxUMPtr)")
     }
     
     var body: some View {
@@ -144,11 +169,48 @@ struct ClimbView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+        // Visible Undo banner overlay at the bottom
+        .overlay(alignment: .bottom) {
+            if showUndoBanner {
+                UndoBanner(
+                    message: undoBannerMessage,
+                    onUndo: { handleUndoTap() },
+                    onDismiss: {
+                        undoBannerTask?.cancel()
+                        showUndoBanner = false
+                    }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
+        }
         // Board picker dialog
         .confirmationDialog("Sync", isPresented: $showingBoardPicker, titleVisibility: .visible) {
             Button("TB2") { startSync(board: .tension) }
             Button("Kilter") { startSync(board: .kilter) }
             Button("Cancel", role: .cancel) { }
+        }
+        // Attach the scene's UndoManager to SwiftData so deletes/edits are undoable
+        .onAppear {
+            dumpUndoContext("onAppear.before")
+            // Only set if we have one, or keep whatever the attachUndoManager modifier provided
+            let assigned = undoManager ?? UndoManager()
+            modelContext.undoManager = assigned
+            dumpUndoContext("onAppear.after")
+        }
+        // Log when isDataReady flips; re-attach if needed
+        .onChange(of: isDataReady) { _, newValue in
+            dumpUndoContext("isDataReady.change")
+            if modelContext.undoManager == nil {
+                let assigned = undoManager ?? UndoManager()
+                modelContext.undoManager = assigned
+                dumpUndoContext("isDataReady.change.afterAssign")
+            }
+        }
+        // Track list changes for context
+        .onChange(of: climbEntries.count) { _, newCount in
+            dumpUndoContext("entries.count.change")
         }
     }
     
@@ -172,7 +234,10 @@ struct ClimbView: View {
     private var addClimbSection: some View {
         Section {
             Button {
-                guard isDataReady else { return }
+                guard isDataReady else {
+                    print("debug:AddClimb tapped while isDataReady=false — ignoring")
+                    return
+                }
                 showingAddClimb = true
             } label: {
                 Text("Log a Climb")
@@ -230,7 +295,10 @@ struct ClimbView: View {
     // MARK: - Actions
     
     private func onSyncTapped() {
-        guard isDataReady else { return }
+        guard isDataReady else {
+            print("debug:Sync tapped while isDataReady=false — ignoring")
+            return
+        }
         showingBoardPicker = true
     }
     
@@ -326,9 +394,136 @@ struct ClimbView: View {
     
     private func deleteClimb(_ climb: ClimbEntry) {
         withAnimation {
+            dumpUndoContext("deleteClimb.begin")
+            // Ensure we have an UndoManager attached
+            
+            let assigned = undoManager ?? UndoManager()
+            modelContext.undoManager = assigned
+            dumpUndoContext("deleteClimb.afterAssign")
+
+            modelContext.undoManager?.beginUndoGrouping()
+            modelContext.undoManager?.setActionName("Delete Climb")
+            
+            // Remember which item we deleted (snapshot for robust fallback)
+            lastDeletedClimbID = climb.id
+            lastDeletedClimbSnapshot = ClimbEntrySnapshot(from: climb)
+            // Perform delete
             modelContext.delete(climb)
-            try? modelContext.save()
+            modelContext.undoManager?.endUndoGrouping()
+            do {
+                try modelContext.save()
+            } catch {
+                print("Save after delete failed: \(error)")
+            }
+            // Show visible Undo banner for 10 seconds
+            showUndoPrompt(message: "Climb deleted")
         }
+    }
+    
+    private func showUndoPrompt(message: String) {
+        undoBannerMessage = message
+        showUndoBanner = true
+        // Cancel any existing timer and schedule a new auto-dismiss in 10 seconds
+        undoBannerTask?.cancel()
+        undoBannerTask = Task {
+            try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
+            await MainActor.run {
+                if showUndoBanner {
+                    showUndoBanner = false
+                }
+            }
+        }
+    }
+
+    private func handleUndoTap() {
+        dumpUndoContext("onUndo.begin")
+        undoBannerTask?.cancel()
+        showUndoBanner = false
+
+        // Perform undo via the attached UndoManager
+        modelContext.undoManager?.undo()
+
+        // Save after undo
+        do {
+            try modelContext.save()
+        } catch {
+            print("Save after undo failed: \(error)")
+        }
+
+        // Validate restore; if not restored, fall back to snapshot
+        guard let id = lastDeletedClimbID else {
+            dumpUndoContext("onUndo.noLastDeletedID")
+            return
+        }
+
+        do {
+            let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == id })
+            let match = try modelContext.fetch(fetch).first
+
+            if match == nil, let snap = lastDeletedClimbSnapshot {
+                let restored = ClimbEntry(
+                    id: snap.id,
+                    climbType: snap.climbType,
+                    grade: snap.grade,
+                    angleDegrees: snap.angleDegrees,
+                    style: snap.style,
+                    attempts: snap.attempts,
+                    isWorkInProgress: snap.isWorkInProgress,
+                    isPreviouslyClimbed: snap.isPreviouslyClimbed,
+                    holdColor: snap.holdColor,
+                    gym: snap.gym,
+                    notes: snap.notes,
+                    dateLogged: snap.dateLogged,
+                    tb2ClimbUUID: snap.tb2ClimbUUID
+                )
+                modelContext.insert(restored)
+                try modelContext.save()
+            }
+        } catch {
+            print("Fetch/restore after undo failed: \(error)")
+        }
+
+        // Yield one turn to allow @Query to refresh
+        Task { @MainActor in
+            await Task.yield()
+            _ = climbEntries.contains(where: { $0.id == id })
+        }
+
+        dumpUndoContext("onUndo.end")
+    }
+}
+
+// MARK: - Snapshot of a climb for robust undo fallback
+
+private struct ClimbEntrySnapshot {
+    let id: UUID
+    let climbType: ClimbType
+    let grade: String
+    let angleDegrees: Int?
+    let style: String
+    let attempts: String?
+    let isWorkInProgress: Bool
+    let isPreviouslyClimbed: Bool?
+    let holdColor: HoldColor?
+    let gym: String
+    let notes: String?
+    let dateLogged: Date
+    let tb2ClimbUUID: String?
+    
+    init(from c: ClimbEntry) {
+        self.id = c.id
+        self.climbType = c.climbType
+        self.grade = c.grade
+        self.angleDegrees = c.angleDegrees
+        self.style = c.style
+        self.attempts = c.attempts
+        self.isWorkInProgress = c.isWorkInProgress
+        self.isPreviouslyClimbed = c.isPreviouslyClimbed
+        self.holdColor = c.holdColor
+        self.gym = c.gym
+        self.notes = c.notes
+        self.dateLogged = c.dateLogged
+        self.tb2ClimbUUID = c.tb2ClimbUUID
     }
 }
 
@@ -558,8 +753,8 @@ struct EditClimbView: View {
                 Section("Details") {
                     DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
                     TextField("Grade", text: $grade)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
                     TextField("Angle°", text: $angleDegrees)
                         .keyboardType(.numberPad)
                     TextField("Attempts", text: $attempts)
@@ -678,7 +873,7 @@ struct EditClimbView: View {
             try modelContext.save()
             dismiss()
         } catch {
-            print("Error saving climb changes: \(error)")
+            print("Save in EditClimbView failed: \(error)")
         }
     }
     
@@ -777,11 +972,11 @@ private extension Path {
             let curr = points[i]
             let next = points[(i + 1) % n]
             let v1 = CGVector(dx: curr.x - prev.x, dy: curr.y - prev.y)
-            let v2 = CGVector(dx: next.x - curr.x, dy: next.y - curr.y)
+            let v2 = CGVector(dx: next.x - curr.x, dy: curr.y - next.y)
             let len1 = max(hypot(v1.dx, v1.dy), 0.0001)
             let len2 = max(hypot(v2.dx, v2.dy), 0.0001)
             let inset1 = CGPoint(x: curr.x - v1.dx/len1 * corner, y: curr.y - v1.dy/len1 * corner)
-            let inset2 = CGPoint(x: curr.x + v2.dx/len2 * corner, y: curr.y + v2.dy/len2 * corner)
+            let inset2 = CGPoint(x: curr.x + v2.dx/len2 * corner, y: curr.y + v1.dy/len2 * corner)
             if i == 0 { move(to: inset1) } else { addLine(to: inset1) }
             addQuadCurve(to: inset2, control: curr)
         }
@@ -833,8 +1028,79 @@ private struct TB2CredentialsSheet: View {
     }
 }
 
+// MARK: - Undo banner view
+
+private struct UndoBanner: View {
+    let message: String
+    let onUndo: () -> Void
+    let onDismiss: () -> Void
+    // Countdown duration (defaults to 10s to match auto-dismiss)
+    var duration: TimeInterval = 10
+    
+    @State private var progress: CGFloat = 1.0
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+                .foregroundStyle(.secondary)
+            Text(message)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer()
+            Button("Undo") {
+                onUndo()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+            
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: Capsule())
+        // Embedded countdown progress bar at the bottom of the capsule
+        .overlay(alignment: .bottomLeading) {
+            GeometryReader { proxy in
+                let barHeight: CGFloat = 3
+                // Track
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.12))
+                    Capsule()
+                        .fill(Color.accentColor.opacity(0.85))
+                        .frame(width: max(0, proxy.size.width * progress))
+                        .animation(.linear(duration: duration), value: progress)
+                }
+                .frame(height: barHeight)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+                .allowsHitTesting(false)
+            }
+        }
+        .shadow(radius: 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(message). Undo")
+        .accessibilityAddTraits(.isButton)
+        .onAppear {
+            // Reset and start the linear countdown animation
+            progress = 1.0
+            // Deplete to zero over the specified duration
+            progress = 0.0
+        }
+    }
+}
+
 #Preview {
     ClimbView()
         .environment(\.isDataReady, true)
         .modelContainer(for: [ClimbEntry.self, ClimbStyle.self, ClimbGym.self])
 }
+

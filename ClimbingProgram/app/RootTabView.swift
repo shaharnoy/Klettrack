@@ -41,7 +41,6 @@ class TimerAppState: ObservableObject {
             .sink { [weak self] isActive in
                 guard let self = self else { return }
                 if isActive && self.selectedTab != 5 {
-                    // Timer is running/paused and we're not on timer tab - switch to it
                     self.selectedTab = 5
                 }
             }
@@ -106,6 +105,8 @@ struct RootTabView: View {
                     NavigationStack(path: $timerAppState.climbNavigationPath) {
                         ClimbView()
                     }
+                    // Ensure ModelContext has a working UndoManager for the Climb tab
+                    .attachUndoManager()
                 case 3:
                     NavigationStack(path: $timerAppState.logNavigationPath) {
                         LogView()
@@ -164,7 +165,6 @@ struct RootTabView: View {
             // Additional delay to ensure everything is settled
             try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
             
-            print("Data initialization completed successfully")
         } catch {
             print("Error during data initialization: \(error)")
             // Don't prevent the app from continuing even if there's an error
@@ -184,3 +184,4 @@ extension EnvironmentValues {
         set { self[DataReadyKey.self] = newValue }
     }
 }
+
