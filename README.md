@@ -25,7 +25,7 @@ This is a **community-driven project**: created for climbers, shaped by feedback
       <b>Log a Climb</b><br>
       <img src="ClimbingProgram/docs/media/logaClimb.gif" width="300" alt="Log a Climb">
     </td>
-    <td width="40" align="center">|</td>
+    <td width="250" align="center">|</td>
     <td align="center" width="300">
       <b>Sync Tension Board</b><br>
       <img src="ClimbingProgram/docs/media/synctb2.gif" width="300" alt="Sync TB2">
