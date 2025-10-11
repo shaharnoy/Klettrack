@@ -6,9 +6,8 @@
 
 import SwiftData
 
-/// Insert any *new* catalog items without touching user edits.
 func applyCatalogUpdates(_ ctx: ModelContext) {
-    // Example: ensure Bouldering exists (safe for existing users)
+    //adding bouldering exercises
     let b = CatalogSeeder.ensureActivity("Bouldering", in: ctx)
 
     // Maximum & contact Strength (Bouldering)
@@ -36,4 +35,24 @@ func applyCatalogUpdates(_ ctx: ModelContext) {
     CatalogSeeder.ensureExercise("Tension board 3×6", in: se, notes: "see protocol")
 
     try? ctx.save()
+    //adding climbing specifc exerecises
+    let c = CatalogSeeder.ensureActivity("Climbing-Specific Exercises", in: ctx)
+    let maxStrength = CatalogSeeder.ensureType("Maximum & Contact Strength", in: c)
+    //Pull
+    CatalogSeeder.ensureExercise("One Arm Pullup", in: maxStrength, reps: "1-2", sets: "2", rest: "3 min", notes: "lockoff as a start also with a band", area: "Pull")
+    
+    let contactPower = CatalogSeeder.ensureType("Contact Strength & Power", in: c)
+    //Fingers
+    CatalogSeeder.ensureExercise("Campus board-Switch Hands", in: contactPower, reps: "up to 12 switches", sets: "2-6", rest: "2 mins", notes: "", area: "Fingers")
+    //Pull
+    CatalogSeeder.ensureExercise("Clap Pullups", in: contactPower, reps: "3-8", sets: "2-3", rest: "3 mins", notes: "start with only releasing hands, work towards a clap", area: "Pull")
+    CatalogSeeder.ensureExercise("Campus board-Double Dynos (big rungs)", in: contactPower, reps: "3-2-4-3-5-4-6-5-7", sets: "1-5", rest: "3 mins", notes: "Advanced version - 3-2-4-2-4-2-4-2-4", area: "Pull")
+    
+    let strengthEndurance = CatalogSeeder.ensureType("Strength-Endurance", in: c)
+    //Fingers
+    CatalogSeeder.ensureExercise("Board repeaters", in: strengthEndurance, reps: "30-90 seconds", sets: "5-10", rest: "3 mins", notes: "45 degrees mirrored wall, 5 different grips (2-3 fingers,half-crimp, open hand, etc.), 1-2 sets per grip", area: "Fingers")
+    //Pull
+    CatalogSeeder.ensureExercise("Campus board-Ladder Laps", in: strengthEndurance, reps: "2-4 laps", sets: "2-5", rest: "3 mins", notes: "1-3-5-7-7-5-3-1 or easier:1-3-5-7-7-6-5-4-3-2-1", area: "Pull")
+    CatalogSeeder.ensureExercise("Square Dance", in: strengthEndurance, reps: "up to 2 mins", sets: "2-4", rest: "double than work time", notes: "partial recovery on rest time - decrease time if needed", area: "Pull")
+    
 }

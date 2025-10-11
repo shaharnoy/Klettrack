@@ -38,7 +38,8 @@ struct CatalogSeeder {
         reps: String? = nil,
         sets: String? = nil,
         rest: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        area: String? = nil
     ) {
         // If an exercise with this name already exists, do nothing.
         if type.exercises.contains(where: { $0.name == name }) {
@@ -46,8 +47,7 @@ struct CatalogSeeder {
         }
         // Otherwise insert it.
         type.exercises.append(
-            Exercise(name: name, repsText: reps, setsText: sets, restText: rest, notes: notes)
+            Exercise(name: name, area:area, repsText: reps, setsText: sets, restText: rest, notes: notes)
         )
     }
-
 }

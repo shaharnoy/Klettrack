@@ -155,7 +155,7 @@ struct RootTabView: View {
             SeedTimerTemplates.loadIfNeeded(context)
             
             // Non-destructive catalog deltas migration (run once per key)
-            runOnce(per: "catalog_2025-08-21_bouldering") {
+            runOnce(per: "catalog_2025-10-11_bouldering") {
                 applyCatalogUpdates(context)
             }
             
