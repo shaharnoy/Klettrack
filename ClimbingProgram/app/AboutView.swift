@@ -184,10 +184,10 @@ extension AboutView {
 
             ## Open Source & Licenses
             
-            Source code: https://github.com/shaharnoy/Klettrack
-            License: GPL-3.0 — not allowed for commercial use outside of the Klettrack app.
-            This app uses Apple frameworks such as SwiftUI and SwiftData.
-            If we incorporate third-party libraries in future updates, their licenses will be listed here.
+            Klettrack © 2025 [Shahar Noy]. All rights reserved.
+            This binary build is distributed under a proprietary license.
+            The source code is available under the GNU GPL v3:
+            https://github.com/shaharnoy/Klettrack
 
             ## Trademarks & Attribution
             

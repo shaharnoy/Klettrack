@@ -167,8 +167,11 @@ Klettrack’s boards integration sourced from [BoardLib](https://github.com/leme
 
 ## 📄 License  
 
-This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.  
-You are free to use, modify, and contribute under the same license.  
+### License
+
+The source code of Klettrack is licensed under the **GNU GPL v3**.  
+The binary version distributed via the **Apple App Store** is released under a **proprietary “All rights reserved” license**.
+
 
 ⚠️ **Note:**  
 - Commercial redistribution, rebranding, or publishing this app under another name (e.g., on the App Store) is **not permitted**.  
