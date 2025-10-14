@@ -8,14 +8,15 @@ import SwiftUI
 
 struct CustomTabBar: View {
     @Binding var selectedTab: Int
+    var onSettingsTapped: (() -> Void)? = nil
     
     private let tabs: [(title: String, icon: String, tag: Int)] = [
-        ("Catalog", "square.grid.2x2", 0),
-        ("Plans", "calendar", 1),
-        ("Climb", "figure.climbing", 2),
+        ("Climb", "figure.climbing", 1),
+        ("Plans", "calendar", 2),
         ("Log", "book.pages", 3),
         ("Progress", "chart.xyaxis.line", 4),
-        ("Timer", "stopwatch", 5)
+        ("Timer", "stopwatch", 5),
+        ("Settings", "gearshape", 0)
     ]
     
     var body: some View {
@@ -54,5 +55,5 @@ struct CustomTabBar: View {
 }
 
 #Preview {
-    CustomTabBar(selectedTab: .constant(0))
+    CustomTabBar(selectedTab: .constant(0), onSettingsTapped: {})
 }

@@ -85,7 +85,6 @@ struct ClimbView: View {
             }
         }
         .toolbar {
-            // SYNC BUTTON (replaces the old "+")
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     onSyncTapped()

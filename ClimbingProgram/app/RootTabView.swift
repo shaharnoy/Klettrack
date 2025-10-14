@@ -11,7 +11,7 @@ import Combine
 // Shared timer state to ensure only one timer instance
 @MainActor
 class TimerAppState: ObservableObject {
-    @Published var selectedTab: Int = 2
+    @Published var selectedTab: Int = 1
     @Published var currentPlanDay: PlanDay? = nil
     
     // Navigation path storage for each tab to preserve navigation state
@@ -20,6 +20,7 @@ class TimerAppState: ObservableObject {
     @Published var climbNavigationPath = NavigationPath()
     @Published var logNavigationPath = NavigationPath()
     @Published var progressNavigationPath = NavigationPath()
+    @Published var settingsNavigationPath = NavigationPath()
     
     // Reference to shared timer manager
     private let sharedTimerManager = SharedTimerManager.shared
@@ -87,6 +88,7 @@ struct RootTabView: View {
     @Environment(\.modelContext) private var context
     @State private var isDataReady = false
     @StateObject private var timerAppState = TimerAppState()
+    @State private var showingSettings = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -94,19 +96,19 @@ struct RootTabView: View {
             Group {
                 switch timerAppState.selectedTab {
                 case 0:
-                    NavigationStack(path: $timerAppState.catalogNavigationPath) {
-                        CatalogView()
+                    NavigationStack(path: $timerAppState.settingsNavigationPath) {
+                        SettingsSheet()
                     }
                 case 1:
-                    NavigationStack(path: $timerAppState.plansNavigationPath) {
-                        PlansListView()
-                    }
-                case 2:
                     NavigationStack(path: $timerAppState.climbNavigationPath) {
                         ClimbView()
                     }
                     // Ensure ModelContext has a working UndoManager for the Climb tab
                     .attachUndoManager()
+                case 2:
+                    NavigationStack(path: $timerAppState.plansNavigationPath) {
+                        PlansListView()
+                    }
                 case 3:
                     NavigationStack(path: $timerAppState.logNavigationPath) {
                         LogView()
@@ -119,13 +121,15 @@ struct RootTabView: View {
                     TimerView(planDay: timerAppState.currentPlanDay)
                 default:
                     NavigationStack(path: $timerAppState.catalogNavigationPath) {
-                        CatalogView()
+                        ClimbView()
                     }
                 }
             }
             
-            // Custom tab bar
-            CustomTabBar(selectedTab: $timerAppState.selectedTab)
+            // Custom tab bar with Settings button
+            CustomTabBar(selectedTab: $timerAppState.selectedTab, onSettingsTapped: {
+                showingSettings = true
+            })
         }
         // Inject shared environment once for the whole subtree
         .environment(\.isDataReady, isDataReady)
@@ -135,6 +139,10 @@ struct RootTabView: View {
             //SeedData.nukeAndReseed(context) // Uncomment this line to reset data during development
             //SeedTimerTemplates.nukeAndReseed(context) // Uncomment this line to reset data during development
             //SeedClimbingData.nukeAndReseed(context) // Uncomment this line to reset data during development
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsSheet()
+                .environmentObject(timerAppState)
         }
     }
     
@@ -184,4 +192,3 @@ extension EnvironmentValues {
         set { self[DataReadyKey.self] = newValue }
     }
 }
-
