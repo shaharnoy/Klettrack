@@ -180,7 +180,7 @@ extension AboutView {
             ## Privacy
             
             Your data stays on your device by default. No ads. No tracking.
-            Read our full policy: https://example.com/privacy
+            Read our full policy: https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy
 
             ## Open Source & Licenses
             
@@ -196,7 +196,7 @@ extension AboutView {
             """,
             websiteURL: URL(string: "https://github.com/shaharnoy/Klettrack"),
             issuesURL: URL(string: "https://github.com/shaharnoy/Klettrack/issues"),
-            privacyURL: URL(string: "https://example.com/privacy")
+            privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
         )
     }
 }
