@@ -9,7 +9,7 @@ import SwiftUI
 struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var timerAppState: TimerAppState
-    @State private var showingCredentialsSheet = true
+    @State private var showingCredentialsSheet = false
     @State private var credsUsername: String = ""
     @State private var credsPassword: String = ""
     @State private var isEditingCredentials = true
@@ -65,6 +65,36 @@ struct SettingsSheet: View {
                     .accessibilityHidden(false)
                 }
             }
+        }
+        // Credentials prompt sheet (shared view)
+        .sheet(isPresented: $showingCredentialsSheet) {
+            TB2CredentialsSheet(
+                header: (pendingBoard == .kilter) ? "Kilter login details" : "TB2 login details",
+                username: $credsUsername,
+                password: $credsPassword,
+                onSave: {
+                    let username = credsUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let password = credsPassword
+                    guard !username.isEmpty, !password.isEmpty, let board = pendingBoard else { return }
+                    do {
+                        try CredentialsStore.saveBoardCredentials(for: board, username: username, password: password)
+                        // In Settings, we just save and close (no auto-sync here)
+                        isEditingCredentials = false
+                        pendingBoard = nil
+                        showingCredentialsSheet = false
+                    } catch {
+                        // Optional: add an alert if needed
+                        isEditingCredentials = false
+                        pendingBoard = nil
+                        showingCredentialsSheet = false
+                    }
+                },
+                onCancel: {
+                    isEditingCredentials = false
+                    pendingBoard = nil
+                    showingCredentialsSheet = false
+                }
+            )
         }
     }
 
