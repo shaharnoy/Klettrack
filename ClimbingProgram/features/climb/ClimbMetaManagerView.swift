@@ -25,6 +25,10 @@ struct ClimbMetaManagerView: View {
     @State private var renamingGym: ClimbGym? = nil
     @State private var renameDraft = ""
     
+    // Restore/Add defaults state
+    @State private var showingRestoreAlert = false
+    @State private var restoreResultMessage: String? = nil
+    
     var body: some View {
         NavigationStack {
             List {
@@ -65,7 +69,6 @@ struct ClimbMetaManagerView: View {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
-                            // Enable swipe actions for quick access to Rename/Delete
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button {
                                     renameDraft = style.name
@@ -134,7 +137,6 @@ struct ClimbMetaManagerView: View {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
-                            // Enable swipe actions for quick access to Rename/Delete
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button {
                                     renameDraft = gym.name
@@ -168,6 +170,26 @@ struct ClimbMetaManagerView: View {
             }
             .navigationTitle("Styles & Gyms")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        // Add defaults without deleting
+                        Button {
+                            addMissingDefaults()
+                        } label: {
+                            Label("Recover deleted defaults", systemImage: "plus.app")
+                        }
+                        // Full restore (delete + seed)
+                        Button(role: .destructive) {
+                            showingRestoreAlert = true
+                        } label: {
+                            Label("Reset back to default values", systemImage: "arrow.counterclockwise")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
             // Add style
             .sheet(isPresented: $showingAddStyle) {
                 NameOnlySheet(title: "New Style",
@@ -214,6 +236,22 @@ struct ClimbMetaManagerView: View {
                     try? context.save()
                 }
             }
+            // Confirm restore
+            .alert("Restore Defaults?", isPresented: $showingRestoreAlert) {
+                Button("Restore", role: .destructive) {
+                    restoreDefaults()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will replace your current Styles and Gyms with the default values. Your climb logs will not be deleted.")
+            }
+            // Result message
+            .alert(restoreResultMessage ?? "", isPresented: Binding(
+                get: { restoreResultMessage != nil },
+                set: { if !$0 { restoreResultMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { }
+            }
         }
     }
     
@@ -226,6 +264,60 @@ struct ClimbMetaManagerView: View {
     private func deleteGym(_ gym: ClimbGym) {
         context.delete(gym)
         try? context.save()
+    }
+    
+    // MARK: - Restore defaults (styles + gyms only)
+    private func restoreDefaults() {
+        do {
+            // Remove existing styles and gyms
+            try context.delete(model: ClimbStyle.self)
+            try context.delete(model: ClimbGym.self)
+            try context.save()
+            
+            // Re-seed using the same seed helper used on first launch
+            SeedClimbingData.loadIfNeeded(context)
+            restoreResultMessage = "Defaults restored."
+        } catch {
+            restoreResultMessage = "Restore failed: \(error.localizedDescription)"
+        }
+    }
+    
+    // MARK: - Add missing defaults (non-destructive)
+    private func addMissingDefaults() {
+        // Build case-insensitive sets of existing names to avoid duplicates
+        let existingStyleNames = Set(styles.map { $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
+        let existingGymNames = Set(gyms.map { $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
+        
+        var insertedCount = 0
+        
+        // Insert missing default styles
+        for def in ClimbingDefaults.defaultStyles {
+            let key = def.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !existingStyleNames.contains(key) {
+                context.insert(ClimbStyle(name: def, isDefault: true))
+                insertedCount += 1
+            }
+        }
+        
+        // Insert missing default gyms
+        for def in ClimbingDefaults.defaultGyms {
+            let key = def.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if !existingGymNames.contains(key) {
+                context.insert(ClimbGym(name: def, isDefault: true))
+                insertedCount += 1
+            }
+        }
+        
+        do {
+            if insertedCount > 0 {
+                try context.save()
+                restoreResultMessage = "Added \(insertedCount) missing default\(insertedCount == 1 ? "" : "s")."
+            } else {
+                restoreResultMessage = "All default styles and gyms are already present."
+            }
+        } catch {
+            restoreResultMessage = "Add defaults failed: \(error.localizedDescription)"
+        }
     }
 }
 
