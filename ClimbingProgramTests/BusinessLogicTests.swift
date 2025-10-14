@@ -119,7 +119,10 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
     // MARK: - Session Management Tests
     
     func testSessionDeduplication() {
-        let date = Date()
+        // fixed date
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let date = iso.date(from: "2024-06-15T10:00:00Z")!
         let normalizedDate = Calendar.current.startOfDay(for: date)
         
         // Create two sessions for the same day
@@ -337,3 +340,4 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         XCTAssertFalse(activities.isEmpty, "Should have seeded activities")
     }
 }
+
