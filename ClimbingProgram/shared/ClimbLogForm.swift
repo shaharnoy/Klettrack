@@ -41,17 +41,17 @@ struct ClimbLogForm: View {
     
     // Computed properties to get available options
     private var availableStyles: [String] {
-        // Combine seeded styles with custom styles
-        let seededStyles = ClimbingDefaults.defaultStyles
-        let customStyles = climbStyles.map { $0.name }
-        return Array(Set(seededStyles + customStyles)).sorted()
+        // Prefer live SwiftData; only fall back to defaults if none exist in the store
+        let live = climbStyles.map { $0.name }
+        if !live.isEmpty { return Array(Set(live)).sorted() }
+        return Array(Set(ClimbingDefaults.defaultStyles)).sorted()
     }
     
     private var availableGyms: [String] {
-        // Combine seeded gyms with custom gyms
-        let seededGyms = ClimbingDefaults.defaultGyms
-        let customGyms = climbGyms.map { $0.name }
-        return Array(Set(seededGyms + customGyms)).sorted()
+        // Prefer live SwiftData; only fall back to defaults if none exist in the store
+        let live = climbGyms.map { $0.name }
+        if !live.isEmpty { return Array(Set(live)).sorted() }
+        return Array(Set(ClimbingDefaults.defaultGyms)).sorted()
     }
     
     private var climbTypeColor: Color {
@@ -300,3 +300,4 @@ struct ClimbLogForm: View {
         selectedDate = Date()
     }
 }
+

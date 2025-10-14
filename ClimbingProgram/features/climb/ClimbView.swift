@@ -570,15 +570,15 @@ struct EditClimbView: View {
     
     // Computed properties to get available options
     private var availableStyles: [String] {
-        let seededStyles = ClimbingDefaults.defaultStyles
-        let customStyles = climbStyles.map { $0.name }
-        return Array(Set(seededStyles + customStyles)).sorted()
+        let live = climbStyles.map { $0.name }
+        if !live.isEmpty { return Array(Set(live)).sorted() }
+        return Array(Set(ClimbingDefaults.defaultStyles)).sorted()
     }
     
     private var availableGyms: [String] {
-        let seededGyms = ClimbingDefaults.defaultGyms
-        let customGyms = climbGyms.map { $0.name }
-        return Array(Set(seededGyms + customGyms)).sorted()
+        let live = climbGyms.map { $0.name }
+        if !live.isEmpty { return Array(Set(live)).sorted() }
+        return Array(Set(ClimbingDefaults.defaultGyms)).sorted()
     }
     
     private var climbTypeColor: Color {

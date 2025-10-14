@@ -24,6 +24,17 @@ struct SettingsSheet: View {
                     } label: {
                         Label("Exercise Catalog", systemImage: "square.grid.2x2")
                     }
+                    NavigationLink {
+                        TimerTemplatesListView()
+                    } label: {
+                        Label("Timer Templates", systemImage: "timer")
+                    }
+                    // NEW: Styles & Gyms manager
+                    NavigationLink {
+                        ClimbMetaManagerView()
+                    } label: {
+                        Label("Styles & Gyms", systemImage: "slider.horizontal.3")
+                    }
                     Menu {
                         Button("TB2 Login") {
                             openCredentialsEditor(for: .tension)
