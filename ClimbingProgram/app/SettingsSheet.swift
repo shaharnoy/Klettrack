@@ -14,6 +14,7 @@ struct SettingsSheet: View {
     @State private var credsPassword: String = ""
     @State private var isEditingCredentials = true
     @State private var pendingBoard: TB2Client.Board? = nil
+    @State private var showingAbout = false
     
     var body: some View {
         NavigationStack {
@@ -22,19 +23,56 @@ struct SettingsSheet: View {
                     NavigationLink {
                         CatalogView()
                     } label: {
-                        Label("Exercise Catalog", systemImage: "square.grid.2x2")
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Image(systemName: "square.grid.2x2")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Exercise Catalog")
+                                    .font(.body)
+                                Text("Add or modify all exercises and climbing drills")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
+                    
                     NavigationLink {
                         TimerTemplatesListView()
                     } label: {
-                        Label("Timer Templates", systemImage: "timer")
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Image(systemName: "timer")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Timer Templates")
+                                    .font(.body)
+                                Text("Create and edit timer templates")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
+                    
                     // NEW: Styles & Gyms manager
                     NavigationLink {
                         ClimbMetaManagerView()
                     } label: {
-                        Label("Styles & Gyms", systemImage: "slider.horizontal.3")
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Image(systemName: "slider.horizontal.3")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Styles & Gyms")
+                                    .font(.body)
+                                Text("Manage climbing styles and gyms")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
+                    
+                    // Boards credentials menu
                     Menu {
                         Button("TB2 Login") {
                             openCredentialsEditor(for: .tension)
@@ -45,37 +83,63 @@ struct SettingsSheet: View {
                         }
                     } label: {
                         HStack {
-                            Label("Boards Credentials Manager", systemImage: "lock.circle")
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                Image(systemName: "lock.circle")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Boards Credentials Manager")
+                                        .font(.body)
+                                    Text("Store and edit system board credentials.")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(.tertiary)
                         }
                         .contentShape(Rectangle())
+                        .padding(.vertical, 4)
                     }
-                    
                     .buttonStyle(.plain)
-                    NavigationLink {
-                        AboutView.klettrack
-                    } label: {
-                        Label("About", systemImage: "info.circle")
-                    }
+                    
+                    // Removed About from the list; it will appear in the bottom bar
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .bottomBar) {
-                    HStack {
-                        Spacer()
-                        Text("Made with ❤️ in Berlin.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Spacer()
+                    Button {
+                        showingAbout = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                            Text("About")
+                                .fixedSize() // avoid truncation
+                        }
+                        .padding(.horizontal, 35)
+                        .padding(.vertical, 2)
+                        .contentShape(Capsule())
                     }
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(false)
+                    .buttonStyle(.plain)           // or .buttonStyle(.bordered).buttonBorderShape(.capsule)
                 }
             }
+            .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
+                Text("Made with ❤️ in Berlin")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 8)
+                    .allowsHitTesting(false)
+            }
+            .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
+                Text("©Klettrack")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 8)
+                    .allowsHitTesting(false)
+            }
+            
         }
         // Credentials prompt sheet (shared view)
         .sheet(isPresented: $showingCredentialsSheet) {
@@ -107,9 +171,19 @@ struct SettingsSheet: View {
                 }
             )
         }
+        // About sheet
+        .sheet(isPresented: $showingAbout) {
+            NavigationStack {
+                AboutView.klettrack
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showingAbout = false }
+                        }
+                    }
+            }
+        }
     }
 
-    
     private func openCredentialsEditor(for board: TB2Client.Board) {
         // Prefill if saved for that board
         if let creds = CredentialsStore.loadBoardCredentials(for: board) {
