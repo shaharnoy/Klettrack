@@ -27,12 +27,12 @@ func applyCatalogUpdates(_ ctx: ModelContext) {
 
     // Strength-Endurance (Bouldering)
     let se = CatalogSeeder.ensureType("Strength-Endurance", in: b)
-    CatalogSeeder.ensureExercise("Bouldering 4×4s", in: se, notes: "see protocol")
-    CatalogSeeder.ensureExercise("Big-holds, big-move 4×4s", in: se, notes: "see protocol")
+    CatalogSeeder.ensureExercise("Bouldering 4×4s", in: se, notes: "4 boulders, 4 times on the minute - rest 4 minutes between problmes")
+    CatalogSeeder.ensureExercise("Big-holds, big-move 4×4s", in: se, notes: "4 boulders, 4 times on the minute - rest 4 minutes between problmes")
     CatalogSeeder.ensureExercise("6 problems V0–V2", in: se, rest: "45 sec/send")
     CatalogSeeder.ensureExercise("3 problems V3–V4 (× several blocks)", in: se, reps: "no rest between sends", notes: "rest block 6 min")
     CatalogSeeder.ensureExercise("3 problems V4–V5 (× several blocks)", in: se, reps: "no rest between sends", notes: "rest block 6 min")
-    CatalogSeeder.ensureExercise("Tension board 3×6", in: se, notes: "see protocol")
+    CatalogSeeder.ensureExercise("Tension board 3×6", in: se, notes: "6 boulders, 3 times on the minute - rest 3 minutes between boulders")
 
     try? ctx.save()
     //adding climbing specifc exerecises

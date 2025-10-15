@@ -79,9 +79,9 @@ struct SeedData {
                 )
                 maxStrength.exercises = [
                     Exercise(name: "Bouldering", area: "Fingers", order: 4, repsText: "3 ascents", setsText: "3–10 problems", restText: "2 min/asc"),
-                    Exercise(name: "FB \"Minimum Edge\" Hangs", area: "Fingers", order: 1, exerciseDescription: "Smallest edge you can hold ~12s", repsText: "see protocol", setsText: "2–5"),
-                    Exercise(name: "FB Max-Weight Hangs (10s, 14–20mm)", area: "Fingers", order: 2, repsText: "see protocol", setsText: "2–5"),
-                    Exercise(name: "FB Max-Weight Hangs (7/53, 14–20mm)", area: "Fingers", order: 3, repsText: "see protocol", setsText: "2–5"),
+                    Exercise(name: "FB \"Minimum Edge\" Hangs", area: "Fingers", order: 1, exerciseDescription: "Smallest edge you can hold ~12s", repsText: "5", setsText: "2–5", notes: "12s work, 3mins rest"),
+                    Exercise(name: "FB Max-Weight Hangs (10s, 14–20mm)", area: "Fingers", order: 2, repsText: "5", setsText: "2–5", notes: "10s work, 50s rest"),
+                    Exercise(name: "FB Max-Weight Hangs (7/53, 14–20mm)", area: "Fingers", order: 3, repsText: "3", setsText: "2–5", notes: "7s work, 53s rest"),
                     Exercise(name: "Loading Pin Lifts — repetitions", area: "Fingers", order: 4, repsText: "1:50% 2:60% 3:70% 4–7:80%", setsText: "8 reps (1–3); 4 reps (4–7)"),
                     Exercise(name: "Weighted Pull-Ups", area: "Pull", order: 1, repsText: "5", setsText: "3–6", restText: "3 min"),
                     Exercise(name: "Square Pull-Ups", area: "Pull", order: 2, repsText: "3–6", setsText: "1–2", restText: "3 min"),
@@ -105,10 +105,10 @@ struct SeedData {
 
                 let strengthEndurance = TrainingType(name: "Strength-Endurance", typeDescription: "Endurance work for fingers and pull muscles")
                 strengthEndurance.exercises = [
-                    Exercise(name: "Short-Duration Fingerboard Repeaters", area: "Fingers", order: 1, repsText: "see protocol", setsText: "3–5"),
-                    Exercise(name: "Long-Duration Fingerboard Repeaters", area: "Fingers", order: 2, repsText: "see protocol", setsText: "3–5"),
+                    Exercise(name: "Short-Duration Fingerboard Repeaters", area: "Fingers", order: 1, repsText: "6", setsText: "3–5", restText:"1 mins", notes: "level1 : 10s work/30s rest; level2 : 10s work/20s rest; level3 : 10s work/10s rest"),
+                    Exercise(name: "Long-Duration Fingerboard Repeaters", area: "Fingers", order: 2, repsText: "4", setsText: "3–5",restText:"1 mins", notes: "level1 : 30s work/30s rest; level2 : 30s work/15s rest; level3 : 60s work/30s rest"),
                     //PULL//
-                    Exercise(name: "Pull-Up Intervals", area: "Pull", order: 1, repsText: "see protocol", setsText: "10–20"),
+                    Exercise(name: "Pull-Up Intervals", area: "Pull", order: 1, repsText: "5", setsText: "10–20", restText:"No rest", notes: "5 pull-ups every minute on the minute - rest time is the remainder of the minute"),
                     Exercise(name: "Frenchies", area: "Pull", order: 2, repsText: "2–6 cycles", setsText: "2–4",restText:"5 mins")
                 ]
 
@@ -147,9 +147,9 @@ struct SeedData {
 
                 let bSE = TrainingType(name: "Strength-Endurance", typeDescription: "SE circuits for bouldering")
                 let combSE1 = BoulderCombination(name: "Combination 1")
-                combSE1.exercises = [ Exercise(name: "Bouldering 4×4s", order: 1, notes: "see protocol") ]
+                combSE1.exercises = [ Exercise(name: "Bouldering 4×4s", order: 1, notes: "4 boulders, 4 times on the minute - rest 4 minutes between problmes") ]
                 let combSE2 = BoulderCombination(name: "Combination 2")
-                combSE2.exercises = [ Exercise(name: "Big-holds, big-move 4×4s", order: 1, notes: "see protocol") ]
+                combSE2.exercises = [ Exercise(name: "Big-holds, big-move 4×4s", order: 1, notes: "4 boulders, 4 times on the minute - rest 4 minutes between problmes") ]
                 let combSE3 = BoulderCombination(name: "Combination 3", comboDescription: "Alternating V-grade blocks, no rest between sends, rest block 6 min")
                 combSE3.exercises = [
                     Exercise(name: "1. 6 problems V0–V2", order: 1, restText: "45 sec/send"),
@@ -162,7 +162,7 @@ struct SeedData {
                     Exercise(name: "8. 3 problems V3–V4", order: 8, repsText: "no rest between sends", notes: "rest block 6 min")
                 ]
                 let combSE4 = BoulderCombination(name: "Combination 4")
-                combSE4.exercises = [ Exercise(name: "Board 3×6", order: 1, notes: "see protocol") ]
+                combSE4.exercises = [ Exercise(name: "Board 3×6", order: 1, notes: "6 boulders, 3 times on the minute - rest 3 minutes between boulders") ]
 
                 bSE.combinations = [combSE1, combSE2, combSE3, combSE4]
 
