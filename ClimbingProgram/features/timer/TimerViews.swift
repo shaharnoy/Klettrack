@@ -290,23 +290,29 @@ struct TimerView: View {
                 ], spacing: 12) {
                     // Iteration Card
                     if config.isRepeating, let repeatCount = config.repeatCount, repeatCount > 1 {
+                        // Clamp current ≤ total and ensure total ≥ 1
+                        let setsTotal = max(1, repeatCount)
+                        let setsCurrent = min(timerManager.currentSequenceRepeat + 1, setsTotal)
                         ProgressCard(
-                            title: "Sets",
-                            current: timerManager.currentSequenceRepeat + 1,
-                            total: repeatCount,
-                            color: .purple,
-                            icon: "arrow.clockwise"
+                        title: "Sets",
+                        current: setsCurrent,
+                        total: setsTotal,
+                        color: .purple,
+                        icon: "arrow.clockwise"
                         )
                     }
                     // Rep Card
-                    ProgressCard(
-                        title: "Reps",
-                        current: timerManager.currentRepetition + 1,
-                        total: timerManager.currentInterval < config.intervals.count ?
-                               config.intervals[timerManager.currentInterval].repetitions : 0,
-                        color: .green,
-                        icon: "repeat"
-                    )
+                    if timerManager.currentInterval < config.intervals.count {
+                        let repTotal = max(1, config.intervals[timerManager.currentInterval].repetitions)
+                        let repCurrent = min(timerManager.currentRepetition + 1, repTotal)
+                        ProgressCard(
+                            title: "Reps",
+                            current: repCurrent,
+                            total: repTotal,
+                            color: .green,
+                            icon: "repeat"
+                        )
+                    }
                 }
             }
         }
@@ -458,18 +464,32 @@ struct TimerView: View {
     
     // MARK: - Helper Methods
     private func getPhaseColor() -> Color {
-        if timerManager.isInBetweenIntervalRest {
-            return .purple // Distinct color for rest between intervals
+        if timerManager.isCompleted {
+            return .gray
+        } else if timerManager.isInBetweenIntervalRest {
+            return .purple
         } else {
-            return timerManager.currentPhase == .work ? .green : .orange
+            switch timerManager.currentPhase {
+            case .work: return .green
+            case .rest: return .orange
+            case .getReady: return .blue
+            case .completed: return .gray
+            }
         }
     }
     
     private func getPhaseText() -> String {
-        if timerManager.isInBetweenIntervalRest {
+        if timerManager.isCompleted {
+            return "Completed"
+        } else if timerManager.isInBetweenIntervalRest {
             return "Rest Between Sets"
         } else {
-            return timerManager.currentPhase == .work ? "Work" : "Rest"
+            switch timerManager.currentPhase {
+            case .work: return "Work"
+            case .rest: return "Rest"
+            case .getReady: return "Get Ready"
+            case .completed: return "Completed"
+            }
         }
     }
     
@@ -855,8 +875,9 @@ struct CustomTimerSetupTab: View {
     @State private var totalTimeSeconds = 0
     @State private var intervals: [IntervalInput] = []
     @State private var isRepeating = false
-    @State private var repeatCount = 1
-    @State private var restBetweenIterations = 0 // Add rest between iterations setting
+    @State private var repeatCount = 2
+    @State private var restBetweenIterationsMinutes = 0
+    @State private var restBetweenIterationsSeconds = 0
     @State private var saveAsTemplate = false
     @State private var templateName = ""
     @State private var templateDescription = ""
@@ -973,16 +994,16 @@ struct CustomTimerSetupTab: View {
                 Stepper("Repeat \(repeatCount) times", value: $repeatCount, in: 1...20)
                 
                 // Add rest between iterations setting
-                Section ("Rest Between Sets") {
+                Section("Rest Between Sets") {
                     HStack {
-                        Picker("Minutes", selection: $restBetweenIterations) {
+                        Picker("Minutes", selection: $restBetweenIterationsMinutes) {
                             ForEach(0...10, id: \.self) { minutes in
                                 Text("\(minutes) min").tag(minutes)
                             }
                         }
                         .frame(maxWidth: .infinity)
                         
-                        Picker("Seconds", selection: $restBetweenIterations) {
+                        Picker("Seconds", selection: $restBetweenIterationsSeconds) {
                             ForEach(0...59, id: \.self) { seconds in
                                 Text("\(seconds) sec").tag(seconds)
                             }
@@ -1021,7 +1042,8 @@ struct CustomTimerSetupTab: View {
         let intervalConfigs: [IntervalConfiguration] = (timerType == .intervals) ?
             intervals.compactMap { $0.toConfiguration() } : []
         
-        let restBetween = (isRepeating && restBetweenIterations > 0) ? restBetweenIterations : nil
+        let restBetweenTotal = restBetweenIterationsMinutes * 60 + restBetweenIterationsSeconds
+        let restBetween: Int? = (isRepeating && restBetweenTotal > 0) ? restBetweenTotal : nil
         
         let configuration = TimerConfiguration(
             totalTimeSeconds: totalTime,
@@ -1093,7 +1115,9 @@ struct ProgressCard: View {
                     .foregroundColor(.secondary)
             }
             
-            ProgressView(value: Double(current), total: Double(total))
+                let safeTotal = max(1, total)
+                let safeCurrent = min(max(0, current), safeTotal)
+                ProgressView(value: Double(safeCurrent), total: Double(safeTotal))
                 .progressViewStyle(LinearProgressViewStyle(tint: color))
                 .scaleEffect(y: 1.5)
         }
@@ -1106,3 +1130,4 @@ struct ProgressCard: View {
         )
     }
 }
+
