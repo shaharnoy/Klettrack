@@ -5,16 +5,23 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var timerAppState: TimerAppState
+    @Environment(\.modelContext) private var context
     @State private var showingCredentialsSheet = false
     @State private var credsUsername: String = ""
     @State private var credsPassword: String = ""
     @State private var isEditingCredentials = true
     @State private var pendingBoard: TB2Client.Board? = nil
     @State private var showingAbout = false
+    
+    // Export state
+    @State private var showExporter = false
+    @State private var exportDoc: LogCSVDocument? = nil
+    
     
     var body: some View {
         NavigationStack {
@@ -72,6 +79,26 @@ struct SettingsSheet: View {
                         .padding(.vertical, 4)
                     }
                     
+                    // Export CSV button (trigger export without navigation)
+                    Button {
+                        exportDoc = LogCSV.makeExportCSV(context: context)
+                        showExporter = true
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Image(systemName: "square.and.arrow.up")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Export logs to CSV")
+                                    .font(.body)
+                                Text("Save your data as a CSV file")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                    
                     // Boards credentials menu
                     Menu {
                         Button("TB2 Login") {
@@ -121,7 +148,7 @@ struct SettingsSheet: View {
                         .padding(.vertical, 2)
                         .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain)           // or .buttonStyle(.bordered).buttonBorderShape(.capsule)
+                    .buttonStyle(.plain)
                 }
             }
             .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
@@ -170,6 +197,21 @@ struct SettingsSheet: View {
                 }
             )
         }
+        // Exporter
+        .fileExporter(
+            isPresented: $showExporter,
+            document: exportDoc,
+            contentType: .commaSeparatedText,
+            defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
+        ) { result in
+            // You can optionally show a toast/alert here if desired
+            switch result {
+            case .success:
+                break
+            case .failure:
+                break
+            }
+        }
         // About sheet
         .sheet(isPresented: $showingAbout) {
             NavigationStack {
@@ -197,3 +239,4 @@ struct SettingsSheet: View {
         showingCredentialsSheet = true
     }
 }
+

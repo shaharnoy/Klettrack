@@ -107,7 +107,7 @@ struct PlansListView: View {
                         Button {
                             guard isDataReady else { return }
                             let doc = LogCSV.makeExportCSV(context: context)
-                            let fn = "climbing-log-\(Date().formatted(.dateTime.year().month().day())).csv"
+                            let fn = "klettrack-log-\(Date().formatted(.dateTime.year().month().day())).csv"
                             let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
 
                             do {
@@ -153,7 +153,7 @@ struct PlansListView: View {
             .fileExporter(isPresented: $showExporter,
                           document: exportDoc,
                           contentType: .commaSeparatedText,
-                          defaultFilename: "climbing-log-\(Date().formatted(.dateTime.year().month().day()))") { result in
+                          defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))") { result in
                 switch result {
                 case .success:
                     importResultMessage = "CSV exported."

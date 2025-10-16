@@ -86,7 +86,7 @@ struct LogView: View {
             isPresented: $showExporter,
             document: exportDoc,
             contentType: .commaSeparatedText,
-            defaultFilename: "climbing-log-\(Date().formatted(.dateTime.year().month().day()))"
+            defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
         ) { result in
             switch result {
             case .success: resultMessage = "CSV exported."
@@ -167,7 +167,7 @@ struct LogView: View {
 
     private func prepareShare() {
         let doc = LogCSV.makeExportCSV(context: context)
-        let fn = "climbing-log-\(Date().formatted(.dateTime.year().month().day())).csv"
+        let fn = "klettrack-log-\(Date().formatted(.dateTime.year().month().day())).csv"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
         do {
             try doc.csv.write(to: url, atomically: true, encoding: .utf8)
