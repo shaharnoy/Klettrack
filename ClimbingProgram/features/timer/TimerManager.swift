@@ -443,7 +443,21 @@ class TimerManager: ObservableObject {
         }
 
         currentPhase = newPhase
-
+        // Keep currentRepetition in sync while within this interval (work/rest phases)
+        if newPhase != .completed {
+            let reps = max(0, interval.repetitions)
+            if reps > 0 {
+                // Clamp currentCycle to [0, reps - 1]
+                let clamped = min(max(0, currentCycle), reps - 1)
+                if currentRepetition != clamped {
+                    currentRepetition = clamped
+                }
+            } else {
+                currentRepetition = 0
+            }
+        }
+        // When completed, moveToNextInterval() will run and reset/advance state as needed.
+        
         // Countdown beeps in last 3 seconds of a phase (work/rest)
         checkCountdownBeeps(timeRemaining: timeRemainingInPhase)
 

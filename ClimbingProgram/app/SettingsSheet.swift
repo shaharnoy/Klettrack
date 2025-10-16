@@ -103,7 +103,6 @@ struct SettingsSheet: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // Removed About from the list; it will appear in the bottom bar
                 }
             }
             .navigationTitle("Settings")
