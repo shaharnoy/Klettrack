@@ -30,7 +30,7 @@ struct SettingsSheet: View {
                     NavigationLink {
                         CatalogView()
                     } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "square.grid.2x2")
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Exercise Catalog")
@@ -41,13 +41,13 @@ struct SettingsSheet: View {
                                     .lineLimit(2)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
                     }
                     
                     NavigationLink {
                         TimerTemplatesListView()
                     } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "timer")
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Timer Templates")
@@ -58,14 +58,14 @@ struct SettingsSheet: View {
                                     .lineLimit(2)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
                     }
                     
                     // NEW: Styles & Gyms manager
                     NavigationLink {
                         ClimbMetaManagerView()
                     } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "slider.horizontal.3")
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Styles & Gyms")
@@ -76,28 +76,8 @@ struct SettingsSheet: View {
                                     .lineLimit(2)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
                     }
-                    
-                    // Export CSV button (trigger export without navigation)
-                    Button {
-                        exportDoc = LogCSV.makeExportCSV(context: context)
-                        showExporter = true
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Image(systemName: "square.and.arrow.up")
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Export logs to CSV")
-                                    .font(.body)
-                                Text("Save your data as a CSV file")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
                     
                     // Boards credentials menu
                     Menu {
@@ -110,7 +90,7 @@ struct SettingsSheet: View {
                         }
                     } label: {
                         HStack {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Image(systemName: "lock.circle")
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Boards Credentials Manager")
@@ -118,7 +98,7 @@ struct SettingsSheet: View {
                                     Text("Store and edit system board credentials.")
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(2)
+                                        .lineLimit(1)
                                 }
                             }
                             Spacer()
@@ -126,39 +106,76 @@ struct SettingsSheet: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .contentShape(Rectangle())
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Export CSV button (trigger export without navigation)
+                    Button {
+                        exportDoc = LogCSV.makeExportCSV(context: context)
+                        showExporter = true
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "square.and.arrow.up")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Export logs to CSV")
+                                    .font(.body)
+                                Text("Save your data as a CSV file")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
                 }
                 
                 // About section (subtle separation)
                 Section {
+                    //Feature request / feedback button opens link to roadmap
+                    Button {
+                        if let url = URL(string: "https://klettrack.featurebase.app/") {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "megaphone")
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Share an idea or feedback")
+                                    .font(.body)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
                     // Contribute button opens AboutView.contribute
                     Button {
                         showingContribute = true
                     } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline, spacing: 9) {
                             Image(systemName: "lightbulb")
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 1) {
                                 Text("Why is klettrack free?")
                                     .font(.body)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
                     
+                    //About button opens AboutView.klettrack
                     Button {
                         showingAbout = true
                     } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "info.circle")
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 1) {
                                 Text("About")
                                     .font(.body)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
                     
@@ -170,14 +187,14 @@ struct SettingsSheet: View {
                 Text("Made with ❤️ in Berlin")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 6)
                     .allowsHitTesting(false)
             }
             .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
                 Text("©klettrack")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 6)
                     .allowsHitTesting(false)
             }
         }

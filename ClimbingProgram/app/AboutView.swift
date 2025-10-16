@@ -201,7 +201,7 @@ extension AboutView {
             Klettrack is an independent open source project and is not affiliated with, endorsed by, or sponsored by those brands.
             """,
             websiteURL: URL(string: "https://github.com/shaharnoy/Klettrack"),
-            issuesURL: URL(string: "https://github.com/shaharnoy/Klettrack/issues"),
+            issuesURL: URL(string:  "https://klettrack.featurebase.app/"),
             privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
         )
     }
@@ -226,7 +226,7 @@ extension AboutView {
 
             """,
             websiteURL: URL(string: "https://github.com/shaharnoy/Klettrack"),
-            issuesURL: URL(string: "https://github.com/shaharnoy/Klettrack/issues"),
+            issuesURL: URL(string: "https://klettrack.featurebase.app/"),
             privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
         )
     }
