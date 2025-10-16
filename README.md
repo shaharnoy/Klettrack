@@ -1,9 +1,15 @@
 # Klettrack
 
-SwiftUI-based iOS app for planning, logging, and analyzing climbing and training.  
+iOS app for planning, logging, and analyzing climbing and training.  
 This is a **community-driven project**: created for climbers, shaped by feedback, and it will **always remain free**.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)  ![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)  ![iOS](https://img.shields.io/badge/iOS-17+-lightgrey.svg)   ![Xcode](https://img.shields.io/badge/Xcode-15.3+-blue.svg)  
+
+---
+
+## 🗺️ Roadmap and Feature requests
+
+ [klettrack Roadmap](https://klettrack.featurebase.app)  
 
 ---
 
@@ -51,21 +57,7 @@ This is a **community-driven project**: created for climbers, shaped by feedback
 </table>
 ---
 
-## 🗺️ Roadmap
-
-- [ ] Get initial traction and validate community need
-- [ ] Publish the app to the App Store  
-      _Note: I’m a data engineer (not a professional iOS dev). Much of the code was written with AI assistance; a refactor will likely be required to meet App Store standards._
-- [ ] Add Lock Screen timer widget
-- [ ] Extend integration to more system boards
-- [ ] Integrate with outdoor tracking platforms (e.g., theCrag.com, 27crags, etc.)
-- [ ] Incorporate more feedback (open to issues & PRs!)
-
----
-
 ## 📖 Table of Contents
-
-* [Overview](#overview)
 * [Requirements](#requirements)
 * [Getting Started](#getting-started)
 * [Project Structure](#project-structure)
@@ -73,18 +65,6 @@ This is a **community-driven project**: created for climbers, shaped by feedback
 * [Contributing](#contributing)
 * [Credits](#credits)
 * [License](#license)
-
----
-
-## 🧗 Overview
-
-Klettrack helps climbers and trainers to:
-
-* Plan structured climbing/training sessions (weekly/3-2-1 plans).
-* Log ascents, bouldering combinations, and sessions.
-* Analyze progress with charts and stats.
-* Use timers with audio cues for interval training.
-* Export/import training data via CSV.
 
 ---
 
