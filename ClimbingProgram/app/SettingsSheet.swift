@@ -17,11 +17,11 @@ struct SettingsSheet: View {
     @State private var isEditingCredentials = true
     @State private var pendingBoard: TB2Client.Board? = nil
     @State private var showingAbout = false
+    @State private var showingContribute = false
     
     // Export state
     @State private var showExporter = false
     @State private var exportDoc: LogCSVDocument? = nil
-    
     
     var body: some View {
         NavigationStack {
@@ -129,28 +129,43 @@ struct SettingsSheet: View {
                         .padding(.vertical, 4)
                     }
                     .buttonStyle(.plain)
+                }
+                
+                // About section (subtle separation)
+                Section {
+                    // Contribute button opens AboutView.contribute
+                    Button {
+                        showingContribute = true
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Image(systemName: "lightbulb")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Why is klettrack free?")
+                                    .font(.body)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button {
+                        showingAbout = true
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Image(systemName: "info.circle")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("About")
+                                    .font(.body)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
                     
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .bottomBar) {
-                    Button {
-                        showingAbout = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "info.circle")
-                            Text("About")
-                                .fixedSize() // avoid truncation
-                        }
-                        .padding(.horizontal, 35)
-                        .padding(.vertical, 2)
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
             .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
                 Text("Made with ❤️ in Berlin")
                     .font(.footnote)
@@ -159,13 +174,12 @@ struct SettingsSheet: View {
                     .allowsHitTesting(false)
             }
             .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
-                Text("©Klettrack")
+                Text("©klettrack")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.bottom, 8)
                     .allowsHitTesting(false)
             }
-            
         }
         // Credentials prompt sheet (shared view)
         .sheet(isPresented: $showingCredentialsSheet) {
@@ -204,7 +218,6 @@ struct SettingsSheet: View {
             contentType: .commaSeparatedText,
             defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
         ) { result in
-            // You can optionally show a toast/alert here if desired
             switch result {
             case .success:
                 break
@@ -219,6 +232,17 @@ struct SettingsSheet: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Done") { showingAbout = false }
+                        }
+                    }
+            }
+        }
+        // Contribute sheet
+        .sheet(isPresented: $showingContribute) {
+            NavigationStack {
+                AboutView.contribute
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showingContribute = false }
                         }
                     }
             }
@@ -239,4 +263,3 @@ struct SettingsSheet: View {
         showingCredentialsSheet = true
     }
 }
-

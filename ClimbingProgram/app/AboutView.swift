@@ -205,4 +205,29 @@ extension AboutView {
             privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
         )
     }
+
+    static var contribute: AboutView {
+        AboutView(
+            aboutText:
+            """
+            # Why is Klettrack free?
+
+            Klettrack is built by climbers, for climbers as a community project.
+            
+            Klettrack is **open-source** and completely **free of ads or tracking**.
+            
+            We’ve learned so much from the community over the years, so this app is our way of giving something back.  
+
+            ## If you want to support the project, you can:
+
+            - Share feedback or ideas  
+            - Help improve the code
+            - Spread the word to other climbers  
+
+            """,
+            websiteURL: URL(string: "https://github.com/shaharnoy/Klettrack"),
+            issuesURL: URL(string: "https://github.com/shaharnoy/Klettrack/issues"),
+            privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
+        )
+    }
 }
