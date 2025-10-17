@@ -23,6 +23,7 @@ struct ProgressViewScreen: View {
     @State private var selectedClimbType: String = ""
     @State private var selectedMetric: Metric = .count
     @State private var selectedPlanID: UUID? = nil
+    @State private var selectedRopeType: String = ""
     
     // Chart selection states
     @State private var selectedDistributionAxis: DistributionAxis = .style
@@ -36,6 +37,12 @@ struct ProgressViewScreen: View {
     enum LogType: String, CaseIterable, Identifiable {
         case exercise = "Exercise"
         case climb = "Climb"
+        var id: String { rawValue }
+    }
+    
+    enum RopeType: String, CaseIterable, Identifiable {
+        case lead = "Lead"
+        case topRope = "Top Rope"
         var id: String { rawValue }
     }
     
@@ -227,6 +234,19 @@ struct ProgressViewScreen: View {
         return Array(Set(gyms)).sorted()
     }
     
+    var availableRopeTypes: [String] {
+          var ropeClimbTypes: [String] = []
+        
+          if selectedType == .climb {
+              ropeClimbTypes.append(
+                  contentsOf: dateFilteredClimbEntries.compactMap { entry in
+                      entry.ropeClimbType?.rawValue
+                  }
+              )
+          }
+          return Array(Set(ropeClimbTypes)).sorted()
+      }
+    
     // Data points for charts
     struct TimeSeriesDataPoint: Identifiable {
         let id = UUID()
@@ -308,6 +328,7 @@ struct ProgressViewScreen: View {
             if angleStr != selectedAngle { return false }
         }
         if !selectedGym.isEmpty && climb.gym != selectedGym { return false }
+        if !selectedRopeType.isEmpty && climb.ropeClimbType?.rawValue != selectedRopeType { return false }
         if !selectedClimbType.isEmpty && climb.climbType.rawValue != selectedClimbType { return false }
         return true
     }
@@ -407,6 +428,7 @@ struct ProgressViewScreen: View {
         selectedAngle = ""
         selectedGym = ""
         selectedClimbType = ""
+        selectedRopeType = ""
         selectedPlanID = nil
         dateRange = .all
         selectedDistributionAxis = .style
@@ -486,39 +508,46 @@ struct ProgressViewScreen: View {
                                 }
                             }
                         }
-                    }
-                    
-                    // Common filters
-                    if !availableStyles.isEmpty {
-                        Picker(selectedType == .exercise ? "Exercise" : "Style", selection: $selectedStyle) {
-                            Text(selectedType == .exercise ? "All exercises" : "All styles").tag("")
-                            ForEach(availableStyles, id: \.self) { style in
-                                Text(style).tag(style)
+                        if !availableRopeTypes.isEmpty {
+                            Picker("Sport Type", selection: $selectedRopeType) {
+                                Text("All types").tag("")
+                                ForEach(availableRopeTypes, id: \.self) { ropeType in
+                                    Text(ropeType).tag(ropeType)
+                                }
                             }
                         }
+                        
+                        // Common filters
+                        if !availableStyles.isEmpty {
+                            Picker(selectedType == .exercise ? "Exercise" : "Style", selection: $selectedStyle) {
+                                Text(selectedType == .exercise ? "All exercises" : "All styles").tag("")
+                                ForEach(availableStyles, id: \.self) { style in
+                                    Text(style).tag(style)
+                                }
+                            }
+                        }
+                        
+                        // Clear Filters Button
+                        Button("Clear All Filters") {
+                            clearAllFilters()
+                        }
+                        .foregroundColor(.red)
                     }
                     
-                    // Clear Filters Button
-                    Button("Clear All Filters") {
-                        clearAllFilters()
-                    }
-                    .foregroundColor(.red)
-                }
-                
-                // Summary Section
-                Section("Summary") {
-                    if selectedType == .exercise {
-                        HStack {
-                            Text("#Sessions")
-                            Spacer()
-                            Text("\(dateFilteredSessions.count)")
-                        }
-                        HStack {
-                            Text("#Exercises")
-                            Spacer()
-                            Text("\(totalexercises)") //change to total exercises
-                        }
-                    } else {
+                    // Summary Section
+                    Section("Summary") {
+                        if selectedType == .exercise {
+                            HStack {
+                                Text("#Sessions")
+                                Spacer()
+                                Text("\(dateFilteredSessions.count)")
+                            }
+                            HStack {
+                                Text("#Exercises")
+                                Spacer()
+                                Text("\(totalexercises)") //change to total exercises
+                            }
+                        } else {
                             HStack {
                                 Text("#Climbs")
                                 Spacer()
@@ -531,110 +560,111 @@ struct ProgressViewScreen: View {
                             }
                         }
                     }
-                
-                // Distribution Chart
-                Section("Distribution") {
-                    Picker("", selection: $selectedDistributionAxis) {
-                        ForEach(DistributionAxis.availableAxes(for: selectedType), id: \.self) { axis in
-                            Text(axis.displayName(for: selectedType)).tag(axis)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: selectedType) { _, newType in
-                        // Reset to first available axis when type changes
-                        if let firstAxis = DistributionAxis.availableAxes(for: newType).first {
-                            selectedDistributionAxis = firstAxis
-                        }
-                    }
                     
-                    if distributionData.isEmpty {
-                        Text("No data available for the selected filters")
-                            .foregroundStyle(.secondary)
-                            .frame(minHeight: 120)
-                    } else {
-                        Chart(distributionData.prefix(10)) { point in // Limit to top 10 for readability
-                            BarMark(
-                                x: .value("Count", point.count),
-                                y: .value("Category", point.category)
-                            )
-                            .foregroundStyle(.green)
-                            .annotation(position: .trailing) {
+                    // Distribution Chart
+                    Section("Distribution") {
+                        Picker("", selection: $selectedDistributionAxis) {
+                            ForEach(DistributionAxis.availableAxes(for: selectedType), id: \.self) { axis in
+                                Text(axis.displayName(for: selectedType)).tag(axis)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: selectedType) { _, newType in
+                            // Reset to first available axis when type changes
+                            if let firstAxis = DistributionAxis.availableAxes(for: newType).first {
+                                selectedDistributionAxis = firstAxis
+                            }
+                        }
+                        
+                        if distributionData.isEmpty {
+                            Text("No data available for the selected filters")
+                                .foregroundStyle(.secondary)
+                                .frame(minHeight: 120)
+                        } else {
+                            Chart(distributionData.prefix(10)) { point in // Limit to top 10 for readability
+                                BarMark(
+                                    x: .value("Count", point.count),
+                                    y: .value("Category", point.category)
+                                )
+                                .foregroundStyle(.green)
+                                .annotation(position: .trailing) {
                                     Text(point.count, format: .number)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                        }
-                        .frame(minHeight: 300)
-                        .chartXAxis {
-                            AxisMarks(position: .bottom)
-                        }
-                        .chartYAxis {
-                            AxisMarks(position: .leading) { value in
-                                AxisGridLine()
-                                AxisTick()
-                                AxisValueLabel() {
-                                    if let category = value.as(String.self) {
-                                        Text(category)
-                                            .font(.caption)
-                                            .lineLimit(2)
-                                            .multilineTextAlignment(.trailing)
+                            }
+                            .frame(minHeight: 300)
+                            .chartXAxis {
+                                AxisMarks(position: .bottom)
+                            }
+                            .chartYAxis {
+                                AxisMarks(position: .leading) { value in
+                                    AxisGridLine()
+                                    AxisTick()
+                                    AxisValueLabel() {
+                                        if let category = value.as(String.self) {
+                                            Text(category)
+                                                .font(.caption)
+                                                .lineLimit(2)
+                                                .multilineTextAlignment(.trailing)
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                // Progress Over Time Chart
-                Section("Climbs Over Time") {
-                    if timeSeriesData.isEmpty {
-                        Text("No data available for the selected filters")
-                            .foregroundStyle(.secondary)
-                            .frame(minHeight: 120)
-                    } else {
-                        Chart(timeSeriesData) { point in
-                            LineMark(
-                                x: .value("Date", point.date),
-                                y: .value("Count", point.count)
-                            )
-                            .foregroundStyle(.blue)
-                            .annotation(position: .automatic) {
+                    // Progress Over Time Chart
+                    Section("Climbs Over Time") {
+                        if timeSeriesData.isEmpty {
+                            Text("No data available for the selected filters")
+                                .foregroundStyle(.secondary)
+                                .frame(minHeight: 120)
+                        } else {
+                            Chart(timeSeriesData) { point in
+                                LineMark(
+                                    x: .value("Date", point.date),
+                                    y: .value("Count", point.count)
+                                )
+                                .foregroundStyle(.blue)
+                                .annotation(position: .automatic) {
                                     Text(point.count, format: .number)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                            
-                            PointMark(
-                                x: .value("Date", point.date),
-                                y: .value("Count", point.count)
-                            )
-                            .foregroundStyle(.blue)
-                        }
-                        .frame(minHeight: 200)
-                        .chartYAxis {
-                            AxisMarks(position: .leading)
-                        }
-                        .chartXAxis {
-                            AxisMarks(values: .stride(by: .day, count: max(1, timeSeriesData.count / 5))) { value in
-                                AxisGridLine()
-                                AxisTick()
-                                AxisValueLabel(format: .dateTime.month().day())
+                                
+                                PointMark(
+                                    x: .value("Date", point.date),
+                                    y: .value("Count", point.count)
+                                )
+                                .foregroundStyle(.blue)
+                            }
+                            .frame(minHeight: 200)
+                            .chartYAxis {
+                                AxisMarks(position: .leading)
+                            }
+                            .chartXAxis {
+                                AxisMarks(values: .stride(by: .day, count: max(1, timeSeriesData.count / 5))) { value in
+                                    AxisGridLine()
+                                    AxisTick()
+                                    AxisValueLabel(format: .dateTime.month().day())
+                                }
                             }
                         }
                     }
                 }
+                .onAppear {
+                    // Reset filters when view appears
+                    selectedStyle = ""
+                    selectedGrade = ""
+                    selectedAngle = ""
+                    selectedGym = ""
+                    selectedRopeType = ""
+                    customEndDate = Date()
+                    customStartDate = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+                }
             }
-            .onAppear {
-                // Reset filters when view appears
-                selectedStyle = ""
-                selectedGrade = ""
-                selectedAngle = ""
-                selectedGym = ""
-                customEndDate = Date()
-                customStartDate = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
-            }
+            .navigationTitle("STATS")
         }
-        .navigationTitle("STATS")
     }
-    
         
 }

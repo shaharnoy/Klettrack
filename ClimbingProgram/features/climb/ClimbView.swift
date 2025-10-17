@@ -434,7 +434,7 @@ struct ClimbRowCard: View {
             HStack(alignment: .center) {
                 
                 // Climb type badge
-                Text(climb.climbType.displayName)
+                Text(climb.climbType.displayName + (climb.climbType == .sport && climb.ropeClimbType != nil ? " (\(climb.ropeClimbType!.displayName))" : ""))
                     .font(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)

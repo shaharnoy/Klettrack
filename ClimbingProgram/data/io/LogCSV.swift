@@ -57,7 +57,7 @@ enum LogCSV {
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
         // Header extended with climb_id and tb2_uuid at the end (backward compatible)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -88,6 +88,7 @@ enum LogCSV {
                     csvEscape(i.grade ?? ""), // grade
                     "", // angle
                     "", // holdColor
+                    "", // rope_type
                     "", // style
                     "", // attempts
                     "", // wip
@@ -117,6 +118,7 @@ enum LogCSV {
                 csvEscape(climb.grade),
                 climb.angleDegrees.map { String($0) } ?? "",
                 csvEscape(climb.holdColor?.rawValue ?? ""),
+                csvEscape(climb.ropeClimbType?.rawValue ?? ""),
                 csvEscape(climb.style),
                 csvEscape(climb.attempts ?? ""),
                 climb.isWorkInProgress ? "true" : "false",
@@ -201,7 +203,7 @@ enum LogCSV {
                 continue
             }
 
-            // date,type,exercise_name,climb_type,grade,angle,holdColor,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid
+            // date,type,exercise_name,climb_type,grade,angle,holdColor,ropetype,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid
             let dateStr      = parts[safe: 0] ?? ""
             let typeStr      = parts[safe: 1] ?? ""
             let exerciseName = parts[safe: 2] ?? ""
@@ -209,19 +211,20 @@ enum LogCSV {
             let gradeStr     = parts[safe: 4] ?? ""
             let angleStr     = parts[safe: 5] ?? ""
             let holdColorStr = parts[safe: 6] ?? ""
-            let styleStr     = parts[safe: 7] ?? ""
-            let attemptsStr  = parts[safe: 8] ?? ""
-            let wipStr       = parts[safe: 9] ?? ""
-            let gymStr       = parts[safe: 10] ?? ""
-            let repsStr      = parts[safe: 11] ?? ""
-            let setsStr      = parts[safe: 12] ?? ""
-            let weightStr    = parts[safe: 13] ?? ""
-            let planIdStr    = parts[safe: 14] ?? ""
-            let planName     = parts[safe: 15] ?? ""
-            let dayTypeStr   = parts[safe: 16] ?? ""
-            let notesRaw     = parts[safe: 17] ?? ""
-            let climbIdStr   = parts[safe: 18] ?? ""
-            let tb2UUIDStr   = parts[safe: 19] ?? ""
+            let ropeTypeStr  = parts[safe: 7] ?? ""
+            let styleStr     = parts[safe: 8] ?? ""
+            let attemptsStr  = parts[safe: 9] ?? ""
+            let wipStr       = parts[safe: 10] ?? ""
+            let gymStr       = parts[safe: 11] ?? ""
+            let repsStr      = parts[safe: 12] ?? ""
+            let setsStr      = parts[safe: 13] ?? ""
+            let weightStr    = parts[safe: 14] ?? ""
+            let planIdStr    = parts[safe: 15] ?? ""
+            let planName     = parts[safe: 16] ?? ""
+            let dayTypeStr   = parts[safe: 17] ?? ""
+            let notesRaw     = parts[safe: 18] ?? ""
+            let climbIdStr   = parts[safe: 19] ?? ""
+            let tb2UUIDStr   = parts[safe: 20] ?? ""
 
             guard
                 let dayDate = df.date(from: dateStr),
@@ -239,6 +242,7 @@ enum LogCSV {
             let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
             let angle = angleStr.isEmpty ? nil : Int(angleStr)
             let holdColor = holdColorStr.isEmpty ? nil : holdColorStr
+            let ropeType = ropeTypeStr.isEmpty ? nil : ropeTypeStr
             let style = styleStr.trimmingCharacters(in: .whitespacesAndNewlines)
             let attempts = attemptsStr.trimmingCharacters(in: .whitespacesAndNewlines)
             let isWIP = wipStr.lowercased() == "true"
@@ -267,6 +271,7 @@ enum LogCSV {
                 grade: grade.isEmpty ? nil : grade,
                 angle: angle,
                 holdColor: holdColor,
+                ropeType: ropeType,
                 style: style.isEmpty ? nil : style,
                 attempts: attempts.isEmpty ? nil : attempts,
                 isWIP: isWIP,
@@ -409,20 +414,20 @@ enum LogCSV {
                 // Handle climb entries
                 guard let grade = e.grade, !grade.isEmpty else { continue }
 
-                // Parse climb type (default .boulder)
+                // Parse climb type
                 let climbType: ClimbType
                 if let climbTypeStr = e.climbType, let parsedType = ClimbType(rawValue: climbTypeStr) {
                     climbType = parsedType
                 } else {
-                    climbType = .boulder
+                    climbType = .boulder // default
                 }
-                
+
+                let ropeClimbType = e.ropeType.flatMap { RopeClimbType(rawValue: $0) }
+
                 // 1) Upsert by explicit climb_id if provided
                 if let providedId = e.climbId {
-                    // Try fetch by id
                     let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == providedId })
                     if let existing = (try? context.fetch(fetch))?.first {
-                        // Update existing
                         existing.climbType = climbType
                         existing.grade = grade
                         existing.angleDegrees = e.angle
@@ -430,17 +435,17 @@ enum LogCSV {
                         existing.attempts = e.attempts
                         existing.isWorkInProgress = e.isWIP
                         existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
                         existing.notes = e.notes
                         existing.dateLogged = startOfDay
                         if let tb2 = e.tb2UUID { existing.tb2ClimbUUID = tb2 }
-                        // No insert count
                         continue
                     } else {
-                        // Insert new with provided id
                         let climbEntry = ClimbEntry(
                             id: providedId,
                             climbType: climbType,
+                            ropeClimbType: ropeClimbType,
                             grade: grade,
                             angleDegrees: e.angle,
                             style: e.style?.isEmpty == false ? e.style! : "Unknown",
@@ -457,7 +462,7 @@ enum LogCSV {
                         continue
                     }
                 }
-                
+
                 // 2) If no id but we have tb2 uuid, compute TB2-stable id and upsert
                 if let tb2 = e.tb2UUID {
                     let stable = stableID(
@@ -469,7 +474,6 @@ enum LogCSV {
                     )
                     let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == stable })
                     if let existing = (try? context.fetch(fetch))?.first {
-                        // Update existing
                         existing.climbType = climbType
                         existing.grade = grade
                         existing.angleDegrees = e.angle
@@ -477,16 +481,17 @@ enum LogCSV {
                         existing.attempts = e.attempts
                         existing.isWorkInProgress = e.isWIP
                         existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
                         existing.notes = e.notes
                         existing.dateLogged = startOfDay
                         existing.tb2ClimbUUID = tb2
                         continue
                     } else {
-                        // Insert with stable id
                         let climbEntry = ClimbEntry(
                             id: stable,
                             climbType: climbType,
+                            ropeClimbType: ropeClimbType,
                             grade: grade,
                             angleDegrees: e.angle,
                             style: e.style?.isEmpty == false ? e.style! : "Unknown",
@@ -702,6 +707,7 @@ extension LogCSV {
         let grade: String?
         let angle: Int?
         let holdColor: String?
+        let ropeType: String?
         let style: String?
         let attempts: String?
         let isWIP: Bool
@@ -770,19 +776,20 @@ extension LogCSV {
                 let gradeStr     = parts[safe: 4] ?? ""
                 let angleStr     = parts[safe: 5] ?? ""
                 let holdColorStr = parts[safe: 6] ?? ""
-                let styleStr     = parts[safe: 7] ?? ""
-                let attemptsStr  = parts[safe: 8] ?? ""
-                let wipStr       = parts[safe: 9] ?? ""
-                let gymStr       = parts[safe: 10] ?? ""
-                let repsStr      = parts[safe: 11] ?? ""
-                let setsStr      = parts[safe: 12] ?? ""
-                let weightStr    = parts[safe: 13] ?? ""
-                let planIdStr    = parts[safe: 14] ?? ""
-                let planName     = parts[safe: 15] ?? ""
-                let dayTypeStr   = parts[safe: 16] ?? ""
-                let notesRaw     = parts[safe: 17] ?? ""
-                let climbIdStr   = parts[safe: 18] ?? ""
-                let tb2UUIDStr   = parts[safe: 19] ?? ""
+                let ropeTypeStr  = parts[safe: 7] ?? ""
+                let styleStr     = parts[safe: 8] ?? ""
+                let attemptsStr  = parts[safe: 9] ?? ""
+                let wipStr       = parts[safe: 10] ?? ""
+                let gymStr       = parts[safe: 11] ?? ""
+                let repsStr      = parts[safe: 12] ?? ""
+                let setsStr      = parts[safe: 13] ?? ""
+                let weightStr    = parts[safe: 14] ?? ""
+                let planIdStr    = parts[safe: 15] ?? ""
+                let planName     = parts[safe: 16] ?? ""
+                let dayTypeStr   = parts[safe: 17] ?? ""
+                let notesRaw     = parts[safe: 18] ?? ""
+                let climbIdStr   = parts[safe: 19] ?? ""
+                let tb2UUIDStr   = parts[safe: 20] ?? ""
                 
                 guard
                     let dayDate = df.date(from: dateStr),
@@ -793,6 +800,7 @@ extension LogCSV {
                 let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let angle = angleStr.isEmpty ? nil : Int(angleStr)
                 let holdColor = holdColorStr.isEmpty ? nil : holdColorStr
+                let ropeType = ropeTypeStr.isEmpty ? nil : ropeTypeStr
                 let style = styleStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let attempts = attemptsStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let isWIP = wipStr.lowercased() == "true"
@@ -821,6 +829,7 @@ extension LogCSV {
                     grade: grade.isEmpty ? nil : grade,
                     angle: angle,
                     holdColor: holdColor,
+                    ropeType: ropeType,
                     style: style.isEmpty ? nil : style,
                     attempts: attempts.isEmpty ? nil : attempts,
                     isWIP: isWIP,
@@ -986,6 +995,8 @@ extension LogCSV {
                 } else {
                     climbType = .boulder // default
                 }
+
+                let ropeClimbType = e.ropeType.flatMap { RopeClimbType(rawValue: $0) }
                 
                 // 1) Upsert by explicit climb_id if provided
                 if let providedId = e.climbId {
@@ -998,6 +1009,7 @@ extension LogCSV {
                         existing.attempts = e.attempts
                         existing.isWorkInProgress = e.isWIP
                         existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
                         existing.notes = e.notes
                         existing.dateLogged = startOfDay
@@ -1007,6 +1019,7 @@ extension LogCSV {
                         let climbEntry = ClimbEntry(
                             id: providedId,
                             climbType: climbType,
+                            ropeClimbType: ropeClimbType,
                             grade: grade,
                             angleDegrees: e.angle,
                             style: e.style?.isEmpty == false ? e.style! : "Unknown",
@@ -1042,6 +1055,7 @@ extension LogCSV {
                         existing.attempts = e.attempts
                         existing.isWorkInProgress = e.isWIP
                         existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
                         existing.notes = e.notes
                         existing.dateLogged = startOfDay
@@ -1051,12 +1065,14 @@ extension LogCSV {
                         let climbEntry = ClimbEntry(
                             id: stable,
                             climbType: climbType,
+                            ropeClimbType: ropeClimbType,
                             grade: grade,
                             angleDegrees: e.angle,
                             style: e.style?.isEmpty == false ? e.style! : "Unknown",
                             attempts: e.attempts,
                             isWorkInProgress: e.isWIP,
                             holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
+                            
                             gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                             notes: e.notes,
                             dateLogged: startOfDay,
@@ -1172,3 +1188,4 @@ private func deterministicUUID(from string: String) -> UUID {
     let uuid = uuid_t(bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15])
     return UUID(uuid: uuid)
 }
+

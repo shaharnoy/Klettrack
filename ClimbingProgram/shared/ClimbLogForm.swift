@@ -247,7 +247,7 @@ struct ClimbLogForm: View {
         
         let climb = ClimbEntry(
             climbType: selectedClimbType,
-            
+            ropeClimbType: ropeType,
             grade: grade.isEmpty ? "Unknown" : grade,
             angleDegrees: angleInt,
             style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
