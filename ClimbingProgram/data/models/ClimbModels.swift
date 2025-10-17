@@ -21,16 +21,16 @@ final class ClimbEntry {
     var isWorkInProgress: Bool
     var isPreviouslyClimbed: Bool?
     var holdColor: HoldColor?
+    var ropeClimbType: RopeClimbType?
     var gym: String
     var notes: String?
     var dateLogged: Date
-    
-    // New: TB2 climb UUID to enable "previously climbed" detection
     var tb2ClimbUUID: String?
     
     init(
         id: UUID = UUID(),
         climbType: ClimbType,
+        ropeClimbType: RopeClimbType? = nil,
         grade: String,
         angleDegrees: Int? = nil,
         style: String,
@@ -45,6 +45,7 @@ final class ClimbEntry {
     ) {
         self.id = id
         self.climbType = climbType
+        self.ropeClimbType = ropeClimbType
         self.grade = grade
         self.angleDegrees = angleDegrees
         self.style = style
@@ -87,6 +88,14 @@ enum ClimbType: String, CaseIterable, Codable {
         var container = encoder.singleValueContainer()
         try container.encode(self.rawValue)
     }
+}
+
+//RopeClimbType enum
+enum RopeClimbType: String, CaseIterable, Codable {
+    case lead = "Lead"
+    case topRope = "Top Rope"
+    
+    var displayName: String { rawValue }
 }
 
 enum HoldColor: String, CaseIterable, Codable {

@@ -214,7 +214,7 @@ struct ClimbView: View {
         Section {
             HStack(spacing: 8) {
                 filterToggle(isOn: $showOnlyWIP, label: "WIP Only", onSymbol: "flame.fill", offSymbol: "flame")
-                filterToggle(isOn: $hidePreviouslyClimbed, label: "Hide Repeats", onSymbol: "eye.slash.fill", offSymbol: "eye.slash")
+                filterToggle(isOn: $hidePreviouslyClimbed, label: "Hide Previously climbed", onSymbol: "eye.slash.fill", offSymbol: "eye.slash")
                 Spacer(minLength: 0)
             }
             .font(.caption)
@@ -567,6 +567,7 @@ struct EditClimbView: View {
     @State private var selectedDate: Date = Date()
     @State private var isPreviouslyClimbed: Bool = false
     @State private var selectedHoldColor: HoldColor = .none
+    @State private var selectedRopeClimbType: RopeClimbType = .lead //
     
     // Computed properties to get available options
     private var availableStyles: [String] {
@@ -647,7 +648,16 @@ struct EditClimbView: View {
                     TextField("Attempts", text: $attempts)
                         .keyboardType(.numberPad)
                     Toggle("WIP?", isOn: $climb.isWorkInProgress)
-                    Toggle("Climbed before?", isOn: $isPreviouslyClimbed)
+                    Toggle("Previously climbed?", isOn: $isPreviouslyClimbed)
+                    // Rope type picker, shown only for Sport climbs
+                    if climb.climbType == .sport {
+                        Picker("Rope", selection: $selectedRopeClimbType) {
+                            ForEach(RopeClimbType.allCases, id: \.self) { ropeType in
+                                Text(ropeType.displayName).tag(ropeType)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
                     TextField("Notes", text: $notes)
                 }
             
@@ -743,6 +753,7 @@ struct EditClimbView: View {
         selectedDate = climb.dateLogged
         isPreviouslyClimbed = climb.isPreviouslyClimbed ?? false
         selectedHoldColor = climb.holdColor ?? .none
+        selectedRopeClimbType = climb.ropeClimbType ?? .lead
     }
     
     private func saveChanges() {
@@ -755,6 +766,7 @@ struct EditClimbView: View {
         climb.dateLogged = selectedDate
         climb.isPreviouslyClimbed = isPreviouslyClimbed
         climb.holdColor = selectedHoldColor
+        climb.ropeClimbType = (climb.climbType == .sport) ? selectedRopeClimbType : nil
         
         do {
             try modelContext.save()

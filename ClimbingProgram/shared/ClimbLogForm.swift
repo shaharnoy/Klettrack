@@ -23,6 +23,7 @@ struct ClimbLogForm: View {
     @State private var sessionManager = ClimbSessionManager.shared
     
     @State private var selectedClimbType: ClimbType = .boulder
+    @State private var selectedRopeClimbType: RopeClimbType = .lead
     @State private var grade: String = ""
     @State private var angleDegrees: String = ""
     @State private var selectedStyle: String = ""
@@ -92,6 +93,7 @@ struct ClimbLogForm: View {
                 }
                 .pickerStyle(.segmented)
                 
+                
                 // Style picker with add button
                 HStack {
                     Picker("Style", selection: $selectedStyle) {
@@ -139,6 +141,15 @@ struct ClimbLogForm: View {
                         .keyboardType(.numberPad)
                     Toggle("WIP?", isOn: $isWorkInProgress)
                     Toggle("Previously climbed?", isOn: $isPreviouslyClimbed)
+                    //Rope type picker, shown only for Sport climbs
+                    if selectedClimbType == .sport {
+                        Picker("Rope", selection: $selectedRopeClimbType) {
+                            ForEach(RopeClimbType.allCases, id: \.self) { ropeType in
+                                Text(ropeType.displayName).tag(ropeType)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
                     TextField("Notes", text: $notes)
                 }
                 // Hold color picker
@@ -232,9 +243,11 @@ struct ClimbLogForm: View {
         let angleInt = angleDegrees.isEmpty ? nil : Int(angleDegrees)
         let attemptsText = attempts.isEmpty ? nil : attempts
         let notesText = notes.isEmpty ? nil : notes
+        let ropeType: RopeClimbType? = (selectedClimbType == .sport) ? selectedRopeClimbType : nil
         
         let climb = ClimbEntry(
             climbType: selectedClimbType,
+            
             grade: grade.isEmpty ? "Unknown" : grade,
             angleDegrees: angleInt,
             style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
