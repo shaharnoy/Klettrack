@@ -58,7 +58,7 @@ struct ClimbLogForm: View {
         switch selectedClimbType {
         case .boulder:
             return CatalogHue.bouldering.color
-        case .lead:
+        case .sport:
             return CatalogHue.climbing.color
         }
     }

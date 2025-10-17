@@ -423,7 +423,7 @@ struct ClimbRowCard: View {
         switch climb.climbType {
         case .boulder:
             return CatalogHue.bouldering.color
-        case .lead:
+        case .sport:
             return CatalogHue.climbing.color
         }
     }
@@ -585,7 +585,7 @@ struct EditClimbView: View {
         switch climb.climbType {
         case .boulder:
             return CatalogHue.bouldering.color
-        case .lead:
+        case .sport:
             return CatalogHue.climbing.color
         }
     }

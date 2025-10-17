@@ -457,7 +457,7 @@ struct ProgressViewScreen: View {
                         Picker("Climb Type", selection: $selectedClimbType) {
                             Text("All types").tag("")
                             Text("Boulder").tag("Boulder")
-                            Text("Lead").tag("Lead")
+                            Text("Sport").tag("Sport")
                         }
                         
                         if !availableAngles.isEmpty {

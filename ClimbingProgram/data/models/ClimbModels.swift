@@ -63,10 +63,29 @@ final class ClimbEntry {
 
 enum ClimbType: String, CaseIterable, Codable {
     case boulder = "Boulder"
-    case lead = "Lead"
+    case sport = "Sport"
     
     var displayName: String {
         return rawValue
+    }
+    
+    // Custom decoding for backward compatibility: map "Lead" to .sport
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "Boulder":
+            self = .boulder
+        case "Sport", "Lead":
+            self = .sport
+        default:
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot initialize ClimbType from invalid String value \(raw)")
+        }
+    }
+    // Optional: if you want custom encoding (not strictly necessary here)
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
     }
 }
 
