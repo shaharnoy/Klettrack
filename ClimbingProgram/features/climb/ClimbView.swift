@@ -591,6 +591,13 @@ struct EditClimbView: View {
         }
     }
     
+    private var attemptsIntBinding: Binding<Int> {
+        Binding(
+            get: { Int(attempts) ?? 1 },
+            set: { attempts = String(max(0, $0)) }   // never go below 0
+        )
+    }
+    
     var body: some View {
         NavigationStack {
             Form {
@@ -640,13 +647,23 @@ struct EditClimbView: View {
                 
                 Section("Details") {
                     DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
-                    TextField("Grade", text: $grade)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                    TextField("Angle°", text: $angleDegrees)
-                        .keyboardType(.numberPad)
-                    TextField("Attempts", text: $attempts)
-                        .keyboardType(.numberPad)
+                    LabeledContent("Grade") {
+                            TextField("7A / V6", text: $grade, prompt: nil) //
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled(true)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    LabeledContent("Angle") {
+                            HStack(spacing: 6) {
+                                TextField("0", text: $angleDegrees, prompt: nil)
+                                    .keyboardType(.numberPad)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 80)
+                            }
+                        }
+                    Stepper(value: attemptsIntBinding, in: 1...9999) {
+                        Text("Attempts: \(attemptsIntBinding.wrappedValue)")
+                    }
                     Toggle("WIP?", isOn: $climb.isWorkInProgress)
                     Toggle("Previously climbed?", isOn: $isPreviouslyClimbed)
                     // Rope type picker, shown only for Sport climbs
