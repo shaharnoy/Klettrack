@@ -475,13 +475,13 @@ enum LogCSV {
                     let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == stable })
                     if let existing = (try? context.fetch(fetch))?.first {
                         existing.climbType = climbType
+                        existing.ropeClimbType = ropeClimbType
                         existing.grade = grade
                         existing.angleDegrees = e.angle
                         existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
                         existing.attempts = e.attempts
                         existing.isWorkInProgress = e.isWIP
                         existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
-                        existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
                         existing.notes = e.notes
                         existing.dateLogged = startOfDay
@@ -552,6 +552,7 @@ enum LogCSV {
                 // Create climb entry (no id / no tb2 uuid path)
                 let climbEntry = ClimbEntry(
                     climbType: climbType,
+                    ropeClimbType: ropeClimbType,
                     grade: grade,
                     angleDegrees: e.angle,
                     style: e.style?.isEmpty == false ? e.style! : "Unknown",

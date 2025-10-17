@@ -70,11 +70,11 @@ final class LogCSVTests: BaseSwiftDataTestCase {
     func testClimbImportUpsert_ByExplicitIdAndTB2StableId() throws {
         // Build CSV rows manually
         let day = "2025-08-28"
-        let header = "date,type,exercise_name,climb_type,grade,angle,holdColor,ropetype,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"
+        let header = "date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"
         
         // 1) With explicit climb_id
         let climbId = UUID()
-        let row1 = "\(day),climb,,Boulder,6A,20,Red,Power,3,false,Ostbloc,,,,,,,,\(climbId.uuidString),"
+        let row1 = "\(day),climb,,Boulder,6A,20,Red,,Power,3,false,Ostbloc,,,,,,,,\(climbId.uuidString),"
         let row1Update = "\(day),climb,,Boulder,6A+,25,Blue,,Power,4,true,Ostbloc,,,,,,,,\(climbId.uuidString),"
         
         // 2) With TB2 uuid and climb_id
