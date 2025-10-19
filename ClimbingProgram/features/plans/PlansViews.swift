@@ -1295,12 +1295,55 @@ struct CatalogExercisePicker: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query(sort: \Activity.name) private var activities: [Activity]
+    @State private var searchText: String = ""
+    @State private var isSearchPresented: Bool = false
     
     // Instead of relying on isDataReady environment, check if we have data directly
     private var hasData: Bool {
         !activities.isEmpty
     }
-
+    // Hit model for search results
+    private struct ExerciseHit: Identifiable {
+        let id: UUID
+        let name: String
+        let subtitle: String?
+        let tint: Color
+        init(ex: Exercise, tint: Color) {
+            self.id = ex.id
+            self.name = ex.name
+            self.subtitle = ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes
+            self.tint = tint
+        }
+    }
+    
+    // Flatten all exercises (including combos) with their activity tint
+    private var allExerciseHits: [ExerciseHit] {
+        var hits: [ExerciseHit] = []
+        for activity in activities {
+            let tint = activity.hue.color
+            for t in activity.types {
+                // direct exercises
+                for ex in t.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
+                // combo exercises
+                for combo in t.combinations {
+                    for ex in combo.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
+                }
+            }
+        }
+        // de-dup by exercise id in case an exercise appears multiple places
+        var seen: Set<UUID> = []
+        return hits.filter { seen.insert($0.id).inserted }
+    }
+    
+    // Filter by search text across exercise name + subtitle
+    private var filteredExerciseHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allExerciseHits.filter {
+            $0.name.localizedCaseInsensitiveContains(q)
+            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
+        }
+    }
     var body: some View {
         NavigationStack {
             if !hasData {
@@ -1324,21 +1367,56 @@ struct CatalogExercisePicker: View {
                 }
             } else {
                 List {
-                    ForEach(activities) { activity in
-                        NavigationLink {
-                            TypesList(
-                                activity: activity,
-                                selected: $selected,
-                                tint: activity.hue.color,
-                                onDone: { dismiss() }     // close from any level
+                    if !searchText.isEmpty {
+                        if filteredExerciseHits.isEmpty {
+                            ContentUnavailableView(
+                                "No matches",
+                                systemImage: "magnifyingglass",
+                                description: Text("Try a different search term.")
                             )
-                        } label: {
-                            HStack(spacing: 10) {
-                                Circle().fill(activity.hue.color).frame(width: 8, height: 8)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(activity.name).font(.headline)
-                                    Text("\(activity.types.count) types")
-                                        .font(.footnote).foregroundStyle(.secondary)
+                        } else {
+                            Section {
+                                ForEach(filteredExerciseHits) { hit in
+                                    ExercisePickRow(
+                                        name: hit.name,
+                                        subtitle: hit.subtitle,
+                                        reps: nil, sets: nil, rest: nil,
+                                        tint: hit.tint,
+                                        isSelected: selected.contains(hit.name)
+                                    ) {
+                                        toggleSelection(hit.name)
+                                    }
+                                }
+                            } header: {
+                                HStack {
+                                    Text("Results")
+                                    Spacer()
+                                    Button("Done") {
+                                        isSearchPresented = false     // collapse the search field & dismiss keyboard
+                                        dismiss() // close the picker
+                                    }
+                                    .font(.subheadline)
+                                }
+                            }
+
+                        }
+                    } else {
+                        ForEach(activities) { activity in
+                            NavigationLink {
+                                TypesList(
+                                    activity: activity,
+                                    selected: $selected,
+                                    tint: activity.hue.color,
+                                    onDone: { dismiss() }     // close from any level
+                                )
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Circle().fill(activity.hue.color).frame(width: 8, height: 8)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(activity.name).font(.headline)
+                                        Text("\(activity.types.count) types")
+                                            .font(.footnote).foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
@@ -1347,14 +1425,37 @@ struct CatalogExercisePicker: View {
                 .onAppear {
                     print("🟢 CatalogExercisePicker: activities.count = \(activities.count)")
                 }
+                .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
             }
         }
         .navigationTitle("Catalog")
         .toolbar {
+            // Existing Done to close the picker
             ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+
+            // Extra Done that *exits search* (only visible while searching)
+            ToolbarItem(placement: .topBarTrailing) {
+                if isSearchPresented {
+                    Button("Done") {
+                        isSearchPresented = false        // collapses search, dismisses keyboard
+                    }
+                }
+            }
+        }
+    }
+    private func toggleSelection(_ name: String) {
+        if let idx = selected.firstIndex(of: name) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(name)
         }
     }
 }
+
+
 
 struct TypesList: View {
     @Bindable var activity: Activity
