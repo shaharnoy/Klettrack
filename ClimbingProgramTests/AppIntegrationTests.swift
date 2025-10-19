@@ -58,7 +58,7 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         SeedData.loadIfNeeded(context)
         
         // Create a plan and a session so tabs have content
-        let plan = createTestPlan(name: "Plan A", kind: .weekly, start: Date())
+        let plan = createTestPlan(name: "Plan A", kindKey: "weekly", start: Date())
         _ = createTestSession(date: plan.startDate)
         try? context.save()
         
@@ -84,7 +84,7 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         let exercise = createTestExercise(trainingType: trainingType, name: "Integration Exercise")
         
         // 2. Plan using exercise
-        let plan = createTestPlan(name: "Integration Plan", kind: .weekly, start: Date())
+        let plan = createTestPlan(name: "Integration Plan", kindKey: "weekly", start: Date())
         guard let planDay = plan.days.first else {
             XCTFail("Plan should have at least one day")
             return
@@ -134,7 +134,12 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         
         let exercise = exercises.first!
         let startDate = Date()
-        let plan = PlanFactory.create(name: "Journey Plan", kind: .weekly, start: startDate, in: context)
+        
+        // Resolve kind model for weekly
+        let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
+        let weeklyKind = try XCTUnwrap((try? context.fetch(kindFetch))?.first)
+        let plan = PlanFactory.create(name: "Journey Plan", kind: weeklyKind, start: startDate, in: context)
+        
         plan.days.first?.chosenExercises.append(exercise.name)
         
         try context.save()
@@ -143,7 +148,7 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
     
     func testCompleteLoggingJourney() throws {
         // Plans → Select Plan → Select Day → Log Exercises (model-level)
-        let plan = createTestPlan(name: "Logging Plan", kind: .weekly, start: Date())
+        let plan = createTestPlan(name: "Logging Plan", kindKey: "weekly", start: Date())
         let planDay = try XCTUnwrap(plan.days.first)
         planDay.chosenExercises.append(contentsOf: ["Push-ups", "Pull-ups", "Squats"])
         
@@ -170,8 +175,19 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
     func testDeleteOneLoggedItemReducesCount() throws {
         // Arrange: create a plan with a day and chosen exercises
         let date = Calendar.current.startOfDay(for: Date())
-        let plan = Plan(name: "Test Plan", kind: .weekly, startDate: date)
-        let day = PlanDay(date: date, type: .climbingFull)
+        
+        let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
+        let weeklyKind = (try? context.fetch(kindFetch))?.first ?? PlanKindModel(key: "weekly", name: "Weekly", totalWeeks: nil, isRepeating: true, order: 1)
+        if (try? context.fetch(kindFetch))?.first == nil { context.insert(weeklyKind) }
+        
+        let plan = Plan(name: "Test Plan", kind: weeklyKind, startDate: date)
+        
+        let dtFetch = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == "climbingFull" })
+        let dayType = (try? context.fetch(dtFetch))?.first ?? DayTypeModel(key: "climbingFull", name: "Climb + Hi-Vol. exercises", order: 0, colorKey: "green")
+        if (try? context.fetch(dtFetch))?.first == nil { context.insert(dayType) }
+        
+        let day = PlanDay(date: date, type: dayType)
+        
         day.chosenExercises = ["Push-ups", "Pull-ups", "Squats"]
         plan.days.append(day)
         context.insert(plan)
@@ -181,7 +197,7 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         let cal = Calendar.current
         let start = cal.startOfDay(for: day.date)
         let end = cal.date(byAdding: .day, value: 1, to: start)!
-        let fetch = FetchDescriptor<Session>(predicate: #Predicate {
+        let fetch = FetchDescriptor<Session>(predicate: #Predicate<Session> {
             $0.date >= start && $0.date < end
         })
         let session: Session
@@ -221,7 +237,7 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         // Refresh and assert: count is N-1
         let sessionID = session.id
         let refetchSession = try context.fetch(
-            FetchDescriptor<Session>(predicate: #Predicate { $0.id == sessionID })
+            FetchDescriptor<Session>(predicate: #Predicate<Session> { $0.id == sessionID })
         ).first
         let countAfter = refetchSession?.items.count ?? -1
         XCTAssertEqual(countAfter, day.chosenExercises.count - 1)
@@ -229,7 +245,7 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         // And the removed child no longer exists
         let removedID = removed.id
         let removedFetch = try context.fetch(
-            FetchDescriptor<SessionItem>(predicate: #Predicate { $0.id == removedID })
+            FetchDescriptor<SessionItem>(predicate: #Predicate<SessionItem> { $0.id == removedID })
         )
         XCTAssertTrue(removedFetch.isEmpty)
     }
@@ -302,9 +318,10 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
                 session.items.append(SessionItem(exerciseName: "Exercise \(i)"))
             }
             for i in 0..<10 {
-                _ = createTestPlan(name: "Plan \(i)", kind: .weekly, start: Date())
+                _ = createTestPlan(name: "Plan \(i)", kindKey: "weekly", start: Date())
             }
             try? context.save()
         }
     }
 }
+

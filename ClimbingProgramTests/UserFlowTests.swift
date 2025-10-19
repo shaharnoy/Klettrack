@@ -25,7 +25,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
         trainingType.exercises.append(exercise)
         
         // 2. Create plan to add exercise to
-        let plan = createTestPlan()
+        let plan = createTestPlan(name: "Test Plan", kindKey: "weekly", start: Date())
         let planDay = plan.days.first!
         
         // 3. Simulate user selecting exercise and adding to plan
@@ -55,7 +55,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
         let exercise2 = Exercise(name: "Dyno Practice", repsText: "10", setsText: "2")
         combo.exercises.append(contentsOf: [exercise1, exercise2])
         
-        let plan = createTestPlan()
+        let plan = createTestPlan(name: "Test Plan", kindKey: "weekly", start: Date())
         let planDay = plan.days.first!
         
         // User selects the combination
@@ -76,7 +76,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
     
     func testQuickLogFlow() {
         // Setup plan with exercises
-        let plan = createTestPlan()
+        let plan = createTestPlan(name: "Test Plan", kindKey: "weekly", start: Date())
         let planDay = plan.days.first!
         planDay.chosenExercises.append("Push-ups")
         
@@ -105,7 +105,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
     
     func testDetailedLogFlow() {
         // Setup plan with exercises
-        let plan = createTestPlan()
+        let plan = createTestPlan(name: "Test Plan", kindKey: "weekly", start: Date())
         let planDay = plan.days.first!
         planDay.chosenExercises.append("Pull-ups")
         
@@ -160,13 +160,19 @@ class UserFlowTests: ClimbingProgramTestSuite {
     
     func testPlanCreationFlow() {
         // Test different plan types
-        let weeklyPlan = PlanFactory.create(name: "Weekly Training", kind: .weekly, start: Date(), in: context)
-        let pyramidPlan = PlanFactory.create(name: "3-2-1 Plan", kind: .threeTwoOne, start: Date(), in: context)
+        
+        let weeklyKind = planKind(withKey: "weekly") ?? PlanKindModel(key: "weekly", name: "Weekly", totalWeeks: nil, isRepeating: true, order: 0)
+        if planKind(withKey: "weekly") == nil { context.insert(weeklyKind) }
+        let weeklyPlan = PlanFactory.create(name: "Weekly Training", kind: weeklyKind, start: Date(), in: context)
+        
+        let threeTwoOneKind = planKind(withKey: "3-2-1") ?? PlanKindModel(key: "3-2-1", name: "3-2-1 (6 weeks)", totalWeeks: 6, isRepeating: false, order: 2)
+        if planKind(withKey: "3-2-1") == nil { context.insert(threeTwoOneKind) }
+        let pyramidPlan = PlanFactory.create(name: "3-2-1 Plan", kind: threeTwoOneKind, start: Date(), in: context)
         
         try? context.save()
         
-        XCTAssertEqual(weeklyPlan.kind, .weekly)
-        XCTAssertEqual(pyramidPlan.kind, .threeTwoOne)
+        XCTAssertEqual(weeklyPlan.kind?.key, "weekly")
+        XCTAssertEqual(pyramidPlan.kind?.key, "3-2-1")
         XCTAssertFalse(weeklyPlan.days.isEmpty)
         XCTAssertFalse(pyramidPlan.days.isEmpty)
         
@@ -176,12 +182,15 @@ class UserFlowTests: ClimbingProgramTestSuite {
     }
     
     func testPlanExecutionFlow() {
-        let plan = createTestPlan()
+        let plan = createTestPlan(name: "Test Plan", kindKey: "weekly", start: Date())
         let planDay = plan.days.first!
         
         // 1. Configure day with exercises
         planDay.chosenExercises.append(contentsOf: ["Exercise 1", "Exercise 2", "Exercise 3"])
-        planDay.type = .climbingFull
+        
+        let dt = dayType(withKey: "climbingFull") ?? DayTypeModel(key: "climbingFull", name: "Climb + Hi-Vol. exercises", order: 0, colorKey: "green")
+        if dayType(withKey: "climbingFull") == nil { context.insert(dt) }
+        planDay.type = dt
         
         // 2. Execute the plan (log exercises)
         let session = Session(date: planDay.date)
@@ -202,7 +211,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
         
         XCTAssertEqual(planDay.chosenExercises.count, 3)
         XCTAssertEqual(session.items.count, 3)
-        XCTAssertEqual(planDay.type, .climbingFull)
+        XCTAssertEqual(planDay.type, dt)
         
         // Verify all logged items are linked to the plan
         session.items.forEach { item in
@@ -212,7 +221,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
     
     func testProgressTrackingFlow() {
         // Create historical data for progress tracking
-        let plan = createTestPlan()
+        let plan = createTestPlan(name: "Test Plan", kindKey: "weekly", start: Date())
         let exerciseName = "Bench Press"
         
         // Create multiple sessions over time
@@ -289,7 +298,7 @@ class UserFlowTests: ClimbingProgramTestSuite {
         trainingType.exercises.append(exercise)
         
         // 2. Add to plan
-        let plan = createTestPlan()
+        let plan = createTestPlan(name: "Test Plan", kindKey: "weekly", start: Date())
         let planDay = plan.days.first!
         planDay.chosenExercises.append(exercise.name)
         

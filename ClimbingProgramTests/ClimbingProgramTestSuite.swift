@@ -62,10 +62,13 @@ class ClimbingProgramTestSuite: XCTestCase {
     @discardableResult
     func createTestPlan(
         name: String = "Test Plan",
-        kind: PlanKind = .weekly,
+        kindKey: String = "weekly",
         start: Date = Date()
     ) -> Plan {
-        PlanFactory.create(name: name, kind: kind, start: start, in: context)
+        let fetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == kindKey })
+        let kindModel = (try? context.fetch(fetch))?.first ?? PlanKindModel(key: kindKey, name: kindKey.capitalized, totalWeeks: kindKey == "weekly" ? nil : 1, isRepeating: kindKey == "weekly", order: 0)
+        if (try? context.fetch(fetch))?.first == nil { context.insert(kindModel) }
+        return PlanFactory.create(name: name, kind: kindModel, start: start, in: context)
     }
 
     @discardableResult
@@ -119,5 +122,17 @@ class ClimbingProgramTestSuite: XCTestCase {
         let s1 = cal.startOfDay(for: d1)
         let s2 = cal.startOfDay(for: d2)
         XCTAssertEqual(s1, s2, "Expected dates to be on the same calendar day. Got \(d1) vs \(d2).", file: file, line: line)
+    }
+
+    // MARK: - Additional helpers similar to BaseSwiftDataTestCase
+
+    func planKind(withKey key: String = "weekly") -> PlanKindModel? {
+        let fetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == key })
+        return (try? context.fetch(fetch))?.first
+    }
+
+    func dayType(withKey key: String) -> DayTypeModel? {
+        let fetch = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == key })
+        return (try? context.fetch(fetch))?.first
     }
 }

@@ -11,9 +11,11 @@ final class LogCSVTests: BaseSwiftDataTestCase {
     
     func testExerciseExportImportRoundTrip_RebuildsPlanDaysAndDayTypes() throws {
         // Prepare a plan with a day and an exercise, and a matching session item
-        let plan = createTestPlan(name: "RoundTrip Plan", kind: .weekly, start: Calendar.current.startOfDay(for: Date()))
+        let plan = createTestPlan(name: "RoundTrip Plan", kindKey: "weekly", start: Calendar.current.startOfDay(for: Date()))
         let planDay = try XCTUnwrap(plan.days.first)
-        planDay.type = .climbingFull
+        // Resolve and assign a DayTypeModel by key
+        let dayType = ensureDayType(withKey: "climbingFull", name: "Climb + Hi-Vol. exercises", colorKey: "green")
+        planDay.type = dayType
         
         let activity = createTestActivity(name: "Cat")
         let tt = createTestTrainingType(activity: activity, name: "TT")
@@ -54,7 +56,7 @@ final class LogCSVTests: BaseSwiftDataTestCase {
         let importedPlan = try XCTUnwrap(plans.first)
         XCTAssertFalse(importedPlan.days.isEmpty)
         let importedDay = try XCTUnwrap(importedPlan.days.first)
-        XCTAssertEqual(importedDay.type, .climbingFull)
+        XCTAssertEqual(importedDay.type?.key, "climbingFull")
         XCTAssertTrue(importedDay.chosenExercises.contains(ex.name))
         
         // Verify session and item

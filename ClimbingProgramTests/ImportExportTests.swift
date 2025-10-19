@@ -35,6 +35,15 @@ private func testStableID(climbUUID: String, day: Date, angle: Int?, isWIP: Bool
     return testDeterministicUUID(from: key)
 }
 
+private func ensurePlanKind(_ ctx: ModelContext, key: String = "weekly", name: String = "Weekly") throws -> PlanKindModel {
+    if let existing = try ctx.fetch(FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == key })).first {
+        return existing
+    }
+    let kind = PlanKindModel(key: key, name: name)
+    ctx.insert(kind)
+    try ctx.save()
+    return kind
+}
 
 
 class ImportExportTests: ClimbingProgramTestSuite {
@@ -43,7 +52,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
     
     func testCSVExportStructure() {
         // Create test data
-        let plan = createTestPlan()
+        let plan = createTestPlan(name: "Plan", kindKey: "weekly", start: Date())
         let session = createTestSession()
         
         let item = SessionItem(
@@ -132,7 +141,11 @@ class ImportExportTests: ClimbingProgramTestSuite {
     }
     
     func testCSVImportWithPlanData() throws {
-        let plan = createTestPlan()
+        let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
+        let planKind = (try? context.fetch(kindFetch))?.first ?? PlanKindModel(key: "weekly", name: "Weekly", totalWeeks: nil, isRepeating: true, order: 1)
+        if (try? context.fetch(kindFetch))?.first == nil { context.insert(planKind) }
+        let plan = Plan(name: "Test Plan", kind: planKind, startDate: Date())
+        context.insert(plan)
         try? context.save()
         let csvContent = """
     \(testCSVHeader)
@@ -166,7 +179,10 @@ class ImportExportTests: ClimbingProgramTestSuite {
     
     func testExportImportRoundTrip() throws {
         // Create original data
-        let plan = createTestPlan()
+        let planKind = try ensurePlanKind(context, key: "weekly", name: "Weekly")
+        let plan = Plan(name: "Roundtrip Plan", kind: planKind, startDate: Date())
+        context.insert(plan)
+        
         let session1 = Session(date: Date())
         let session2 = Session(date: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
         
@@ -432,4 +448,3 @@ class ImportExportTests: ClimbingProgramTestSuite {
         }
     }
     
-

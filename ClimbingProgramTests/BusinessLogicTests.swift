@@ -25,10 +25,10 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
     
     func testWeeklyPlanGeneration() {
         let startDate = Date()
-        let plan = PlanFactory.create(name: "Weekly Plan", kind: .weekly, start: startDate, in: context)
+        let plan = createTestPlan(name: "Weekly Plan", kindKey: "weekly", start: startDate)
         
         XCTAssertEqual(plan.name, "Weekly Plan")
-        XCTAssertEqual(plan.kind, .weekly)
+        XCTAssertEqual(plan.kind?.key, "weekly")
         XCTAssertEqual(plan.days.count, 7)
         
         // Verify dates are consecutive
@@ -45,19 +45,33 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
     
     func testPyramidPlanGeneration() {
         let startDate = Date()
-        let plan = PlanFactory.create(name: "3-2-1 Plan", kind: .threeTwoOne, start: startDate, in: context)
+        let kf = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "3-2-1" })
+        let existingKind = (try? context.fetch(kf))?.first
+        let kind321: PlanKindModel
+        if let k = existingKind {
+            k.name = "3-2-1 (6 weeks)"
+            k.totalWeeks = 6
+            k.isRepeating = false
+            k.order = 2
+            kind321 = k
+        } else {
+            let k = PlanKindModel(key: "3-2-1", name: "3-2-1 (6 weeks)", totalWeeks: 6, isRepeating: false, order: 2)
+            context.insert(k)
+            kind321 = k
+        }
+        let plan = PlanFactory.create(name: "3-2-1 Plan", kind: kind321, start: startDate, in: context)
         
-        XCTAssertEqual(plan.kind, .threeTwoOne)
-        XCTAssertTrue(plan.days.count > 7) // Multi-week structure
+        XCTAssertEqual(plan.kind?.key, "3-2-1")
+        XCTAssertEqual(plan.days.count, 42, "3-2-1 should produce 6 weeks (42 days)")
         
     }
     
     func testPlanWeekAppending() {
-        let plan = PlanFactory.create(name: "Base Plan", kind: .weekly, start: Date(), in: context)
+        let plan = createTestPlan(name: "Base Plan", kindKey: "weekly", start: Date())
         let initialDayCount = plan.days.count
         
         // Append 2 more weeks
-        PlanFactory.appendWeeks(to: plan, count: 2)
+        PlanFactory.appendWeeks(to: plan, count: 2, in: context)
         
         XCTAssertEqual(plan.days.count, initialDayCount + 14)
         
@@ -138,7 +152,7 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
     }
     
     func testSessionItemPlanLinking() {
-        let plan = createTestPlan()
+        let plan = createTestPlan(kindKey: "weekly")
         let session = createTestSession()
         
         let item = SessionItem(
@@ -225,7 +239,7 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
     func testDateConsistency() {
         let originalDate = Date()
         let session = Session(date: originalDate)
-        let plan = createTestPlan()
+        let plan = createTestPlan(kindKey: "weekly")
         
         // Dates should be normalized to start of day
         let calendar = Calendar.current
@@ -281,9 +295,9 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
     func testThemeIntegration() {
         // Test that Theme functionality is properly defined and accessible
         // Test DayType color extensions
-        XCTAssertNotNil(DayType.climbingFull.color)
-        XCTAssertNotNil(DayType.core.color)
-        XCTAssertNotNil(DayType.rest.color)
+        XCTAssertNotNil(DayTypeModel.color(for: "green"))
+        XCTAssertNotNil(DayTypeModel.color(for: "orange"))
+        XCTAssertNotNil(DayTypeModel.color(for: "purple"))
         
         // Test CatalogHue functionality
         XCTAssertNotNil(CatalogHue.core.color)
@@ -316,7 +330,7 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         // Create some test data first
         _ = createTestActivity()
         _ = createTestSession()
-        _ = createTestPlan()
+        _ = createTestPlan(kindKey: "weekly")
         try? context.save()
         
         // Verify data exists

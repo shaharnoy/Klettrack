@@ -160,7 +160,12 @@ class PerformanceAndEdgeCaseTests: ClimbingProgramTestSuite {
         // Add 1000 more days
         for i in 0..<1000 {
             let date = Calendar.current.date(byAdding: .day, value: i + 7, to: plan.startDate)!
-            let planDay = PlanDay(date: date, type: .climbingSmall)
+            
+            let dtFetch = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == "climbingSmall" })
+            let dayType = (try? context.fetch(dtFetch))?.first ?? DayTypeModel(key: "climbingSmall", name: "Climb + Lo-Vol. exercises", order: 1, colorKey: "blue")
+            if (try? context.fetch(dtFetch))?.first == nil { context.insert(dayType) }
+            
+            let planDay = PlanDay(date: date, type: dayType)
             plan.days.append(planDay)
         }
         
@@ -272,3 +277,4 @@ class PerformanceAndEdgeCaseTests: ClimbingProgramTestSuite {
         try? context.save()
     }
 }
+

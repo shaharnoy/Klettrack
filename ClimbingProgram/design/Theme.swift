@@ -6,21 +6,6 @@
 
 import SwiftUI
 
-extension DayType {
-    var color: Color {
-        switch self {
-        case .climbingFull:   return .green
-        case .climbingSmall:  return .blue
-        case .climbingReduced:return .brown
-        case .core:           return .orange
-        case .antagonist:     return .cyan
-        case .rest:           return .purple
-        case .vacation:       return .yellow
-        case .sick:           return .red
-        case .Perclimbing:    return .pink
-        }
-    }
-}
 
 // Map catalog categories to colors (align with DayType colors where it makes sense)
 enum CatalogHue: String {

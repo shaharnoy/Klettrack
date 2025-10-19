@@ -170,7 +170,7 @@ struct PlansListView: View {
                     let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
                     let tag = "import:\(df.string(from: Date()))"
                     let inserted = try LogCSV.importCSV(from: url, into: context, tag: tag, dedupe: true)
-                    importResultMessage = "Imported \(inserted) log item(s)."
+                    importResultMessage = "Imported\(inserted) log item(s)."
                 } catch {
                     importResultMessage = "Import failed: \(error.localizedDescription)"
                 }
@@ -208,7 +208,7 @@ private struct PlanRow: View {
     }
 
     private var subtitle: String {
-        "\(plan.kind.rawValue) • starts \(format(plan.startDate))"
+        "\(plan.kind?.name ?? "Unknown") • starts \(format(plan.startDate))"
     }
 
     private func format(_ date: Date) -> String {
@@ -221,17 +221,18 @@ private struct PlanRow: View {
 struct NewPlanSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Query(sort: [SortDescriptor<PlanKindModel>(\PlanKindModel.order)]) private var kinds: [PlanKindModel]
     @State private var name = ""
-    @State private var kind: PlanKind = .weekly
+    @State private var selectedKind: PlanKindModel? = nil
     @State private var start = Date()
 
     var body: some View {
         NavigationStack {
             Form {
                 TextField("Plan name", text: $name)
-                Picker("Template", selection: $kind) {
-                    ForEach(PlanKind.allCases, id: \.self) { k in
-                        Text(k.rawValue).tag(k)
+                Picker("Template", selection: $selectedKind) {
+                    ForEach(kinds) { k in
+                        Text(k.name).tag(Optional(k))
                     }
                 }
                 DatePicker("Start date", selection: $start, displayedComponents: .date)
@@ -243,8 +244,9 @@ struct NewPlanSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
+                        guard let kind = selectedKind else { return }
                         let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let planName = finalName.isEmpty ? kind.rawValue : finalName
+                        let planName = finalName.isEmpty ? kind.name : finalName
                         _ = PlanFactory.create(name: planName, kind: kind, start: start, in: context)
                         dismiss()
                     }
@@ -343,18 +345,29 @@ struct PlanDetailView: View {
             }
     }
     
+    // Helper: resolve a safe color for a plan day by refetching its day type
+    private func dayTypeColor(for day: PlanDay) -> Color {
+        guard let typeId = day.type?.id else { return .gray }
+        let fetch = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.id == typeId })
+        if let fresh = (try? context.fetch(fetch))?.first {
+            return fresh.color
+        } else {
+            return .gray
+        }
+    }
+    
     // Break down toolbar into smaller components
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if plan.kind == .weekly {
+        if plan.kind?.key == "weekly" {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Add 4 more weeks") {
-                        PlanFactory.appendWeeks(to: plan, count: 4)
+                        PlanFactory.appendWeeks(to: plan, count: 4, in: context)
                         try? context.save()
                     }
                     Button("Add 8 more weeks") {
-                        PlanFactory.appendWeeks(to: plan, count: 8)
+                        PlanFactory.appendWeeks(to: plan, count: 8, in: context)
                         try? context.save()
                     }
                     Button("Custom…") {
@@ -381,10 +394,10 @@ struct PlanDetailView: View {
                                 timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
                             } label: {
                                 HStack {
-                                    Circle().fill(day.type.color).frame(width: 10, height: 10)
+                                    Circle().fill(dayTypeColor(for: day)).frame(width: 10, height: 10)
                                     Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
                                     Spacer()
-                                    Text(day.type.rawValue).foregroundStyle(.secondary)
+                                    Text(day.type?.name ?? "Unknown").foregroundStyle(.secondary)
                                 }
                                 .padding(.vertical, 8)
                                 .padding(.horizontal, 16)
@@ -447,7 +460,7 @@ struct PlanDetailView: View {
                 .keyboardType(.numberPad)
             Button("Add") {
                 if let n = Int(weeksToAdd), n > 0 {
-                    PlanFactory.appendWeeks(to: plan, count: n)
+                    PlanFactory.appendWeeks(to: plan, count: n, in: context)
                     try? context.save()
                 }
                 weeksToAdd = ""
@@ -471,6 +484,11 @@ struct PlanDayEditor: View {
     @Environment(\.isDataReady) private var isDataReady
     @EnvironmentObject private var timerAppState: TimerAppState
     @State var day: PlanDay
+    
+    @Query(
+        filter: #Predicate<DayTypeModel> { $0.isHidden == false },
+        sort: [SortDescriptor<DayTypeModel>(\DayTypeModel.order)]
+    ) private var dayTypes: [DayTypeModel]
 
     // Catalog picker
     @State private var showingPicker = false
@@ -493,6 +511,9 @@ struct PlanDayEditor: View {
     
     // State for daily notes to handle the optional binding
     @State private var dailyNotesText: String = ""
+    
+    // New: Picker selection by identifier (prevents invalidated object binding)
+    @State private var selectedDayTypeId: UUID? = nil
     
     // Helper function to check if an exercise belongs to the Bouldering activity
     private func isBoulderingExercise(name: String) -> Bool {
@@ -884,9 +905,21 @@ struct PlanDayEditor: View {
 
     var body: some View {
         Form {
-            Picker("Day type", selection: $day.type) {
-                ForEach(DayType.allCases, id: \.self) { t in
-                    Text(t.rawValue).tag(t) }
+            // Day type picker – bind to ID to avoid invalidated object crashes
+            Picker("Day type", selection: $selectedDayTypeId) {
+                ForEach(dayTypes) { t in
+                    Text(t.name).tag(Optional(t.id))
+                }
+            }
+            .onAppear {
+                // Initialize selection from current model relation (safe if missing)
+                selectedDayTypeId = day.type?.id
+            }
+            .onChange(of: selectedDayTypeId) { _, newId in
+                // Resolve selected id to model instance; assign (or nil) safely
+                let resolved = dayTypes.first(where: { $0.id == newId })
+                day.type = resolved
+                try? context.save()
             }
             
             chosenActivitiesSection
@@ -895,9 +928,6 @@ struct PlanDayEditor: View {
         }
         .navigationTitle(day.date.formatted(date: .abbreviated, time: .omitted))
         .listStyle(.insetGrouped)
-        .onChange(of: day.type) {
-            try? context.save()
-        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack {
@@ -1502,7 +1532,7 @@ struct ExercisesList: View {
     }
 }
 
-// MARK: Compact row + MetricRow
+// MARK: - Compact row + MetricRow
 
 private struct ExercisePickRow: View {
     let name: String
@@ -1610,6 +1640,7 @@ private struct MonthlyGridView: View {
     let groups: [(components: DateComponents, days: [PlanDay])]
     let calendar: Calendar
     @EnvironmentObject private var timerAppState: TimerAppState
+    @Environment(\.modelContext) private var context
 
     // Helper to check if a day is today
     private func isToday(_ date: Date) -> Bool {
@@ -1619,6 +1650,17 @@ private struct MonthlyGridView: View {
     // Helper to find the current day in the plan
     private var currentDayId: UUID? {
         groups.flatMap { $0.days }.first { isToday($0.date) }?.id
+    }
+    
+    // Resolve color by refetching the DayTypeModel
+    private func dayTypeColor(for day: PlanDay) -> Color {
+        guard let typeId = day.type?.id else { return .gray }
+        let fetch = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.id == typeId })
+        if let fresh = (try? context.fetch(fetch))?.first {
+            return fresh.color
+        } else {
+            return .gray
+        }
     }
 
     // Extract day cell into separate view to reduce type checking complexity
@@ -1633,7 +1675,7 @@ private struct MonthlyGridView: View {
                     .fontWeight(isToday(day.date) ? .bold : .regular)
                     .foregroundStyle(isToday(day.date) ? .white : .primary)
                 Circle()
-                    .fill(day.type.color)
+                    .fill(dayTypeColor(for: day))
                     .frame(width: 8, height: 8)
             }
             .frame(maxWidth: .infinity)
@@ -1792,4 +1834,3 @@ private struct ActivityGroupView: View {
         }
     }
 }
-

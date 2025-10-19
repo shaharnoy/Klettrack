@@ -64,18 +64,28 @@ enum LogCSV {
         df.timeZone = TimeZone.current
         df.locale = Locale(identifier: "en_US_POSIX")
 
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone.current
+
         // Export exercises
         for s in sessions {
             let d = df.string(from: s.date)
             for i in s.items {
-                // Find the day type for this session item
+                // Find the day type for this session item (prefer DayType key)
                 var dayType = ""
                 if let planId = i.planSourceId {
                     if let plan = plans.first(where: { $0.id == planId }) {
-                        let calendar = Calendar.current
                         let sessionStartOfDay = calendar.startOfDay(for: s.date)
                         if let planDay = plan.days.first(where: { calendar.startOfDay(for: $0.date) == sessionStartOfDay }) {
-                            dayType = planDay.type.rawValue
+                            let key = planDay.type?.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let name = planDay.type?.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if let k = key, !k.isEmpty {
+                                dayType = k
+                            } else if let n = name, !n.isEmpty {
+                                dayType = n
+                            } else {
+                                dayType = ""
+                            }
                         }
                     }
                 }
@@ -256,7 +266,7 @@ enum LogCSV {
                 .replacingOccurrences(of: ",", with: ".")
                 .trimmingCharacters(in: .whitespacesAndNewlines))
             let planId = UUID(uuidString: planIdStr)
-            let dayType = !dayTypeStr.isEmpty ? DayType(rawValue: dayTypeStr) : nil
+            let dayTypeKey = dayTypeStr.isEmpty ? nil : dayTypeStr
             let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
             let notesOpt = notes.isEmpty ? nil : notes
             let climbId = UUID(uuidString: climbIdStr)
@@ -281,7 +291,7 @@ enum LogCSV {
                 weight: weight,
                 planId: planId,
                 planName: planName.isEmpty ? nil : planName,
-                dayType: dayType,
+                dayTypeKey: dayTypeKey,
                 notes: notesOpt,
                 climbId: climbId,
                 tb2UUID: tb2uuidOpt
@@ -310,7 +320,7 @@ enum LogCSV {
         var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
 
         // Track day types by date for each plan to preserve day type information
-        var planDayTypesByDate: [UUID: [Date: DayType]] = [:]
+        var planDayTypesByDate: [UUID: [Date: String]] = [:]
 
         for e in entries {
             let startOfDay = cal.startOfDay(for: e.date)
@@ -344,7 +354,9 @@ enum LogCSV {
                     if let existing = try? context.fetch(planDescriptor).first {
                         knownPlans[planId] = existing
                     } else {
-                        let plan = Plan(id: planId, name: planName, kind: .weekly, startDate: startOfDay)
+                        let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
+                        let weeklyKind = (try? context.fetch(kindFetch))?.first
+                        let plan = Plan(id: planId, name: planName, kind: weeklyKind, startDate: startOfDay)
                         context.insert(plan)
                         knownPlans[planId] = plan
                     }
@@ -360,9 +372,9 @@ enum LogCSV {
                     }
                     planExercisesByDate[planId]![startOfDay]!.insert(e.name)
 
-                    if let dayType = e.dayType {
+                    if let dayTypeKey = e.dayTypeKey {
                         if planDayTypesByDate[planId] == nil { planDayTypesByDate[planId] = [:] }
-                        planDayTypesByDate[planId]![startOfDay] = dayType
+                        planDayTypesByDate[planId]![startOfDay] = dayTypeKey
                     }
                 }
 
@@ -475,13 +487,13 @@ enum LogCSV {
                     let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == stable })
                     if let existing = (try? context.fetch(fetch))?.first {
                         existing.climbType = climbType
-                        existing.ropeClimbType = ropeClimbType
                         existing.grade = grade
                         existing.angleDegrees = e.angle
                         existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
                         existing.attempts = e.attempts
                         existing.isWorkInProgress = e.isWIP
                         existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
+                        existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
                         existing.notes = e.notes
                         existing.dateLogged = startOfDay
@@ -552,7 +564,6 @@ enum LogCSV {
                 // Create climb entry (no id / no tb2 uuid path)
                 let climbEntry = ClimbEntry(
                     climbType: climbType,
-                    ropeClimbType: ropeClimbType,
                     grade: grade,
                     angleDegrees: e.angle,
                     style: e.style?.isEmpty == false ? e.style! : "Unknown",
@@ -577,8 +588,35 @@ enum LogCSV {
                 for date in sortedDates {
                     let exercises = Array(exercisesByDate[date] ?? [])
                     if !exercises.isEmpty {
-                        let dayType = planDayTypesByDate[planId]?[date] ?? .climbingFull
-                        let planDay = PlanDay(date: date, type: dayType)
+                        let dayTypeKey = planDayTypesByDate[planId]?[date]
+                        var resolvedType: DayTypeModel? = nil
+                        if let raw = dayTypeKey {
+                            let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !key.isEmpty {
+                                // 1) Try by key
+                                let byKey = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == key })
+                                resolvedType = (try? context.fetch(byKey))?.first
+
+                                // 2) Fallback: try by name (for older exports that stored the display name)
+                                if resolvedType == nil {
+                                    let byName = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.name == key })
+                                    resolvedType = (try? context.fetch(byName))?.first
+                                }
+
+                                // 3) Create on miss (critical for fresh stores)
+                                if resolvedType == nil {
+                                    let model = DayTypeModel(
+                                        key: key,                // keep the exported identifier (e.g., "climbingFull")
+                                        name: key,               // or provide a nicer default if you prefer
+                                        colorKey: "gray"
+                                    )
+                                    context.insert(model)
+                                    resolvedType = model
+                                }
+                            }
+                        }
+
+                        let planDay = PlanDay(date: date, type: resolvedType)
                         planDay.chosenExercises = exercises
                         plan.days.append(planDay)
                     }
@@ -718,7 +756,7 @@ extension LogCSV {
         let weight: Double?
         let planId: UUID?
         let planName: String?
-        let dayType: DayType?
+        let dayTypeKey: String?
         let notes: String?
         // New for climbs
         let climbId: UUID?
@@ -815,7 +853,7 @@ extension LogCSV {
                     .replacingOccurrences(of: ",", with: ".")
                     .trimmingCharacters(in: .whitespacesAndNewlines))
                 let planId = UUID(uuidString: planIdStr)
-                let dayType = !dayTypeStr.isEmpty ? DayType(rawValue: dayTypeStr) : nil
+                let dayTypeKey = dayTypeStr.isEmpty ? nil : dayTypeStr
                 let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
                 let notesOpt = notes.isEmpty ? nil : notes
                 let climbId = UUID(uuidString: climbIdStr)
@@ -840,7 +878,7 @@ extension LogCSV {
                     weight: weight,
                     planId: planId,
                     planName: planName.isEmpty ? nil : planName,
-                    dayType: dayType,
+                    dayTypeKey: dayTypeKey,
                     notes: notesOpt,
                     climbId: climbId,
                     tb2UUID: tb2uuidOpt
@@ -876,7 +914,7 @@ extension LogCSV {
         var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
         
         // Track day types by date for each plan to preserve day type information
-        var planDayTypesByDate: [UUID: [Date: DayType]] = [:]
+        var planDayTypesByDate: [UUID: [Date: String]] = [:]
         
         for (idx, e) in entries.enumerated() {
             // Progress from 0.5 → 1.0 during application
@@ -917,7 +955,9 @@ extension LogCSV {
                     if let existing = try? context.fetch(planDescriptor).first {
                         knownPlans[planId] = existing
                     } else {
-                        let plan = Plan(id: planId, name: planName, kind: .weekly, startDate: startOfDay)
+                        let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
+                        let weeklyKind = (try? context.fetch(kindFetch))?.first
+                        let plan = Plan(id: planId, name: planName, kind: weeklyKind, startDate: startOfDay)
                         context.insert(plan)
                         knownPlans[planId] = plan
                     }
@@ -933,11 +973,11 @@ extension LogCSV {
                     }
                     planExercisesByDate[planId]![startOfDay]!.insert(e.name)
                     
-                    if let dayType = e.dayType {
+                    if let dayTypeKey = e.dayTypeKey {
                         if planDayTypesByDate[planId] == nil {
                             planDayTypesByDate[planId] = [:]
                         }
-                        planDayTypesByDate[planId]![startOfDay] = dayType
+                        planDayTypesByDate[planId]![startOfDay] = dayTypeKey
                     }
                 }
                 
@@ -1073,7 +1113,6 @@ extension LogCSV {
                             attempts: e.attempts,
                             isWorkInProgress: e.isWIP,
                             holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
-                            
                             gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                             notes: e.notes,
                             dateLogged: startOfDay,
@@ -1157,11 +1196,38 @@ extension LogCSV {
                 for date in sortedDates {
                     let exercises = Array(exercisesByDate[date] ?? [])
                     if !exercises.isEmpty {
-                        // Use the imported day type if available, otherwise default to climbingFull
-                        let dayType = planDayTypesByDate[planId]?[date] ?? .climbingFull
+                        // Use the imported day type if available, otherwise no default here
+                        let dayTypeKey = planDayTypesByDate[planId]?[date]
+                        var resolvedType: DayTypeModel? = nil
+                        if let raw = dayTypeKey {
+                            let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !key.isEmpty {
+                                // 1) Try by key
+                                let byKey = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == key })
+                                resolvedType = (try? context.fetch(byKey))?.first
+
+                                // 2) Fallback: try by name (for older exports that stored the display name)
+                                if resolvedType == nil {
+                                    let byName = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.name == key })
+                                    resolvedType = (try? context.fetch(byName))?.first
+                                }
+
+                                // 3) Create on miss (critical for fresh stores)
+                                if resolvedType == nil {
+                                    let model = DayTypeModel(
+                                        key: key,                // keep the exported identifier (e.g., "climbingFull")
+                                        name: key,               // or provide a nicer default if you prefer
+                                        colorKey: "gray"
+                                    )
+                                    context.insert(model)
+                                    resolvedType = model
+                                }
+                            }
+                        }
+
                         let planDay = PlanDay(
                             date: date,
-                            type: dayType
+                            type: resolvedType
                         )
                         planDay.chosenExercises = exercises
                         plan.days.append(planDay)

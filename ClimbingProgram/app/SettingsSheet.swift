@@ -61,16 +61,16 @@ struct SettingsSheet: View {
                         .padding(.vertical, 2)
                     }
                     
-                    // NEW: Styles & Gyms manager
+                    // NEW: metadata manager
                     NavigationLink {
                         ClimbMetaManagerView()
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "slider.horizontal.3")
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Styles & Gyms")
+                                Text("Data Manager")
                                     .font(.body)
-                                Text("Manage climbing styles and gyms")
+                                Text("Add, delete or edit your training days, styles & gyms")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
