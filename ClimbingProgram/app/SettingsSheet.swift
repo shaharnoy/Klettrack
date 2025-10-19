@@ -41,7 +41,7 @@ struct SettingsSheet: View {
                                     .lineLimit(2)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
                     }
                     
                     NavigationLink {
@@ -52,13 +52,13 @@ struct SettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Timer Templates")
                                     .font(.body)
-                                Text("Create or customize interval timers for your sessions")
+                                Text("Create or customize timer templates")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
                     }
                     
                     // NEW: metadata manager
@@ -76,7 +76,7 @@ struct SettingsSheet: View {
                                     .lineLimit(2)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
                     }
                     
                     // Boards credentials menu
@@ -95,7 +95,7 @@ struct SettingsSheet: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Board Connections")
                                         .font(.body)
-                                    Text("Add or update your Kilter or Tension Board credentials")
+                                    Text("Add or update your boards credentials")
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
@@ -106,7 +106,7 @@ struct SettingsSheet: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .contentShape(Rectangle())
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
                     }
                     .buttonStyle(.plain)
                     
@@ -146,7 +146,7 @@ struct SettingsSheet: View {
                                     .font(.body)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
                     }
                     .buttonStyle(.plain)
                     // Contribute button opens AboutView.contribute
@@ -160,7 +160,7 @@ struct SettingsSheet: View {
                                     .font(.body)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
                     }
                     .buttonStyle(.plain)
                     
@@ -175,7 +175,7 @@ struct SettingsSheet: View {
                                     .font(.body)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
                     }
                     .buttonStyle(.plain)
                     
