@@ -35,7 +35,7 @@ struct SettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Exercise Catalog")
                                     .font(.body)
-                                Text("Add or modify all exercises and climbing drills")
+                                Text("Browse and edit your climbing and training exercises")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -52,7 +52,7 @@ struct SettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Timer Templates")
                                     .font(.body)
-                                Text("Create and edit timer templates")
+                                Text("Create or customize interval timers for your sessions")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -70,7 +70,7 @@ struct SettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Data Manager")
                                     .font(.body)
-                                Text("Add, delete or edit your training days, styles & gyms")
+                                Text("Edit the plans, training day types, styles, and gyms used in the app")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -93,9 +93,9 @@ struct SettingsSheet: View {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Image(systemName: "lock.circle")
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Boards Credentials Manager")
+                                    Text("Board Connections")
                                         .font(.body)
-                                    Text("Store and edit system board credentials.")
+                                    Text("Add or update your Kilter or Tension Board credentials")
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
@@ -118,9 +118,9 @@ struct SettingsSheet: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "square.and.arrow.up")
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Export logs to CSV")
+                                Text("Export Logs")
                                     .font(.body)
-                                Text("Save your data as a CSV file")
+                                Text("Save your climbs and sessions as a CSV file")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -142,7 +142,7 @@ struct SettingsSheet: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "megaphone")
                             VStack(alignment: .leading, spacing: 1) {
-                                Text("Share an idea or feedback")
+                                Text("Got an idea? See what’s planned next")
                                     .font(.body)
                             }
                         }
