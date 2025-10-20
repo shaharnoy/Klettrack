@@ -93,27 +93,28 @@ struct TimerTemplateRow: View {
                 }
                 
                 HStack(spacing: 36) {
+                    // number of sets
                     if template.isRepeating {
                         HStack(spacing: 3) {
-                            Image(systemName: "repeat")
+                            Image(systemName: "arrow.clockwise")
                             Text("\(template.repeatCount ?? 1)x")
                         }
                     }
-                    
+                    // number of reps in a set
                     if !template.intervals.isEmpty {
                         HStack(spacing: 3) {
-                            Image(systemName: "arrow.clockwise")
-                            Text("\(template.intervals.count)")
+                            Image(systemName: "repeat")
+                            Text("\(template.intervals.first?.repetitions ?? 0)")
                         }
                     }
-                       
+                    //rest time
                     if let restBetween = template.restTimeBetweenIntervals, restBetween > 0 {
                         HStack(spacing: 3) {
                             Image(systemName: "pause.circle")
                             Text(formatTime(restBetween))
                         }
                     }
-                    
+                    // total time
                     if let totalTime = template.effectiveTotalTimeSeconds {
                         HStack(spacing: 3) {
                             Image(systemName: "clock.badge.checkmark")

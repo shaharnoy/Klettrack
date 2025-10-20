@@ -807,17 +807,18 @@ struct TimerTemplateRowForSelection: View {
                 }
                 
                 HStack(spacing: 36) {
+                    // number of sets
                     if template.isRepeating {
                         HStack(spacing: 3) {
-                            Image(systemName: "repeat")
+                            Image(systemName: "arrow.clockwise")
                             Text("\(template.repeatCount ?? 1)x")
                         }
                     }
-                    
+                    // number of reps within a set
                     if !template.intervals.isEmpty {
                         HStack(spacing: 3) {
-                            Image(systemName: "arrow.clockwise")
-                            Text("\(template.intervals.count)")
+                            Image(systemName: "repeat")
+                            Text("\(template.intervals.first?.repetitions ?? 0)")
                         }
                     }
                        
