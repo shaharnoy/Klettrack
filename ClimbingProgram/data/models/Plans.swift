@@ -18,7 +18,7 @@ final class PlanKindModel {
     var name: String
     // Total weeks if finite; nil for open-ended repeating kinds
     var totalWeeks: Int?
-    // Whether this kind is intended to repeat (e.g., weekly)
+    // Whether this kind is intended to repeat (e.g., weekly) -- not used atm
     var isRepeating: Bool
     // Sort order for pickers
     var order: Int

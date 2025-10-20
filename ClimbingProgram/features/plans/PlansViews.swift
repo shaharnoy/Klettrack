@@ -223,7 +223,7 @@ private struct PlanRow: View {
     }
 
     private var subtitle: String {
-        "\(plan.kind?.name ?? "Unknown") • starts \(format(plan.startDate))"
+        "\(plan.kind?.name ?? "Custom") • starts \(format(plan.startDate))"
     }
 
     private func format(_ date: Date) -> String {
@@ -232,25 +232,50 @@ private struct PlanRow: View {
 }
 
 // MARK: New plan sheet
-
 struct NewPlanSheet: View {
+    enum CreationMode { case template, customDates }
+    
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Query(sort: [SortDescriptor<PlanKindModel>(\PlanKindModel.order)]) private var kinds: [PlanKindModel]
+
+    // SwiftData: keep sort descriptors simple
+    @Query(sort: [SortDescriptor(\PlanKindModel.order)]) private var kinds: [PlanKindModel]
+
     @State private var name = ""
     @State private var selectedKind: PlanKindModel? = nil
     @State private var start = Date()
-
+    @State private var creationMode: CreationMode = .template
+    @State private var end = Calendar.current.date(byAdding: .day, value: 27, to: Date()) ?? Date()
+    
     var body: some View {
         NavigationStack {
             Form {
+                Picker("Mode", selection: $creationMode) {
+                    Text("Template").tag(CreationMode.template)
+                    Text("Custom").tag(CreationMode.customDates)
+                }
+                .pickerStyle(.segmented)
+                
                 TextField("Plan name", text: $name)
-                Picker("Template", selection: $selectedKind) {
-                    ForEach(kinds) { k in
-                        Text(k.name).tag(Optional(k))
+                
+                if creationMode == .template {
+                    Picker("Template", selection: $selectedKind) {
+                        ForEach(kinds) { k in
+                            // Make tag type explicit to avoid inference bugs
+                            Text(k.name).tag(k as PlanKindModel?)
+                        }
+                    }
+                    DatePicker("Start date", selection: $start, displayedComponents: .date)
+                } else {
+                    DatePicker("Start date", selection: $start, displayedComponents: .date)
+                    DatePicker("End date", selection: $end, in: start..., displayedComponents: .date)
+
+                    if end < start {
+                        Text("End date must be on or after start date.")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
                     }
                 }
-                DatePicker("Start date", selection: $start, displayedComponents: .date)
             }
             .navigationTitle("New Plan")
             .toolbar {
@@ -259,17 +284,45 @@ struct NewPlanSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        guard let kind = selectedKind else { return }
                         let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let planName = finalName.isEmpty ? kind.name : finalName
-                        _ = PlanFactory.create(name: planName, kind: kind, start: start, in: context)
-                        dismiss()
+                        let planName = finalName.isEmpty ? (selectedKind?.name ?? "Plan") : finalName
+                        switch creationMode {
+                        case .template:
+                            guard let kind = selectedKind else { return }
+                            _ = PlanFactory.create(name: planName, kind: kind, start: start, in: context)
+                            dismiss()
+                        case .customDates:
+                            guard end >= start else { return }
+                            createPlanFromDates(context: context, name: planName, start: start, end: end)
+                            dismiss()
+                        }
                     }
+                    .disabled((creationMode == .template && selectedKind == nil) ||
+                              (creationMode == .customDates && end < start))
                 }
             }
         }
     }
+
+    private func createPlanFromDates(context: ModelContext, name: String, start: Date, end: Date) {
+        let cal = Calendar.current
+        let startDay = cal.startOfDay(for: start)
+        let endDay = cal.startOfDay(for: end)
+
+        let plan = Plan(name: name, kind:nil, startDate: startDay)
+        context.insert(plan)
+
+        var d = startDay
+        while d <= endDay {
+            let day = PlanDay(date: d)
+            plan.days.append(day)
+            d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86_400)
+        }
+
+        try? context.save()
+    }
 }
+
 
 // MARK: Plan detail - weekly/monthly views
 
@@ -374,18 +427,9 @@ struct PlanDetailView: View {
     // Break down toolbar into smaller components
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if plan.kind?.key == "weekly" {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Add 4 more weeks") {
-                        PlanFactory.appendWeeks(to: plan, count: 4, in: context)
-                        try? context.save()
-                    }
-                    Button("Add 8 more weeks") {
-                        PlanFactory.appendWeeks(to: plan, count: 8, in: context)
-                        try? context.save()
-                    }
-                    Button("Custom…") {
+                    Button("Add more week") {
                         weeksToAdd = ""
                         showingDupPrompt = true
                     }
@@ -393,7 +437,6 @@ struct PlanDetailView: View {
                     Label("Duplicate weeks", systemImage: "plus.square.on.square")
                 }
             }
-        }
     }
     
     // Break down the main content into smaller views
@@ -482,7 +525,7 @@ struct PlanDetailView: View {
             }
             Button("Cancel", role: .cancel) { weeksToAdd = "" }
         } message: {
-            Text("Enter how many weeks to add to this weekly plan.")
+            Text("Enter how many weeks to add")
         }
     }
 }
