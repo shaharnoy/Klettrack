@@ -16,6 +16,21 @@ struct SharePayload: Identifiable {
     let url: URL
 }
 
+// Shared exercise hit type for catalog search results (file-scope, internal)
+struct ExerciseHit: Identifiable {
+    let id: UUID
+    let name: String
+    let subtitle: String?
+    let tint: Color
+
+    init(ex: Exercise, tint: Color) {
+        self.id = ex.id
+        self.name = ex.name
+        self.subtitle = ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes
+        self.tint = tint
+    }
+}
+
 // Date formatting helpers
 private extension Date {
     var shortFormat: String {
@@ -1323,19 +1338,6 @@ struct CatalogExercisePicker: View {
     private var hasData: Bool {
         !activities.isEmpty
     }
-    // Hit model for search results
-    private struct ExerciseHit: Identifiable {
-        let id: UUID
-        let name: String
-        let subtitle: String?
-        let tint: Color
-        init(ex: Exercise, tint: Color) {
-            self.id = ex.id
-            self.name = ex.name
-            self.subtitle = ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes
-            self.tint = tint
-        }
-    }
     
     // Flatten all exercises (including combos) with their activity tint
     private var allExerciseHits: [ExerciseHit] {
@@ -1365,6 +1367,45 @@ struct CatalogExercisePicker: View {
             || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
         }
     }
+    
+    // Provide a reusable section builder for search results to reuse in subviews
+    @ViewBuilder
+    private func resultsSection(doneAction: @escaping () -> Void) -> some View {
+        if !searchText.isEmpty {
+            if filteredExerciseHits.isEmpty {
+                ContentUnavailableView(
+                    "No matches",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try a different search term.")
+                )
+            } else {
+                Section {
+                    ForEach(filteredExerciseHits) { hit in
+                        ExercisePickRow(
+                            name: hit.name,
+                            subtitle: hit.subtitle,
+                            reps: nil, sets: nil, rest: nil,
+                            tint: hit.tint,
+                            isSelected: selected.contains(hit.name)
+                        ) {
+                            toggleSelection(hit.name)
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Results")
+                        Spacer()
+                        Button("Done") {
+                            isSearchPresented = false // collapse search UI
+                            doneAction()              // allow caller to dismiss if desired
+                        }
+                        .font(.subheadline)
+                    }
+                }
+            }
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             if !hasData {
@@ -1388,47 +1429,36 @@ struct CatalogExercisePicker: View {
                 }
             } else {
                 List {
+                    // While searching: show only results, hide navigation content
                     if !searchText.isEmpty {
-                        if filteredExerciseHits.isEmpty {
-                            ContentUnavailableView(
-                                "No matches",
-                                systemImage: "magnifyingglass",
-                                description: Text("Try a different search term.")
-                            )
-                        } else {
-                            Section {
-                                ForEach(filteredExerciseHits) { hit in
-                                    ExercisePickRow(
-                                        name: hit.name,
-                                        subtitle: hit.subtitle,
-                                        reps: nil, sets: nil, rest: nil,
-                                        tint: hit.tint,
-                                        isSelected: selected.contains(hit.name)
-                                    ) {
-                                        toggleSelection(hit.name)
-                                    }
-                                }
-                            } header: {
-                                HStack {
-                                    Text("Results")
-                                    Spacer()
-                                    Button("Done") {
-                                        isSearchPresented = false     // collapse the search field & dismiss keyboard
-                                        dismiss() // close the picker
-                                    }
-                                    .font(.subheadline)
-                                }
-                            }
-
-                        }
+                        resultsSection(doneAction: { dismiss() })
                     } else {
+                        // Normal content (root: activities)
                         ForEach(activities) { activity in
                             NavigationLink {
                                 TypesList(
                                     activity: activity,
                                     selected: $selected,
                                     tint: activity.hue.color,
-                                    onDone: { dismiss() }     // close from any level
+                                    onDone: { dismiss() },     // close from any level
+                                    searchText: $searchText,
+                                    isSearchPresented: $isSearchPresented,
+                                    allHitsProvider: { (activities) in
+                                        // Reuse the same flattening logic
+                                        var hits: [ExerciseHit] = []
+                                        for activity in activities {
+                                            let tint = activity.hue.color
+                                            for t in activity.types {
+                                                for ex in t.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
+                                                for combo in t.combinations {
+                                                    for ex in combo.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
+                                                }
+                                            }
+                                        }
+                                        // de-dup by ID
+                                        var seen: Set<UUID> = []
+                                        return hits.filter { seen.insert($0.id).inserted }
+                                    }
                                 )
                             } label: {
                                 HStack(spacing: 10) {
@@ -1447,7 +1477,6 @@ struct CatalogExercisePicker: View {
                     print("🟢 CatalogExercisePicker: activities.count = \(activities.count)")
                 }
                 .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
-
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             }
@@ -1462,6 +1491,7 @@ struct CatalogExercisePicker: View {
                 if isSearchPresented {
                     Button("Done") {
                         isSearchPresented = false        // collapses search, dismisses keyboard
+                        dismiss()
                     }
                 }
             }
@@ -1476,28 +1506,97 @@ struct CatalogExercisePicker: View {
     }
 }
 
-
-
+// TypesList now receives search bindings and a provider closure to compute all hits,
+// then shows the same unified Results section at the top while searching.
 struct TypesList: View {
     @Bindable var activity: Activity
     @Binding var selected: [String]
     let tint: Color
     let onDone: () -> Void
-
+    @Binding var searchText: String
+    @Binding var isSearchPresented: Bool
+    // Provider to compute flattened hits for the whole catalog (same as root)
+    let allHitsProvider: ([Activity]) -> [ExerciseHit]
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    private var allHits: [ExerciseHit] {
+        allHitsProvider(activities)
+    }
+    private var filteredHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allHits.filter {
+            $0.name.localizedCaseInsensitiveContains(q)
+            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
+        }
+    }
+    
     var body: some View {
         List {
-            ForEach(activity.types) { t in
-                NavigationLink {
-                    if !t.combinations.isEmpty {
-                        CombosList(trainingType: t, selected: $selected, tint: tint, onDone: onDone)
-                    } else {
-                        ExercisesList(trainingType: t, selected: $selected, tint: tint, onDone: onDone)
+            // While searching: show only results, hide navigation content
+            if !searchText.isEmpty {
+                if filteredHits.isEmpty {
+                    ContentUnavailableView(
+                        "No matches",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term.")
+                    )
+                } else {
+                    Section {
+                        ForEach(filteredHits) { hit in
+                            ExercisePickRow(
+                                name: hit.name,
+                                subtitle: hit.subtitle,
+                                reps: nil, sets: nil, rest: nil,
+                                tint: hit.tint,
+                                isSelected: selected.contains(hit.name)
+                            ) {
+                                toggle(hit.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Results")
+                            Spacer()
+                            Button("Done") {
+                                isSearchPresented = false
+                                onDone()
+                            }
+                            .font(.subheadline)
+                        }
                     }
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t.name).font(.headline)
-                        if let d = t.typeDescription, !d.isEmpty {
-                            Text(d).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                }
+            } else {
+                // Normal content
+                ForEach(activity.types) { t in
+                    NavigationLink {
+                        if !t.combinations.isEmpty {
+                            CombosList(
+                                trainingType: t,
+                                selected: $selected,
+                                tint: tint,
+                                onDone: onDone,
+                                searchText: $searchText,
+                                isSearchPresented: $isSearchPresented,
+                                allHitsProvider: allHitsProvider
+                            )
+                        } else {
+                            ExercisesList(
+                                trainingType: t,
+                                selected: $selected,
+                                tint: tint,
+                                onDone: onDone,
+                                searchText: $searchText,
+                                isSearchPresented: $isSearchPresented,
+                                allHitsProvider: allHitsProvider
+                            )
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(t.name).font(.headline)
+                            if let d = t.typeDescription, !d.isEmpty {
+                                Text(d).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                            }
                         }
                     }
                 }
@@ -1506,6 +1605,17 @@ struct TypesList: View {
         .listStyle(.insetGrouped)
         .navigationTitle(activity.name)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
+        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+    }
+    
+    private func toggle(_ name: String) {
+        if let idx = selected.firstIndex(of: name) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(name)
+        }
     }
 }
 
@@ -1514,17 +1624,77 @@ struct CombosList: View {
     @Binding var selected: [String]
     let tint: Color
     let onDone: () -> Void
+    @Binding var searchText: String
+    @Binding var isSearchPresented: Bool
+    let allHitsProvider: ([Activity]) -> [ExerciseHit]
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    private var allHits: [ExerciseHit] {
+        allHitsProvider(activities)
+    }
+    private var filteredHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allHits.filter {
+            $0.name.localizedCaseInsensitiveContains(q)
+            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
+        }
+    }
 
     var body: some View {
         List {
-            ForEach(trainingType.combinations) { combo in
-                NavigationLink {
-                    ComboExercisesList(combo: combo, selected: $selected, tint: tint, onDone: onDone)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(combo.name).font(.headline)
-                        if let d = combo.comboDescription, !d.isEmpty {
-                            Text(d).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+            // While searching: show only results, hide navigation content
+            if !searchText.isEmpty {
+                if filteredHits.isEmpty {
+                    ContentUnavailableView(
+                        "No matches",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term.")
+                    )
+                } else {
+                    Section {
+                        ForEach(filteredHits) { hit in
+                            ExercisePickRow(
+                                name: hit.name,
+                                subtitle: hit.subtitle,
+                                reps: nil, sets: nil, rest: nil,
+                                tint: hit.tint,
+                                isSelected: selected.contains(hit.name)
+                            ) {
+                                toggle(hit.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Results")
+                            Spacer()
+                            Button("Done") {
+                                isSearchPresented = false
+                                onDone()
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            } else {
+                // Normal content (combinations)
+                ForEach(trainingType.combinations) { combo in
+                    NavigationLink {
+                        ComboExercisesList(
+                            combo: combo,
+                            selected: $selected,
+                            tint: tint,
+                            onDone: onDone,
+                            searchText: $searchText,
+                            isSearchPresented: $isSearchPresented,
+                            allHitsProvider: allHitsProvider
+                        )
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(combo.name).font(.headline)
+                            if let d = combo.comboDescription, !d.isEmpty {
+                                Text(d).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                            }
                         }
                     }
                 }
@@ -1533,6 +1703,17 @@ struct CombosList: View {
         .listStyle(.insetGrouped)
         .navigationTitle(trainingType.name)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
+        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+    }
+    
+    private func toggle(_ name: String) {
+        if let idx = selected.firstIndex(of: name) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(name)
+        }
     }
 }
 
@@ -1541,24 +1722,79 @@ struct ComboExercisesList: View {
     @Binding var selected: [String]
     let tint: Color
     let onDone: () -> Void
+    @Binding var searchText: String
+    @Binding var isSearchPresented: Bool
+    let allHitsProvider: ([Activity]) -> [ExerciseHit]
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    private var allHits: [ExerciseHit] {
+        allHitsProvider(activities)
+    }
+    private var filteredHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allHits.filter {
+            $0.name.localizedCaseInsensitiveContains(q)
+            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
+        }
+    }
 
     var body: some View {
         List {
-            ForEach(combo.exercises.sorted { $0.order < $1.order }) { ex in
-                ExercisePickRow(
-                    name: ex.name,
-                    subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                    reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
-                    tint: tint,
-                    isSelected: selected.contains(ex.name)
-                ) {
-                    toggle(ex.name)
+            // While searching: show only results, hide navigation content
+            if !searchText.isEmpty {
+                if filteredHits.isEmpty {
+                    ContentUnavailableView(
+                        "No matches",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term.")
+                    )
+                } else {
+                    Section {
+                        ForEach(filteredHits) { hit in
+                            ExercisePickRow(
+                                name: hit.name,
+                                subtitle: hit.subtitle,
+                                reps: nil, sets: nil, rest: nil,
+                                tint: hit.tint,
+                                isSelected: selected.contains(hit.name)
+                            ) {
+                                toggle(hit.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Results")
+                            Spacer()
+                            Button("Done") {
+                                isSearchPresented = false
+                                onDone()
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            } else {
+                // Normal content (combo’s exercises)
+                ForEach(combo.exercises.sorted { $0.order < $1.order }) { ex in
+                    ExercisePickRow(
+                        name: ex.name,
+                        subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
+                        reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
+                        tint: tint,
+                        isSelected: selected.contains(ex.name)
+                    ) {
+                        toggle(ex.name)
+                    }
                 }
             }
         }
         .listStyle(.insetGrouped)
         .navigationTitle(combo.name)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
+        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
     }
 
     private func toggle(_ name: String) {
@@ -1575,6 +1811,22 @@ struct ExercisesList: View {
     @Binding var selected: [String]
     let tint: Color
     let onDone: () -> Void
+    @Binding var searchText: String
+    @Binding var isSearchPresented: Bool
+    let allHitsProvider: ([Activity]) -> [ExerciseHit]
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    private var allHits: [ExerciseHit] {
+        allHitsProvider(activities)
+    }
+    private var filteredHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allHits.filter {
+            $0.name.localizedCaseInsensitiveContains(q)
+            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
+        }
+    }
 
     // Group exercises by area similar to CatalogView
     private var exercisesByArea: [(String, [Exercise])] {
@@ -1602,11 +1854,62 @@ struct ExercisesList: View {
 
     var body: some View {
         List {
-            // Show exercises grouped by area if there are any groups
-            if !exercisesByArea.isEmpty {
-                ForEach(exercisesByArea, id: \.0) { area, exercises in
-                    Section(area) {
-                        ForEach(exercises) { ex in
+            // While searching: show only results, hide navigation content
+            if !searchText.isEmpty {
+                if filteredHits.isEmpty {
+                    ContentUnavailableView(
+                        "No matches",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term.")
+                    )
+                } else {
+                    Section {
+                        ForEach(filteredHits) { hit in
+                            ExercisePickRow(
+                                name: hit.name,
+                                subtitle: hit.subtitle,
+                                reps: nil, sets: nil, rest: nil,
+                                tint: hit.tint,
+                                isSelected: selected.contains(hit.name)
+                            ) {
+                                toggle(hit.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Results")
+                            Spacer()
+                            Button("Done") {
+                                isSearchPresented = false
+                                onDone()
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            } else {
+                // Normal content
+                if !exercisesByArea.isEmpty {
+                    ForEach(exercisesByArea, id: \.0) { area, exercises in
+                        Section(area) {
+                            ForEach(exercises) { ex in
+                                ExercisePickRow(
+                                    name: ex.name,
+                                    subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
+                                    reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
+                                    tint: tint,
+                                    isSelected: selected.contains(ex.name)
+                                ) {
+                                    toggle(ex.name)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if !ungroupedExercises.isEmpty {
+                    Section(exercisesByArea.isEmpty ? "Exercises" : "Other") {
+                        ForEach(ungroupedExercises) { ex in
                             ExercisePickRow(
                                 name: ex.name,
                                 subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
@@ -1620,29 +1923,15 @@ struct ExercisesList: View {
                     }
                 }
             }
-            
-            // Show ungrouped exercises if any
-            if !ungroupedExercises.isEmpty {
-                Section(exercisesByArea.isEmpty ? "Exercises" : "Other") {
-                    ForEach(ungroupedExercises) { ex in
-                        ExercisePickRow(
-                            name: ex.name,
-                            subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                            reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
-                            tint: tint,
-                            isSelected: selected.contains(ex.name)
-                        ) {
-                            toggle(ex.name)
-                        }
-                    }
-                }
-            }
         }
         .listStyle(.insetGrouped)
         .navigationTitle(trainingType.name)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) { Button("Done") { onDone() } }
         }
+        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
     }
 
     private func toggle(_ name: String) {
@@ -1956,3 +2245,4 @@ private struct ActivityGroupView: View {
         }
     }
 }
+
