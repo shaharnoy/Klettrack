@@ -459,10 +459,20 @@ struct SessionDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(editMode?.wrappedValue == .active ? "Done" : "Reorder") {
-                    withAnimation {
-                        editMode?.wrappedValue = (editMode?.wrappedValue == .active) ? .inactive : .active
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 10) {
+                    // Reorder toggle (three horizontal lines ↔ checkmark)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            editMode?.wrappedValue =
+                                (editMode?.wrappedValue == .active) ? .inactive : .active
+                        }
+                    } label: {
+                        Image(systemName:
+                            editMode?.wrappedValue == .active
+                            ? "checkmark"
+                            : "line.3.horizontal"
+                        )
                     }
                 }
             }
@@ -892,10 +902,20 @@ private struct CombinedDayDetailView: View {
         .navigationTitle(date.formatted(date: .abbreviated, time: .omitted))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(editMode?.wrappedValue == .active ? "Done" : "Reorder") {
-                    withAnimation {
-                        editMode?.wrappedValue = (editMode?.wrappedValue == .active) ? .inactive : .active
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 10) {
+                    // Reorder toggle (three horizontal lines ↔ checkmark)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            editMode?.wrappedValue =
+                            (editMode?.wrappedValue == .active) ? .inactive : .active
+                        }
+                    } label: {
+                        Image(systemName:
+                                editMode?.wrappedValue == .active
+                              ? "checkmark"
+                              : "line.3.horizontal"
+                        )
                     }
                 }
             }
