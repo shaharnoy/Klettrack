@@ -1180,22 +1180,33 @@ private struct QuickExerciseProgress: View {
     
     // Break down complex view hierarchy into smaller components
     @ViewBuilder
-    private func recentLogsSection(recent: [(date: Date, reps: Double?, sets: Double?, weight: Double?)]) -> some View {
+    private func recentLogsSection(recent: [(date: Date, reps: Double?, sets: Double?, weight: Double?, notes: String?)]) -> some View {
         Section {
             if recent.isEmpty {
                 Text("No logs yet for this exercise").foregroundStyle(.secondary)
             } else {
                 ForEach(recent.reversed(), id: \.date) { r in
-                    HStack {
-                        Text(r.date.formatted(date: .abbreviated, time: .omitted))
-                        Spacer()
-                        LogMetricRow(
-                            reps: r.reps.map { String(format: "%.1f", $0) },
-                            sets: r.sets.map { String(format: "%.1f", $0) },
-                            weight: r.weight.map { String(format: "%.1f", $0) },
-                            grade: nil
-                        )
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(r.date.formatted(date: .abbreviated, time: .omitted))
+                            Spacer()
+                            let repsTxt   = r.reps.map   { String(format: "%.1f", $0) }
+                            let setsTxt   = r.sets.map   { String(format: "%.1f", $0) }
+                            let weightTxt = r.weight.map { String(format: "%.1f", $0) }
+
+                            Text([
+                                repsTxt.map { "\($0)x reps" },
+                                setsTxt.map { "\($0) sets" },
+                                weightTxt.map { "\($0) kg" }
+                            ].compactMap { $0 }.joined(separator: " · "))
+                            .foregroundStyle(.secondary)
+                        }
+                        if let notes = r.notes, !notes.isEmpty {
+                            Text(notes)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
                     }
                 }
             }
@@ -1203,7 +1214,7 @@ private struct QuickExerciseProgress: View {
             Text("Recent logs")
         }
     }
-    
+
     @ViewBuilder
     private func chartSection(pts: [DataPoint]) -> some View {
         Section("Chart") {
@@ -1255,7 +1266,7 @@ private struct QuickExerciseProgress: View {
     }
 
     // Build recent rows quickly from all sessions
-    private func rows() -> [(date: Date, reps: Double?, sets: Double?, weight: Double?)] {
+    private func rows() -> [(date: Date, reps: Double?, sets: Double?, weight: Double?, notes: String?)] {
         let descriptor = FetchDescriptor<Session>(
             sortBy: [SortDescriptor<Session>(\.date, order: .reverse)]
         )
@@ -1264,9 +1275,17 @@ private struct QuickExerciseProgress: View {
         return sessions.flatMap { session in
             session.items
                 .filter { $0.exerciseName == exerciseName }
-                .map { (session.date, $0.reps, $0.sets, $0.weightKg) }
+                .map {
+                    (date: session.date,
+                     reps: $0.reps,
+                     sets: $0.sets,
+                     weight: $0.weightKg,
+                     notes: $0.notes) // <- add notes
+                }
         }.sorted { $0.date < $1.date }
     }
+
+
 
     private func series(for metric: Metric) -> [DataPoint] {
         switch metric {
@@ -1276,11 +1295,13 @@ private struct QuickExerciseProgress: View {
         }
     }
 
-    private func loadSeries(from rows: [(Date, Double?, Double?, Double?)]) {
-        pointsReps = rows.compactMap { (d, r, _, _) in r.map { DataPoint(date: d, value: $0) } }
-        pointsSets = rows.compactMap { (d, _, s, _) in s.map { DataPoint(date: d, value: $0) } }
-        pointsWeight = rows.compactMap { (d, _, _, w) in w.map { DataPoint(date: d, value: $0) } }
+    private func loadSeries(from rows: [(Date, Double?, Double?, Double?, String?)]) {
+        pointsReps   = rows.compactMap { (d, r, _, _, _) in r.map { DataPoint(date: d, value: $0) } }
+        pointsSets   = rows.compactMap { (d, _, s, _, _) in s.map { DataPoint(date: d, value: $0) } }
+        pointsWeight = rows.compactMap { (d, _, _, w, _) in w.map { DataPoint(date: d, value: $0) } }
     }
+
+
 
     private func load() async {
         let r = rows()
