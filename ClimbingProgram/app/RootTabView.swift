@@ -156,8 +156,9 @@ struct RootTabView: View {
         do {
             // Longer delay to ensure SwiftData container is fully ready
             try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
-            
-            SeedData.loadIfNeeded(context)
+
+            //runDayTypesRepairIfNeeded(context)  // delete duplicates, reseed
+            //SeedData.loadIfNeeded(context)      // after repair, reseed
             
             // Seed timer templates 
             SeedTimerTemplates.loadIfNeeded(context)
@@ -194,7 +195,14 @@ struct RootTabView: View {
 }
 
 // MARK: - Environment Key for Data Ready State
+func runDayTypesRepairIfNeeded(_ context: ModelContext) {
+    // 1) Delete all DayTypeModel rows
+    try? context.delete(model: DayTypeModel.self)
+    try? context.save()
 
+    // 2) Reseed just the day types
+    seedDayTypes(context)
+}
 private struct DataReadyKey: EnvironmentKey {
     static let defaultValue = false
 }

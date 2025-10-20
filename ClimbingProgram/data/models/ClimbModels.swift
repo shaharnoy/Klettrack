@@ -212,6 +212,7 @@ final class ClimbStyle {
     @Attribute(.unique) var id: UUID
     var name: String
     var isDefault: Bool
+    var isHidden: Bool = false
     
     init(id: UUID = UUID(), name: String, isDefault: Bool = false) {
         self.id = id

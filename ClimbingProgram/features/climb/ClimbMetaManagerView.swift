@@ -11,7 +11,10 @@ struct ClimbMetaManagerView: View {
     @Environment(\.dismiss) private var dismiss
 
     // Fetch all styles, gyms, days
-    @Query(sort: [SortDescriptor(\ClimbStyle.name, order: .forward)]) private var styles: [ClimbStyle]
+    @Query(
+        filter: #Predicate<ClimbStyle> { $0.isHidden == false },
+        sort: [SortDescriptor(\ClimbStyle.name, order: .forward)]
+    ) private var styles: [ClimbStyle]
     @Query(sort: [SortDescriptor(\ClimbGym.name, order: .forward)]) private var gyms: [ClimbGym]
     // Exclude hidden (soft-deleted) day types from UI lists
     @Query(
@@ -48,143 +51,173 @@ struct ClimbMetaManagerView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                stylesSection
-                daysSection
-                gymsSection
-            }
-            .navigationTitle("Styles & Gyms")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        // Add defaults without deleting
-                        Button {
-                            addMissingDefaults()
-                        } label: {
-                            Label("Recover deleted defaults", systemImage: "plus.app")
-                        }
-                        // Full restore (non-destructive reset)
-                        Button {
-                            showingRestoreAlert = true
-                        } label: {
-                            Label("Reset back to default values", systemImage: "arrow.counterclockwise")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                }
-            }
-
-            // MARK: - Sheets (Add)
-            .sheet(isPresented: $showingAddStyle) {
-                NameOnlySheet(title: "New Style",
-                              placeholder: "e.g. Slab, Power, Coordination…",
-                              name: $styleDraft) {
-                    let trimmed = styleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    context.insert(ClimbStyle(name: trimmed, isDefault: false))
-                    try? context.save()
-                }
-            }
-            .sheet(isPresented: $showingAddGym) {
-                NameOnlySheet(title: "New Gym",
-                              placeholder: "e.g. Ostbloc, Elektra…",
-                              name: $gymDraft) {
-                    let trimmed = gymDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    context.insert(ClimbGym(name: trimmed, isDefault: false))
-                    try? context.save()
-                }
-            }
-            .sheet(isPresented: $showingAddDay) {
-                DayEditSheet(
-                    title: "New Day",
-                    initialName: "",
-                    initialColorKey: "gray"
-                ) { newName, newColorKey in
-                    let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return false }
-
-                    // Protection: disallow using a default day name (show alert, keep sheet open)
-                    let defaultNamesLC = Set(ClimbingDefaults.defaultDayTypes.map {
-                        $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                    })
-                    if defaultNamesLC.contains(trimmed.lowercased()) {
-                        resultAlert = InfoAlert(message: "“\(trimmed)” is a default day type. Edit that default instead.")
-                        return false
-                    }
-
-                    let key = trimmed
-                        .lowercased()
-                        .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-                    let safeColor = DayTypeModel.allowedColorKeys.contains(newColorKey) ? newColorKey : "gray"
-                    context.insert(DayTypeModel(
-                        key: key,
-                        name: trimmed,
-                        order: (days.map { $0.order }.max() ?? 0) + 10,
-                        colorKey: safeColor
-                    ))
-                    try? context.save()
-                    return true
-                }
-            }
-
-
-
-            // MARK: - Sheets (Rename)
-            .sheet(item: $renamingStyle) { style in
-                NameOnlySheet(title: "Rename Style",
-                              placeholder: "New name",
-                              name: $renameDraft) {
-                    let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    style.name = trimmed
-                    try? context.save()
-                }
-            }
-            .sheet(item: $renamingGym) { gym in
-                NameOnlySheet(title: "Rename Gym",
-                              placeholder: "New name",
-                              name: $renameDraft) {
-                    let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    gym.name = trimmed
-                    try? context.save()
-                }
-            }
-            .sheet(item: $renamingDay) { day in
-                DayEditSheet(
-                    title: "Edit Day",
-                    initialName: day.name,
-                    initialColorKey: day.colorKey
-                ) { newName, newColorKey in
-                    let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return false }
-                    day.name = trimmed
-                    if DayTypeModel.allowedColorKeys.contains(newColorKey) {
-                        day.colorKey = newColorKey
-                    }
-                    try? context.save()
-                    return true
-                }
-            }
-
-
-            // MARK: - Alerts
-            .alert("Reset defaults?", isPresented: $showingRestoreAlert) {
-                Button("Reset", role: .destructive) {
-                    nonDestructiveResetDayTypes()
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("This will reset the default Day Types’ names, colors and order without deleting your custom types. Existing plans will remain intact.")
-            }
-            .alert(item: $resultAlert) { info in
-                Alert(title: Text(info.message))
+            mainList
+        }
+    }
+    
+    private var mainList: some View {
+        List {
+            daysSection
+            stylesSection
+            gymsSection
+        }
+        .navigationTitle("Data Manager")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar { trailingMenu }
+        .sheet(isPresented: $showingAddStyle) {
+            NameOnlySheet(title: "New Style",
+                          placeholder: "e.g. Slab, Power, Coordination…",
+                          name: $styleDraft) {
+                handleAddStyle()
             }
         }
+        .sheet(isPresented: $showingAddGym) {
+            NameOnlySheet(title: "New Gym",
+                          placeholder: "e.g. Ostbloc, Elektra…",
+                          name: $gymDraft) {
+                let trimmed = gymDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                context.insert(ClimbGym(name: trimmed, isDefault: false))
+                try? context.save()
+            }
+        }
+        .sheet(isPresented: $showingAddDay) {
+            DayEditSheet(
+                title: "New Day",
+                initialName: "",
+                initialColorKey: "gray"
+            ) { newName, newColorKey in
+                handleAddDay(newName: newName, newColorKey: newColorKey)
+            }
+        }
+        .sheet(item: $renamingStyle) { style in
+            NameOnlySheet(title: "Rename Style",
+                          placeholder: "New name",
+                          name: $renameDraft) {
+                let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                style.name = trimmed
+                try? context.save()
+            }
+        }
+        .sheet(item: $renamingGym) { gym in
+            NameOnlySheet(title: "Rename Gym",
+                          placeholder: "New name",
+                          name: $renameDraft) {
+                let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                gym.name = trimmed
+                try? context.save()
+            }
+        }
+        .sheet(item: $renamingDay) { day in
+            DayEditSheet(
+                title: "Edit Day",
+                initialName: day.name,
+                initialColorKey: day.colorKey
+            ) { newName, newColorKey in
+                handleRenameDay(day, newName: newName, newColorKey: newColorKey)
+            }
+        }
+    }
+    
+    private var trailingMenu: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                // Add defaults without deleting
+                Button {
+                    addMissingDefaults()
+                } label: {
+                    Label("Recover deleted defaults", systemImage: "plus.app")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+        }
+    }
+
+    
+    private func handleAddDay(newName: String, newColorKey: String) -> Bool {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let defaultNamesLC = Set(ClimbingDefaults.defaultDayTypes.map {
+            $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        })
+        if defaultNamesLC.contains(trimmed.lowercased()) {
+            resultAlert = InfoAlert(message: "“\(trimmed)” is a default day type. Edit that default instead.")
+            return false
+        }
+
+        let key = trimmed
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        let safeColor = DayTypeModel.allowedColorKeys.contains(newColorKey) ? newColorKey : "gray"
+
+        let allDays: [DayTypeModel] = (try? context.fetch(FetchDescriptor<DayTypeModel>())) ?? []
+        if let existing = allDays.first(where: {
+            $0.key.lowercased() == key ||
+            $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == trimmed.lowercased()
+        }) {
+            if existing.isHidden {
+                existing.isHidden = false
+                existing.name = trimmed
+                existing.colorKey = safeColor
+                try? context.save()
+                resultAlert = InfoAlert(message: "Restored deleted day type “\(trimmed)”.")
+                return true
+            } else {
+                resultAlert = InfoAlert(message: "A day type with this name or key already exists.")
+                return false
+            }
+        }
+
+        context.insert(DayTypeModel(
+            key: key,
+            name: trimmed,
+            order: (days.map { $0.order }.max() ?? 0) + 10,
+            colorKey: safeColor
+        ))
+        try? context.save()
+        return true
+    }
+
+    private func handleAddStyle() {
+        let trimmed = styleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let allStyles: [ClimbStyle] = (try? context.fetch(FetchDescriptor<ClimbStyle>())) ?? []
+        if let existing = allStyles.first(where: {
+            $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == trimmed.lowercased()
+        }) {
+            if existing.isDefault == false && existing.isHidden == true {
+                existing.isHidden = false
+                existing.name = trimmed
+                try? context.save()
+                resultAlert = InfoAlert(message: "Restored deleted style “\(trimmed)”.")
+                return
+            } else {
+                resultAlert = InfoAlert(message: "A style with this name already exists.")
+                return
+            }
+        }
+        context.insert(ClimbStyle(name: trimmed, isDefault: false))
+        try? context.save()
+    }
+
+    private func handleRenameDay(_ day: DayTypeModel, newName: String, newColorKey: String) -> Bool {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        day.name = trimmed
+        if DayTypeModel.allowedColorKeys.contains(newColorKey) {
+            day.colorKey = newColorKey
+        }
+        try? context.save()
+        return true
+    }
+
+    private func resultAlertView(_ info: InfoAlert) -> Alert {
+        Alert(title: Text(info.message))
     }
 
     // MARK: - Sections (extracted to shrink the type the compiler must infer)
@@ -209,7 +242,7 @@ struct ClimbMetaManagerView: View {
                                 Label("Rename", systemImage: "pencil")
                             }
                             Button(role: .destructive) {
-                                deleteStyle(style)
+                                safeDeleteStyle(style)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -224,14 +257,14 @@ struct ClimbMetaManagerView: View {
                             .tint(.blue)
 
                             Button(role: .destructive) {
-                                deleteStyle(style)
+                                safeDeleteStyle(style)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
                 }
                 .onDelete { (idx: IndexSet) in
-                    idx.map { styles[$0] }.forEach(deleteStyle(_:))
+                    idx.map { styles[$0] }.forEach(safeDeleteStyle(_:))
                 }
             }
 
@@ -369,15 +402,6 @@ struct ClimbMetaManagerView: View {
             HStack {
                 Text(name)
                 Spacer()
-                if isDefault {
-                    Text("Default")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.12))
-                        .clipShape(Capsule())
-                }
             }
             .contentShape(Rectangle())
         }
@@ -401,8 +425,8 @@ struct ClimbMetaManagerView: View {
     }
 
     // MARK: - Deletes
-    private func deleteStyle(_ style: ClimbStyle) {
-        context.delete(style)
+    private func safeDeleteStyle(_ style: ClimbStyle) {
+        style.isHidden = true
         try? context.save()
     }
 
@@ -417,39 +441,19 @@ struct ClimbMetaManagerView: View {
         try? context.save()
     }
 
-    private func nonDestructiveResetDayTypes() {
-        // Upsert default day types by key (names/colors/order), do not delete existing rows
-        seedDayTypes(context)
-
-    }
 
     // MARK: - Add missing defaults (non-destructive)
     private func addMissingDefaults() {
         // Build case-insensitive sets to avoid duplicates
-        let existingStyleNames = Set(styles.map { $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
-        let existingGymNames = Set(gyms.map { $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
         let existingDayKeys = Set(days.map { $0.key.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
 
         var insertedCount = 0
 
         // Insert missing default styles
-        for def in ClimbingDefaults.defaultStyles {
-            let key = def.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            if !existingStyleNames.contains(key) {
-                context.insert(ClimbStyle(name: def, isDefault: true))
-                insertedCount += 1
-            }
+        let allStyles: [ClimbStyle] = (try? context.fetch(FetchDescriptor<ClimbStyle>())) ?? []
+        for s in allStyles where s.isDefault && s.isHidden {
+            s.isHidden = false
         }
-
-        // Insert missing default gyms
-        for def in ClimbingDefaults.defaultGyms {
-            let key = def.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            if !existingGymNames.contains(key) {
-                context.insert(ClimbGym(name: def, isDefault: true))
-                insertedCount += 1
-            }
-        }
-
         // Insert missing default day types (by key)
         for d in ClimbingDefaults.defaultDayTypes {
             let key = d.key.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -465,7 +469,7 @@ struct ClimbMetaManagerView: View {
                 try context.save()
                 resultAlert = InfoAlert(message: "Added \(insertedCount) missing default\(insertedCount == 1 ? "" : "s").")
             } else {
-                resultAlert = InfoAlert(message: "All defaults are already present.")
+                resultAlert = InfoAlert(message: "All defaults are back")
             }
         } catch {
             resultAlert = InfoAlert(message: "Add defaults failed: \(error.localizedDescription)")
@@ -575,9 +579,10 @@ private struct DayEditSheet: View {
             .alert("Oops..", isPresented: $showingProtectionAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text("Adding identical default day types is not allowed, you can restore to defaults from the main menu.")
+                Text("You cannot add a defulat value, use the recover function in the menu")
             }
         }
         .presentationDetents([.medium, .large])
     }
 }
+
