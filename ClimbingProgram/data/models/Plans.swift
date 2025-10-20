@@ -134,6 +134,7 @@ final class PlanDay {
     // Relationship to DayTypeModel (replaces enum/raw storage)
     @Relationship(deleteRule: .nullify) var type: DayTypeModel?
     var chosenExercises: [String] = []
+    var exerciseOrder: [String:Int] = [:]
     var dailyNotes: String? = nil
 
     init(id: UUID = UUID(), date: Date, type: DayTypeModel? = nil) {

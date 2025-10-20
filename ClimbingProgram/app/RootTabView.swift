@@ -169,6 +169,17 @@ struct RootTabView: View {
             runOnce(per: "session_item_sort_backfill_2025-10-20") {
                 backfillSessionItemSort(context)
             }
+            runOnce(per: "plan_day_exercise_order_backfill_2025-10-20") {
+                let days = (try? context.fetch(FetchDescriptor<PlanDay>())) ?? []
+                for d in days {
+                    // Only set if missing to preserve any existing manual order
+                    if d.exerciseOrder.isEmpty {
+                        for (idx, name) in d.chosenExercises.enumerated() {
+                            d.exerciseOrder[name] = idx
+                        }
+                    }
+                }
+            }
             // Ensure all changes are committed
             try context.save()
             

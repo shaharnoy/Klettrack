@@ -497,7 +497,9 @@ private struct ExerciseSelection: Identifiable, Equatable {
 struct PlanDayEditor: View {
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
+    @Environment(\.editMode) private var editMode
     @EnvironmentObject private var timerAppState: TimerAppState
+    @State private var didReorder = false
     @State var day: PlanDay
     
     @Query(
@@ -656,41 +658,35 @@ struct PlanDayEditor: View {
         
         // Group chosen exercises by activity
         let groupedByActivity = Dictionary(grouping: day.chosenExercises) { exerciseName in
-            exerciseToActivityMap[exerciseName]?.activity.name ?? "Unknown"
-        }
-        
-        // Sort groups and exercises within each group
-        var result: [(String, Color, [String])] = []
-        
-        for (activityName, exerciseNames) in groupedByActivity {
-            // Find the activity color
-            let activity = allActivities.first { $0.name == activityName }
-            let activityColor = activity?.hue.color ?? .gray
-            
-            // Sort exercises within the group: unlogged first (by catalog order), then logged
-            let sortedExercises = exerciseNames.sorted { name1, name2 in
-                let isLogged1 = isExerciseQuickLogged(name: name1)
-                let isLogged2 = isExerciseQuickLogged(name: name2)
-                
-                // If one is logged and the other isn't, put the unlogged one first
-                if isLogged1 != isLogged2 {
-                    return !isLogged1
-                }
-                
-                // If both have the same logged status, sort by catalog order
-                let order1 = exerciseToActivityMap[name1]?.order ?? Int.max
-                let order2 = exerciseToActivityMap[name2]?.order ?? Int.max
-                return order1 < order2
+                exerciseToActivityMap[exerciseName]?.activity.name ?? "Unknown"
             }
-            
-            result.append((activityName, activityColor, sortedExercises))
+
+            var result: [(String, Color, [String])] = []
+            for (activityName, exerciseNames) in groupedByActivity {
+                let activity = allActivities.first { $0.name == activityName }
+                let activityColor = activity?.hue.color ?? .gray
+
+                let sortedExercises = exerciseNames.sorted { name1, name2 in
+                    // 1) Override with per-day manual order if available
+                    let o1 = day.exerciseOrder[name1]
+                    let o2 = day.exerciseOrder[name2]
+                    if let o1, let o2, o1 != o2 { return o1 < o2 }
+
+                    // 2) Fallback: unlogged first
+                    let isLogged1 = isExerciseQuickLogged(name: name1)
+                    let isLogged2 = isExerciseQuickLogged(name: name2)
+                    if isLogged1 != isLogged2 { return !isLogged1 }
+
+                    // 3) Fallback: catalog order
+                    let c1 = exerciseToActivityMap[name1]?.order ?? Int.max
+                    let c2 = exerciseToActivityMap[name2]?.order ?? Int.max
+                    return c1 < c2
+                }
+                result.append((activityName, activityColor, sortedExercises))
+            }
+            result.sort { $0.0 < $1.0 }
+            return result
         }
-        
-        // Sort activities by name for consistent display
-        result.sort { $0.0 < $1.0 }
-        
-        return result
-    }
     
     // Break down exercise row into its own view builder
     @ViewBuilder
@@ -871,7 +867,8 @@ struct PlanDayEditor: View {
                         group: group,
                         day: $day,
                         context: context,
-                        exerciseRowBuilder: exerciseRow
+                        exerciseRowBuilder: exerciseRow,
+                        onReorder: { didReorder = true }
                     )
                 }
             }
@@ -945,18 +942,43 @@ struct PlanDayEditor: View {
         .listStyle(.insetGrouped)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                HStack {
-                    // Timer button - now switches to the existing timer tab with plan day context
+                HStack(spacing: 10) {
+                    // Timer button
                     Button {
                         timerAppState.switchToTimer(with: day)
                     } label: {
                         Image(systemName: "timer")
                     }
-                    
-                    EditButton()
+
+                    // Vertical separator
+                    Rectangle()
+                        .frame(width: 1, height: 18)
+                        .foregroundStyle(.secondary.opacity(0.5))
+                        .padding(.horizontal, 2)
+
+                    // Reorder toggle button
+                    Button {
+                        withAnimation {
+                            editMode?.wrappedValue = (editMode?.wrappedValue == .active) ? .inactive : .active
+                        }
+                    } label: {
+                        Image(systemName: editMode?.wrappedValue == .active ? "checkmark" : "line.3.horizontal")
+                    }
                 }
             }
         }
+        .onChange(of: editMode?.wrappedValue) { _, newValue in
+                    if newValue == .inactive, didReorder {
+                        didReorder = false
+                        try? context.save() // single save after drag session
+                    }
+                }
+                .onDisappear {
+                    if didReorder {
+                        didReorder = false
+                        try? context.save()
+                    }
+                }
         .sheet(isPresented: $showingPicker) {
             CatalogExercisePicker(selected: $day.chosenExercises)
                 .environment(\.isDataReady, isDataReady)
@@ -2204,45 +2226,64 @@ private struct ActivityGroupView: View {
     @Binding var day: PlanDay
     let context: ModelContext
     let exerciseRowBuilder: (String) -> AnyView
-    
+    let onReorder: () -> Void
+
+    @Environment(\.editMode) private var editMode
+    @State private var localOrder: [String] = []   // ✅ decouple UI from model while dragging
+
     init(group: (activityName: String, activityColor: Color, exercises: [String]),
          day: Binding<PlanDay>,
          context: ModelContext,
-         exerciseRowBuilder: @escaping (String) -> some View) {
+         exerciseRowBuilder: @escaping (String) -> some View,
+         onReorder: @escaping () -> Void) {
         self.group = group
         self._day = day
         self.context = context
         self.exerciseRowBuilder = { name in AnyView(exerciseRowBuilder(name)) }
+        self.onReorder = onReorder
+        self._localOrder = State(initialValue: group.exercises) // seed
     }
-    
+
     var body: some View {
-        // Activity header
-        HStack(spacing: 8) {
-            Circle()
-                .fill(group.activityColor)
-                .frame(width: 12, height: 12)
-            Text(group.activityName)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.vertical, 4)
-        .listRowSeparator(.hidden)
-        
-        // Exercises in this activity group
-        ForEach(group.exercises, id: \.self) { name in
-            exerciseRowBuilder(name)
-        }
-        .onDelete { indexSet in
-            for index in indexSet {
-                let exerciseToRemove = group.exercises[index]
-                if let dayIndex = day.chosenExercises.firstIndex(of: exerciseToRemove) {
-                    day.chosenExercises.remove(at: dayIndex)
+        Section {
+            ForEach(localOrder, id: \.self) { name in
+                exerciseRowBuilder(name)
+            }
+            .onMove { source, destination in
+                var tx = Transaction(); tx.disablesAnimations = true
+                withTransaction(tx) {
+                    var arr = localOrder
+                    arr.move(fromOffsets: source, toOffset: destination)
+                    localOrder = arr                    // ✅ update lightweight state only
                 }
             }
-            try? context.save()
+            .moveDisabled(false)
+        } header: {
+            HStack(spacing: 8) {
+                Circle().fill(group.activityColor).frame(width: 12, height: 12)
+                Text(group.activityName).font(.subheadline).fontWeight(.medium).foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.vertical, 4)
+        }
+        .onChange(of: editMode?.wrappedValue) { _, newValue in
+            // Commit once when leaving edit mode -> minimal work, no lag during drag
+            if newValue == .inactive {
+                for (idx, name) in localOrder.enumerated() { day.exerciseOrder[name] = idx }
+                onReorder()
+            }
+        }
+        .onChange(of: group.exercises) { _, newValue in
+            // Keep localOrder in sync when data changes from outside edit sessions
+            if editMode?.wrappedValue != .active {
+                localOrder = newValue
+            }
+        }
+        .onAppear {
+            if localOrder.isEmpty { localOrder = group.exercises }
         }
     }
 }
+
+
 
