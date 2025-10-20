@@ -364,6 +364,7 @@ struct AddSessionItemSheet: View {
                             grade: grade,
                             notes: inputNotes.isEmpty ? nil : inputNotes
                         )
+                        item.sort = (session.items.map(\.sort).max() ?? -1) + 1
                         session.items.append(item)
                         try? context.save()
                         dismiss()
@@ -423,55 +424,92 @@ struct NewSessionSheet: View {
 struct SessionDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
+    @Environment(\.editMode) private var editMode
     @Bindable var session: Session
     @State private var showingAddItem = false
     @State private var editingItem: SessionItem? = nil
+    @State private var didReorder = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Exercises") {
-                    ForEach(session.items) { item in
-                        SessionItemRow(item: item)
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    guard isDataReady else {
-                                        return
-                                    }
-                                    do {
-                                        try session.removeItem(item, in: context)
-                                    } catch {
-                                    }
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+        List {
+            Section("Exercises") {
+                ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
+                    SessionItemRow(item: item)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                guard isDataReady else { return }
+                                do {
+                                    try session.removeItem(item, in: context)
+                                } catch {
                                 }
-                                NavigationLink {
-                                    EditSessionItemView(item: item)
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                                .tint(.blue)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
                             }
-                    }
+                            NavigationLink {
+                                EditSessionItemView(item: item)
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
                 }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        guard isDataReady else { return }
-                        showingAddItem = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .disabled(!isDataReady)
-                }
-            }
-            .sheet(isPresented: $showingAddItem) {
-                AddSessionItemSheet(session: session)
+                .onMove(perform: moveItems)
             }
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle(session.date.formatted(date: .abbreviated, time: .omitted))
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(editMode?.wrappedValue == .active ? "Done" : "Reorder") {
+                    withAnimation {
+                        editMode?.wrappedValue = (editMode?.wrappedValue == .active) ? .inactive : .active
+                    }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    guard isDataReady else { return }
+                    showingAddItem = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(!isDataReady)
+            }
+        }
+        .sheet(isPresented: $showingAddItem) {
+            AddSessionItemSheet(session: session)
+        }
+        // Commit once when leaving edit mode, but only if a reorder occurred
+        .onChange(of: editMode?.wrappedValue) { _, newValue in
+            if newValue == .inactive, didReorder {
+                didReorder = false
+                try? context.save()
+            }
+        }
+        // Safety: commit if navigating away mid-edit
+        .onDisappear {
+            if didReorder {
+                didReorder = false
+                try? context.save()
+            }
+        }
+    }
+    
+    private func moveItems(from source: IndexSet, to destination: Int) {
+        guard isDataReady else { return }
+
+        // Reorder a working copy
+        var working = session.items.sorted(by: { $0.sort < $1.sort })
+        working.move(fromOffsets: source, toOffset: destination)
+
+        // Reassign contiguous sort indices
+        for (idx, item) in working.enumerated() {
+            item.sort = idx
+        }
+
+        // Write back for UI consistency
+        session.items = working
+        didReorder = true
     }
 }
 
@@ -777,32 +815,33 @@ private struct CombinedDayRow: View {
 private struct CombinedDayDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
+    @Environment(\.editMode) private var editMode
     let date: Date
     let session: Session?
     let climbEntries: [ClimbEntry]
     
     @State private var showingAddItem = false
     @State private var showingAddClimb = false
+    @State private var didReorder = false
+    
+    // Pre-sorted climbs so we don't re-sort inside the body repeatedly
+    private var sortedClimbs: [ClimbEntry] {
+        climbEntries.sorted(by: { $0.dateLogged > $1.dateLogged })
+    }
     
     var body: some View {
         List {
             // Exercises section
             if let session = session, !session.items.isEmpty {
                 Section("Exercises") {
-                    ForEach(session.items) { item in
+                    ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
                         SessionItemRow(item: item)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
-                                    print("🗑️ Delete tapped (Combined). isDataReady:", isDataReady, "session:", session.id, "item:", item.id)
-                                    guard isDataReady else {
-                                        print("   ⚠️ isDataReady is false; aborting delete")
-                                        return
-                                    }
+                                    guard isDataReady else { return }
                                     do {
                                         try session.removeItem(item, in: context)
-                                        print("   ✅ Delete completed (Combined). session.items.count now:", session.items.count)
                                     } catch {
-                                        print("   ❌ Delete failed (Combined):", error.localizedDescription)
                                     }
                                 } label: {
                                     Label("Delete", systemImage: "trash")
@@ -816,13 +855,16 @@ private struct CombinedDayDetailView: View {
                                 .tint(.blue)
                             }
                     }
+                    .onMove { source, destination in
+                        moveItems(in: session, from: source, to: destination)
+                    }
                 }
             }
             
             // Climbs section
-            if !climbEntries.isEmpty {
+            if !sortedClimbs.isEmpty {
                 Section("Climbs") {
-                    ForEach(climbEntries.sorted(by: { $0.dateLogged > $1.dateLogged })) { climb in
+                    ForEach(sortedClimbs) { climb in
                         ClimbEntryRow(climb: climb)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
@@ -838,7 +880,7 @@ private struct CombinedDayDetailView: View {
             }
             
             // Empty state
-            if (session?.items.isEmpty ?? true) && climbEntries.isEmpty {
+            if (session?.items.isEmpty ?? true) && sortedClimbs.isEmpty {
                 Section {
                     Text("No activities logged for this day")
                         .foregroundStyle(.secondary)
@@ -850,6 +892,13 @@ private struct CombinedDayDetailView: View {
         .navigationTitle(date.formatted(date: .abbreviated, time: .omitted))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(editMode?.wrappedValue == .active ? "Done" : "Reorder") {
+                    withAnimation {
+                        editMode?.wrappedValue = (editMode?.wrappedValue == .active) ? .inactive : .active
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button(action: { addExercise() }) {
@@ -873,6 +922,19 @@ private struct CombinedDayDetailView: View {
         .sheet(isPresented: $showingAddClimb) {
             AddClimbView()
         }
+        // Commit once when leaving edit mode, but only if a reorder occurred
+        .onChange(of: editMode?.wrappedValue) { _, newValue in
+            if newValue == .inactive, didReorder {
+                didReorder = false
+                try? context.save()
+            }
+        }
+        .onDisappear {
+            if didReorder {
+                didReorder = false
+                try? context.save()
+            }
+        }
     }
     
     private func addExercise() {
@@ -886,6 +948,20 @@ private struct CombinedDayDetailView: View {
         }
         
         showingAddItem = true
+    }
+    
+    private func moveItems(in session: Session, from source: IndexSet, to destination: Int) {
+        guard isDataReady else { return }
+
+        var working = session.items.sorted(by: { $0.sort < $1.sort })
+        working.move(fromOffsets: source, toOffset: destination)
+
+        for (idx, item) in working.enumerated() {
+            item.sort = idx
+        }
+
+        session.items = working
+        didReorder = true
     }
 }
 

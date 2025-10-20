@@ -106,6 +106,7 @@ final class Exercise {
 final class Session {
     @Attribute(.unique) var id: UUID
     var date: Date
+    @Relationship(deleteRule: .cascade, inverse: \SessionItem.session)
     var items: [SessionItem] = []   // links to catalog exercises with performed values
     init(id: UUID = UUID(), date: Date = .now) { self.id = id; self.date = date }
 }
@@ -115,6 +116,10 @@ final class SessionItem {
     @Attribute(.unique) var id: UUID
     @Attribute var sourceTag: String?
     var exerciseName: String
+    
+    @Relationship var session: Session?
+    
+    var sort: Int = 0
     
     // Plan source tracking
     var planSourceId: UUID?

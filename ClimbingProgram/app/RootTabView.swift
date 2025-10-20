@@ -166,7 +166,9 @@ struct RootTabView: View {
             runOnce(per: "catalog_2025-10-11_bouldering") {
                 applyCatalogUpdates(context)
             }
-            
+            runOnce(per: "session_item_sort_backfill_2025-10-20") {
+                backfillSessionItemSort(context)
+            }
             // Ensure all changes are committed
             try context.save()
             
@@ -190,5 +192,23 @@ extension EnvironmentValues {
     var isDataReady: Bool {
         get { self[DataReadyKey.self] }
         set { self[DataReadyKey.self] = newValue }
+    }
+}
+
+// MARK: - Migration of sorted session items
+private func backfillSessionItemSort(_ context: ModelContext) {
+    do {
+        let sessions = try context.fetch(FetchDescriptor<Session>())
+        for session in sessions {
+            // Use current array order as the canonical order.
+            // Always normalize to contiguous 0...N-1 to avoid duplicates/gaps.
+            let items = session.items
+            for (idx, item) in items.enumerated() where item.sort != idx {
+                item.sort = idx
+            }
+        }
+        // Save is handled by initializeData(); keep this idempotent.
+    } catch {
+        print("⚠️ backfillSessionItemSort failed: \(error.localizedDescription)")
     }
 }
