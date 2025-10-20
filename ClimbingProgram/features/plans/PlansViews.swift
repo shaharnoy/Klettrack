@@ -917,6 +917,7 @@ struct PlanDayEditor: View {
             }
             
             Button {
+                editMode?.wrappedValue = .inactive
                 showingPicker = true
             } label: {
                 Label("Add from Catalog", systemImage: "plus")
@@ -2291,13 +2292,20 @@ private struct ActivityGroupView: View {
         Section {
             ForEach(localOrder, id: \.self) { name in
                 exerciseRowBuilder(name)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            delete(names: [name])
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
             }
             .onMove { source, destination in
                 var tx = Transaction(); tx.disablesAnimations = true
                 withTransaction(tx) {
                     var arr = localOrder
                     arr.move(fromOffsets: source, toOffset: destination)
-                    localOrder = arr                    // ✅ update lightweight state only
+                    localOrder = arr
                 }
             }
             .moveDisabled(false)
@@ -2326,7 +2334,23 @@ private struct ActivityGroupView: View {
             if localOrder.isEmpty { localOrder = group.exercises }
         }
     }
+    private func delete(names: [String]) {
+        //Update local UI list
+        localOrder.removeAll { names.contains($0) }
+        //Remove from chosenExercises
+        day.chosenExercises.removeAll { names.contains($0) }
+        //Clean up per-day order map
+        for n in names { day.exerciseOrder.removeValue(forKey: n) }
+        //Reindex remaining names in this group to keep contiguous order
+        for (idx, name) in localOrder.enumerated() {
+            day.exerciseOrder[name] = idx
+        }
+        // Persist and notify
+        onReorder()
+        try? context.save()
+    }
 }
+
 
 
 
