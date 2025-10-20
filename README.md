@@ -5,6 +5,9 @@ This is a **community-driven project**: created for climbers, shaped by feedback
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)  ![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)  ![iOS](https://img.shields.io/badge/iOS-17+-lightgrey.svg)   ![Xcode](https://img.shields.io/badge/Xcode-15.3+-blue.svg)  
 
+[![App Store](https://img.shields.io/badge/App_Store-Download-blue?logo=apple)](https://apps.apple.com/app/id6754015176)
+
+
 ---
 
 ## 🗺️ Roadmap and Feature requests
