@@ -933,14 +933,36 @@ struct PlanDayEditor: View {
     }
     
     // Break down the logged exercises section
+    @State private var itemToEdit: SessionItem?
     @ViewBuilder
     private var loggedExercisesSection: some View {
         Section("Logged exercises") {
             if loggedExercisesForDay.isEmpty {
                 Text("No logs yet for this day").foregroundStyle(.secondary)
             } else {
-                ForEach(loggedExercisesForDay) { item in
+                ForEach(loggedExercisesForDay.sorted(by: { $0.sort < $1.sort })) { item in
                     loggedExerciseRow(item: item)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                guard isDataReady else { return }
+                                if let parent = item.session {
+                                    do { try parent.removeItem(item, in: context) } catch { }
+                                } else {
+                                    // Fallback if no back-reference
+                                    context.delete(item)
+                                    try? context.save()
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+
+                            NavigationLink {
+                                EditSessionItemView(item: item)
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
                 }
             }
         }
