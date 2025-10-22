@@ -11,6 +11,8 @@ import SwiftData
 struct TimerTemplatesListView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isDataReady) private var isDataReady
+
     @Query(sort: [SortDescriptor(\TimerTemplate.name, order: .forward)]) private var templates: [TimerTemplate]
     
     @State private var showingNewTemplate = false
@@ -29,6 +31,9 @@ struct TimerTemplatesListView: View {
                 } else {
                     ForEach(templates) { template in
                         TimerTemplateListRow(template: template) {
+                            // Edit action guarded by isDataReady
+                            guard isDataReady else { return }
+                            prewarm(template)
                             selectedTemplate = template
                             showingEditTemplate = true
                         }
@@ -45,13 +50,16 @@ struct TimerTemplatesListView: View {
                 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New") {
+                        guard isDataReady else { return }
                         showingNewTemplate = true
                     }
+                    .disabled(!isDataReady)
                 }
                 
                 if !templates.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         EditButton()
+                            .disabled(!isDataReady)
                     }
                 }
             }
@@ -67,12 +75,26 @@ struct TimerTemplatesListView: View {
     }
     
     private func deleteTemplates(offsets: IndexSet) {
+        guard isDataReady else { return }
         for index in offsets {
             context.delete(templates[index])
         }
         try? context.save()
     }
+    
+    
+    // Touching relationships to ensure SwiftData realizes them before presenting the editor
+    private func prewarm(_ template: TimerTemplate) {
+        // Force access to commonly used properties to avoid first-render hiccups
+        _ = template.name
+        _ = template.templateDescription
+        // Sort intervals to mirror what the editor does
+        let _ = template.intervals.sorted { $0.order < $1.order }
+        // Touch computed property
+        _ = template.effectiveTotalTimeSeconds
+    }
 }
+
 
 // MARK: - Timer Template List Row
 struct TimerTemplateListRow: View {
