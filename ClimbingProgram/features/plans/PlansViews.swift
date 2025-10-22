@@ -2279,7 +2279,7 @@ private struct ActivityGroupView: View {
     let onReorder: () -> Void
 
     @Environment(\.editMode) private var editMode
-    @State private var localOrder: [String] = []   // ✅ decouple UI from model while dragging
+    @State private var localOrder: [String] = []
 
     init(group: (activityName: String, activityColor: Color, exercises: [String]),
          day: Binding<PlanDay>,
@@ -2324,11 +2324,12 @@ private struct ActivityGroupView: View {
             .padding(.vertical, 4)
         }
         .onChange(of: editMode?.wrappedValue) { _, newValue in
-            // Commit once when leaving edit mode -> minimal work, no lag during drag
-            if newValue == .inactive {
-                for (idx, name) in localOrder.enumerated() { day.exerciseOrder[name] = idx }
-                onReorder()
-            }
+            // Commit when leaving edit mode
+            if newValue != .active { commitOrder() }
+        }
+        .onDisappear {
+            // Also commit when navigating away (e.g., still in edit mode)
+            commitOrder()
         }
         .onChange(of: group.exercises) { _, newValue in
             // Keep localOrder in sync when data changes from outside edit sessions
@@ -2340,6 +2341,15 @@ private struct ActivityGroupView: View {
             if localOrder.isEmpty { localOrder = group.exercises }
         }
     }
+    
+    private func commitOrder() {
+        // Only write if something changed
+        guard localOrder != group.exercises else { return }
+        for (idx, name) in localOrder.enumerated() { day.exerciseOrder[name] = idx }
+        onReorder()
+        try? context.save()
+    }
+    
     private func delete(names: [String]) {
         //Update local UI list
         localOrder.removeAll { names.contains($0) }
