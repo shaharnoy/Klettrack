@@ -26,9 +26,10 @@ class TimerAppState: ObservableObject {
     private let sharedTimerManager = SharedTimerManager.shared
     private var cancellables = Set<AnyCancellable>()
     
-    init() {
-        setupTimerObservation()
-    }
+    //commented out the init to avoid timer auto-switching once the 5 seconds get ready timer is done.
+    //init() {
+    //    setupTimerObservation()
+    //}
     
     deinit {
         // Explicit cleanup
