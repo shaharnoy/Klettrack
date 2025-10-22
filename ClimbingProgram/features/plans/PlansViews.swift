@@ -22,12 +22,18 @@ struct ExerciseHit: Identifiable {
     let name: String
     let subtitle: String?
     let tint: Color
+    let repsText: String?
+    let setsText: String?
+    let restText: String?
 
     init(ex: Exercise, tint: Color) {
         self.id = ex.id
         self.name = ex.name
         self.subtitle = ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes
         self.tint = tint
+        self.repsText = ex.repsText
+        self.setsText = ex.setsText
+        self.restText = ex.restText
     }
 }
 
@@ -1450,7 +1456,7 @@ struct CatalogExercisePicker: View {
                         ExercisePickRow(
                             name: hit.name,
                             subtitle: hit.subtitle,
-                            reps: nil, sets: nil, rest: nil,
+                            reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
                             tint: hit.tint,
                             isSelected: selected.contains(hit.name)
                         ) {
@@ -1613,7 +1619,7 @@ struct TypesList: View {
                             ExercisePickRow(
                                 name: hit.name,
                                 subtitle: hit.subtitle,
-                                reps: nil, sets: nil, rest: nil,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
                                 tint: hit.tint,
                                 isSelected: selected.contains(hit.name)
                             ) {
@@ -1723,7 +1729,7 @@ struct CombosList: View {
                             ExercisePickRow(
                                 name: hit.name,
                                 subtitle: hit.subtitle,
-                                reps: nil, sets: nil, rest: nil,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
                                 tint: hit.tint,
                                 isSelected: selected.contains(hit.name)
                             ) {
@@ -1821,7 +1827,7 @@ struct ComboExercisesList: View {
                             ExercisePickRow(
                                 name: hit.name,
                                 subtitle: hit.subtitle,
-                                reps: nil, sets: nil, rest: nil,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
                                 tint: hit.tint,
                                 isSelected: selected.contains(hit.name)
                             ) {
@@ -1934,7 +1940,7 @@ struct ExercisesList: View {
                             ExercisePickRow(
                                 name: hit.name,
                                 subtitle: hit.subtitle,
-                                reps: nil, sets: nil, rest: nil,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
                                 tint: hit.tint,
                                 isSelected: selected.contains(hit.name)
                             ) {
