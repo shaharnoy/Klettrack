@@ -474,6 +474,7 @@ struct TimerView: View {
             case .rest: return .orange
             case .getReady: return .blue
             case .completed: return .gray
+            case .betweenSets: return .purple
             }
         }
     }
@@ -489,6 +490,7 @@ struct TimerView: View {
             case .rest: return "Rest"
             case .getReady: return "Get Ready"
             case .completed: return "Completed"
+            case .betweenSets: return "Rest Between Sets"
             }
         }
     }

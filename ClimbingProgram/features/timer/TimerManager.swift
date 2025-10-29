@@ -9,52 +9,54 @@ import SwiftUI
 import Combine
 import AVFoundation
 import AudioToolbox
+import ActivityKit
 
+// MARK: - TimerManager
 @MainActor
 class TimerManager: ObservableObject {
-    // MARK: - Published state (used by the UI)
+    // MARK: Published state (used by the UI)
     @Published var state: TimerState = .stopped
-    @Published var currentTime: Int = 0                 // whole seconds since current phase start (or since startDate in our accounting)
-    @Published var totalElapsedTime: Int = 0            // whole seconds since timer started (excludes get-ready once transitioned)
-    @Published var currentInterval: Int = 0
-    @Published var currentRepetition: Int = 0
-    @Published var currentSequenceRepeat: Int = 0       // which repeat of the whole intervals sequence we’re on (0-based)
+    @Published var currentTime: Int = 0                 // whole seconds since engine start (includes get-ready)
+    @Published var totalElapsedTime: Int = 0            // whole seconds excluding get-ready
+    @Published var currentInterval: Int = 0             // index in configuration.intervals
+    @Published var currentRepetition: Int = 0           // repetition index within the current interval
+    @Published var currentSequenceRepeat: Int = 0       // set index (0-based)
     @Published var currentPhase: IntervalPhase = .work
     @Published var laps: [TimerLap] = []
-    @Published var isInBetweenIntervalRest: Bool = false
+    @Published private(set) var isInBetweenIntervalRest: Bool = false
 
-    // MARK: - Internals
+    // MARK: Data
+    var configuration: TimerConfiguration?
+    var session: TimerSession?
+
+    // MARK: Internals
     private var lastLapTime: Int = 0
-    private var timer: Timer?
-    private var startTime: Date?
-    private var pausedTime: Date?
-    private var lastBeepTime: Int = -1                  // stores the “remaining seconds” we already beeped for in this phase
-    private var betweenIntervalRestStartTime: Int = 0
 
-    // Pause bookkeeping (to correctly resume get-ready)
-    private var wasPausedDuringGetReady: Bool = false
+    // New engine + ticker
+    private var engine: TimerEngine?
+    private var ticker: Ticker? = DispatchTicker(interval: 0.25)
+    private var lastSnapshot: Snapshot? = nil
+
+    // Segment → interval mapping (for multi-interval sets)
+    private var segIntervalIndex: [Int] = []            // per segment → interval idx (−1 when N/A)
+    private var segRepWithinInterval: [Int] = []        // per segment → rep idx for that interval (−1 when N/A)
+
+    // Sounds
+    private var lastBeepSecondForSegment: [Int: Int] = [:] // segIndex → last whole remaining second we beeped for
+
+    // Pause bookkeeping
+    private var pausedAtDuringGetReady: Bool = false
 
     // Background handling
     private var backgroundTime: Date?
     private var wasInBackground: Bool = false
     private var notificationCenter = NotificationCenter.default
 
-    // Data
-    var configuration: TimerConfiguration?
-    var session: TimerSession?
+    // MARK: Init / Deinit
+    init() { setupBackgroundHandling() }
+    deinit { notificationCenter.removeObserver(self); ticker?.stop() }
 
-    // MARK: - Init / Deinit
-    init() {
-        setupBackgroundHandling()
-    }
-
-    deinit {
-        notificationCenter.removeObserver(self)
-        timer?.invalidate()
-        timer = nil
-    }
-
-    // MARK: - Computed flags
+    // MARK: Flags
     var isRunning: Bool   { state == .running }
     var isPaused: Bool    { state == .paused }
     var isStopped: Bool   { state == .stopped }
@@ -62,96 +64,57 @@ class TimerManager: ObservableObject {
     var isReset: Bool     { state == .reseted }
     var isGetReady: Bool  { state == .getReady }
 
+    private func refreshDerivedFlags() { isInBetweenIntervalRest = (currentPhase == .betweenSets) }
+
     var currentIntervalConfig: IntervalConfiguration? {
-        guard let config = configuration,
-              currentInterval < config.intervals.count else { return nil }
+        guard let config = configuration, currentInterval >= 0, currentInterval < config.intervals.count else { return nil }
         return config.intervals[currentInterval]
     }
 
-    /// Primary display the UI uses
+    // Primary display used by UI
     var displayTime: Int {
         guard let config = configuration else { return 0 }
-
-        // Get Ready shows 5 → 0
-        if state == .getReady {
-            return max(0, 5 - currentTime)
-        }
-
+        if state == .getReady { return max(0, 5 - currentTime) }
         if config.hasTotalTime && !config.hasIntervals {
-            // Total-time: iOS-like laps count from last lap
             return totalElapsedTime - lastLapTime
         } else {
-            // Interval mode: show remaining in the current phase
             return currentPhaseTimeRemaining
         }
     }
 
-    /// Remaining time in the current *interval* phase (work/rest), or “rest between sets”
+    // Remaining in the active phase (interval mode). For total timer we don’t use this.
     var currentPhaseTimeRemaining: Int {
-        if isInBetweenIntervalRest {
-            guard let config = configuration,
-                  let restBetween = config.restTimeBetweenIntervals else { return 0 }
-            let restElapsed = currentTime - betweenIntervalRestStartTime
-            return max(0, restBetween - restElapsed)
+        if currentPhase == .betweenSets {
+            // engine snapshot already gives the remaining time in between-sets segment
+            if let s = lastSnapshot { return max(0, Int(ceil(s.segmentRemaining))) }
+            return 0
         }
-
-        guard let intervalConfig = currentIntervalConfig else { return 0 }
-
-        let timeInCurrentInterval = calculateTimeInCurrentInterval()
-        let singleCycleTime = intervalConfig.workTimeSeconds + intervalConfig.restTimeSeconds
-        let currentCycle = singleCycleTime == 0 ? 0 : timeInCurrentInterval / singleCycleTime
-        let timeInCurrentCycle = singleCycleTime == 0 ? 0 : timeInCurrentInterval % singleCycleTime
-
-        // Last repetition has no trailing rest
-        if currentCycle == intervalConfig.repetitions - 1 {
-            if timeInCurrentCycle < intervalConfig.workTimeSeconds {
-                return intervalConfig.workTimeSeconds - timeInCurrentCycle
-            } else {
-                return 0 // finished final work
-            }
-        } else {
-            switch currentPhase {
-            case .work:
-                return max(0, intervalConfig.workTimeSeconds - timeInCurrentCycle)
-            case .rest:
-                return max(0, singleCycleTime - timeInCurrentCycle)
-            case .completed:
-                return 0
-            case .getReady:
-                return 5
-            }
+        if state == .getReady { return max(0, 5 - currentTime) }
+        if let s = lastSnapshot {
+            return max(0, Int(ceil(s.segmentRemaining)))
         }
+        return 0
     }
 
     var totalTimeRemaining: Int {
         guard let config = configuration else { return 0 }
-
         if let totalTime = config.totalTimeSeconds {
             return max(0, totalTime - totalElapsedTime)
         }
-
-        // intervals path
-        let totalIntervalTime = config.intervals.reduce(0) { sum, interval in
-            sum + interval.totalTimeSeconds
-        }
+        let totalIntervalTime = config.intervals.reduce(0) { sum, interval in sum + interval.totalTimeSeconds }
         let repeats = config.isRepeating ? (config.repeatCount ?? 1) : 1
         var total = totalIntervalTime * repeats
-
-        // add rest between sequences (sets)
-        if config.isRepeating,
-           let restBetween = config.restTimeBetweenIntervals, restBetween > 0 {
+        if config.isRepeating, let restBetween = config.restTimeBetweenIntervals, restBetween > 0 {
             total += max(0, repeats - 1) * restBetween
         }
-
         return max(0, total - totalElapsedTime)
     }
 
     var progressPercentage: Double {
         guard let config = configuration else { return 0 }
         let total: Int
-        if let t = config.totalTimeSeconds {
-            total = t
-        } else {
+        if let t = config.totalTimeSeconds { total = t }
+        else {
             let intervalTime = config.intervals.reduce(0) { $0 + $1.totalTimeSeconds }
             let repeats = config.isRepeating ? (config.repeatCount ?? 1) : 1
             var calc = intervalTime * repeats
@@ -166,11 +129,10 @@ class TimerManager: ObservableObject {
         return min(1.0, max(0.0, raw))
     }
 
-    // MARK: - Configuration Management
+    // MARK: Configuration Management
     func loadConfiguration(_ configuration: TimerConfiguration) {
         self.configuration = configuration
-
-        // Reset timer state (preview mode – shows config without starting)
+        // Preview-only reset
         state = .stopped
         currentTime = 0
         totalElapsedTime = 0
@@ -178,26 +140,59 @@ class TimerManager: ObservableObject {
         currentRepetition = 0
         currentSequenceRepeat = 0
         currentPhase = configuration.hasIntervals ? .work : .work
+        refreshDerivedFlags()
         laps = []
         lastLapTime = 0
 
-        // Clear session and timers
+        // Clear engine & mapping
+        ticker?.stop()
+        engine = nil
+        lastSnapshot = nil
+        segIntervalIndex = []
+        segRepWithinInterval = []
+        lastBeepSecondForSegment = [:]
+        pausedAtDuringGetReady = false
+
+        // Session
         session = nil
-        stopTimer()
-        startTime = nil
-        pausedTime = nil
-        lastBeepTime = -1
-        isInBetweenIntervalRest = false
-        betweenIntervalRestStartTime = 0
-        wasPausedDuringGetReady = false
+
+        // Debug
+        if configuration.hasIntervals {
+            let reps = configuration.isRepeating ? (configuration.repeatCount ?? 1) : 1
+            print("TimerManager.loadConfiguration: intervals loaded; sets=\(reps), restBetween=\(configuration.restTimeBetweenIntervals ?? 0)s")
+        } else if let total = configuration.totalTimeSeconds {
+            print("TimerManager.loadConfiguration: total-time loaded; total=\(total)s")
+        } else {
+            print("TimerManager.loadConfiguration: unknown config")
+        }
     }
 
-    // MARK: - Timer Control
+    // MARK: Control
     func start(with configuration: TimerConfiguration, session: TimerSession? = nil) {
         self.configuration = configuration
         self.session = session
 
-        // Always start with Get Ready 5s
+        // Build engine timeline
+        let build: (timeline: Timeline, segIntervalIndex: [Int], segRepWithinInterval: [Int])
+        if configuration.hasTotalTime && !configuration.hasIntervals, let total = configuration.totalTimeSeconds {
+            // TOTAL TIMER: getReady + single work segment
+            let tl = TimerEngine.buildTotalTimer(work: TimeInterval(total), getReady: 5)
+            let count = tl.segments.count
+            build = (tl,
+                     Array(repeating: -1, count: count), // interval mapping not used in total mode
+                     Array(repeating: -1, count: count)) // rep mapping not used in total mode
+        } else {
+            // INTERVAL TIMER
+            build = buildTimelineAndMappings(from: configuration)
+        }
+
+        engine = TimerEngine(timeline: build.timeline)
+        segIntervalIndex = build.segIntervalIndex
+        segRepWithinInterval = build.segRepWithinInterval
+        lastSnapshot = nil
+        lastBeepSecondForSegment = [:]
+
+        // Initial state → get ready
         state = .getReady
         currentTime = 0
         totalElapsedTime = 0
@@ -205,422 +200,289 @@ class TimerManager: ObservableObject {
         currentRepetition = 0
         currentSequenceRepeat = 0
         currentPhase = .getReady
-        isInBetweenIntervalRest = false
-        betweenIntervalRestStartTime = 0
+        pausedAtDuringGetReady = false
+        refreshDerivedFlags()
         laps = []
-        lastBeepTime = -1
-        wasPausedDuringGetReady = false
 
-        startTime = Date()
-        startTimer()
-        // playSound(.start) // optional; omitted because get-ready has its own cadence
-    }
+        engine?.start()
+        startTicker()
+        UIApplication.shared.isIdleTimerDisabled = true
 
-    private func handleGetReadyPhase() {
-        let getReadyRemaining = 5 - currentTime
-
-        // Beep for all 5 seconds in get-ready (you had this behavior before)
-        if getReadyRemaining >= 1 && getReadyRemaining <= 5 && lastBeepTime != getReadyRemaining {
-            lastBeepTime = getReadyRemaining
-            DispatchQueue.main.async { [weak self] in
-                self?.playCountdownBeep()
-            }
-        }
-
-        if currentTime >= 5 {
-            // Transition to running
-            state = .running
-            currentTime = 0
-            totalElapsedTime = 0
-            startTime = Date() // reset for actual timer accounting
-
-            if let config = configuration, config.hasIntervals, !config.intervals.isEmpty {
-                let first = config.intervals[0]
-                currentPhase = (first.workTimeSeconds > 0) ? .work : .rest
-            } else {
-                currentPhase = .work
-            }
-
-            playSound(.restToWork) // signal start of real timer
-            lastBeepTime = -1
+        // Debug dump
+        if configuration.hasIntervals {
+            let sets = configuration.isRepeating ? (configuration.repeatCount ?? 1) : 1
+            print("TimerManager.start: intervals; sets=\(sets), restBetween=\(configuration.restTimeBetweenIntervals ?? 0)s, intervals=\(configuration.intervals.count)")
+        } else if let total = configuration.totalTimeSeconds {
+            print("TimerManager.start: total-time; total=\(total)s")
         }
     }
 
     func pause() {
-        // Allow pausing during running **and** get-ready
         guard state == .running || state == .getReady else { return }
-
-        wasPausedDuringGetReady = (state == .getReady)
-        pausedTime = Date()
+        pausedAtDuringGetReady = (state == .getReady)
+        engine?.pause()
         state = .paused
-        stopTimer()
+        UIApplication.shared.isIdleTimerDisabled = false
+        print("TimerManager.pause")
         playSound(.pause)
     }
 
     func resume() {
         guard state == .paused else { return }
-
-        if let pausedTime = pausedTime {
-            let pauseDuration = Date().timeIntervalSince(pausedTime)
-            startTime = startTime?.addingTimeInterval(pauseDuration)
-        }
-
-        // If we paused during get-ready, resume in get-ready; otherwise resume running
-        state = wasPausedDuringGetReady ? .getReady : .running
-        startTimer()
+        engine?.resume()
+        state = pausedAtDuringGetReady ? .getReady : .running
+        startTicker()
+        UIApplication.shared.isIdleTimerDisabled = true
+        print("TimerManager.resume")
         playSound(.resume)
     }
 
     func stop() {
         state = .stopped
-        stopTimer()
-
+        ticker?.stop()
+        engine?.reset()
+        UIApplication.shared.isIdleTimerDisabled = false
         if let session = session {
             session.endDate = Date()
             session.totalElapsedSeconds = totalElapsedTime
             session.completedIntervals = currentInterval
             session.wasCompleted = false
         }
-
         reset()
+        print("TimerManager.stop")
         playSound(.stop)
     }
 
     func complete() {
         state = .completed
         currentPhase = .completed
-        stopTimer()
-
+        refreshDerivedFlags()
+        ticker?.stop()
+        UIApplication.shared.isIdleTimerDisabled = false
         if let session = session {
             session.endDate = Date()
             session.totalElapsedSeconds = totalElapsedTime
             session.completedIntervals = currentInterval
             session.wasCompleted = true
         }
-
+        print("TimerManager.complete @ totalElapsed=\(totalElapsedTime)")
         playSound(.complete)
     }
 
     func addLap(notes: String? = nil) {
-        let lap = TimerLap(
-            lapNumber: laps.count + 1,
-            elapsedSeconds: totalElapsedTime,
-            notes: notes
-        )
-
+        let lap = TimerLap(lapNumber: laps.count + 1, elapsedSeconds: totalElapsedTime, notes: notes)
         laps.append(lap)
         session?.laps.append(lap)
-
         if let config = configuration, config.hasTotalTime && !config.hasIntervals {
             lastLapTime = totalElapsedTime
             playSound(.lap)
+            print("TimerManager.addLap #\(lap.lapNumber) @ \(totalElapsedTime)s")
         }
     }
 
     // Restart but keep configuration
     func restart() {
         guard configuration != nil else { return }
-        stopTimer()
-
+        ticker?.stop()
+        engine?.reset()
         currentTime = 0
         totalElapsedTime = 0
         currentInterval = 0
         currentRepetition = 0
         currentSequenceRepeat = 0
         currentPhase = .work
-        isInBetweenIntervalRest = false
-        betweenIntervalRestStartTime = 0
-        startTime = nil
-        pausedTime = nil
+        refreshDerivedFlags()
         laps.removeAll()
-        lastBeepTime = -1
+        lastBeepSecondForSegment = [:]
         session = nil
-        wasPausedDuringGetReady = false
-
+        pausedAtDuringGetReady = false
         state = .stopped
+        print("TimerManager.restart → stopped (same config)")
         playSound(.stop)
     }
 
-    // MARK: - Timer wiring
-    private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateTime()
-            }
-        }
-        RunLoop.main.add(timer!, forMode: .common)
-    }
-
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-    }
-
-    // MARK: - Tick
-    private func updateTime() {
-        guard let startTime = startTime else { return }
-
-        let preciseElapsed = Date().timeIntervalSince(startTime)
-        let elapsed = Int(preciseElapsed)
-
-        // Only on whole-second change
-        guard elapsed != currentTime else { return }
-
-        currentTime = elapsed
-
-        // get-ready has its own accounting & sounds
-        if state == .getReady {
-            handleGetReadyPhase()
-            return
-        }
-
-        // Once running/paused/resumed beyond get-ready, totalElapsedTime tracks the program
-        totalElapsedTime = elapsed
-
-        if let config = configuration, config.hasIntervals {
-            updateIntervalProgress()
-        } else if let total = configuration?.totalTimeSeconds {
-            // total-time path: also do 3-2-1 beeps (this was missing)
-            let remaining = max(0, total - totalElapsedTime)
-            checkCountdownBeeps(timeRemaining: remaining)
-        }
-
-        checkForCompletion()
-    }
-
-    // MARK: - Interval engine
-    internal func updateIntervalProgress() {
-        guard let config = configuration, config.hasIntervals else { return }
-        guard currentInterval < config.intervals.count else { return }
-
-        if isInBetweenIntervalRest {
-            handleBetweenIntervalRest()
-            return
-        }
-
-        let interval = config.intervals[currentInterval]
-        let timeInCurrentInterval = calculateTimeInCurrentInterval()
-
-        let singleCycleTime = interval.workTimeSeconds + interval.restTimeSeconds
-        let currentCycle = singleCycleTime == 0 ? 0 : timeInCurrentInterval / singleCycleTime
-        let timeInCurrentCycle = singleCycleTime == 0 ? 0 : timeInCurrentInterval % singleCycleTime
-
-        // Determine new phase & time remaining
-        let (newPhase, timeRemainingInPhase): (IntervalPhase, Int)
-
-        if currentCycle >= interval.repetitions {
-            newPhase = .completed
-            timeRemainingInPhase = 0
-        } else if currentCycle == interval.repetitions - 1 {
-            // Last repetition (no trailing rest)
-            if timeInCurrentCycle < interval.workTimeSeconds {
-                newPhase = .work
-                timeRemainingInPhase = interval.workTimeSeconds - timeInCurrentCycle
-            } else {
-                newPhase = .completed
-                timeRemainingInPhase = 0
-            }
-        } else {
-            if timeInCurrentCycle < interval.workTimeSeconds {
-                newPhase = .work
-                timeRemainingInPhase = interval.workTimeSeconds - timeInCurrentCycle
-            } else {
-                newPhase = .rest
-                timeRemainingInPhase = singleCycleTime - timeInCurrentCycle
-            }
-        }
-
-        // Phase change sounds: rest → work chime
-        if currentPhase != newPhase {
-            if currentPhase == .rest && newPhase == .work {
-                playSound(.restToWork)
-            } else if currentPhase == .work && newPhase == .rest {
-                playSound(.workToRest)
-            } else if newPhase == .completed {
-                playSound(.intervalToInterval) // finishing an interval
-            }
-            lastBeepTime = -1 // reset countdown beeps when phase flips
-        }
-
-        currentPhase = newPhase
-        // Keep currentRepetition in sync while within this interval (work/rest phases)
-        if newPhase != .completed {
-            let reps = max(0, interval.repetitions)
-            if reps > 0 {
-                // Clamp currentCycle to [0, reps - 1]
-                let clamped = min(max(0, currentCycle), reps - 1)
-                if currentRepetition != clamped {
-                    currentRepetition = clamped
-                }
-            } else {
-                currentRepetition = 0
-            }
-        }
-        // When completed, moveToNextInterval() will run and reset/advance state as needed.
-        
-        // Countdown beeps in last 3 seconds of a phase (work/rest)
-        checkCountdownBeeps(timeRemaining: timeRemainingInPhase)
-
-        // Move to next interval as needed
-        if newPhase == .completed {
-            moveToNextInterval()
-        }
-    }
-
-    private func calculateTimeInCurrentInterval() -> Int {
-        guard let config = configuration else { return 0 }
-
-        var totalPreviousTime = 0
-
-        // previous full sequences (interval sums + rest between sequences)
-        if currentSequenceRepeat > 0 {
-            let timePerSequence = config.intervals.reduce(0) { $0 + $1.totalTimeSeconds }
-            totalPreviousTime += currentSequenceRepeat * timePerSequence
-
-            if let restBetween = config.restTimeBetweenIntervals, restBetween > 0 {
-                totalPreviousTime += currentSequenceRepeat * restBetween
-            }
-        }
-
-        // previous intervals in the current sequence
-        if currentInterval > 0 {
-            for i in 0..<currentInterval {
-                totalPreviousTime += config.intervals[i].totalTimeSeconds
-            }
-        }
-
-        // time within current interval = total program elapsed - previous program segments
-        return currentTime - totalPreviousTime
-    }
-
-    private func handleBetweenIntervalRest() {
-        guard let config = configuration,
-              let restBetween = config.restTimeBetweenIntervals else { return }
-
-        let restElapsed = currentTime - betweenIntervalRestStartTime
-        let restRemaining = restBetween - restElapsed
-
-        checkCountdownBeeps(timeRemaining: restRemaining)
-
-        if restElapsed >= restBetween {
-            isInBetweenIntervalRest = false
-            currentPhase = .work
-            lastBeepTime = -1
-            playSound(.restToWork)
-            // next sequence continues from interval index 0
-        }
-    }
-
-    private func moveToNextInterval() {
-        guard let config = configuration else { return }
-        let next = currentInterval + 1
-
-        if next >= config.intervals.count {
-            // finished the intervals list; check sequence repeats in checkForCompletion()
-            currentInterval = next
-        } else {
-            completeIntervalTransition()
-        }
-    }
-
-    private func completeIntervalTransition() {
-        isInBetweenIntervalRest = false
-        // increment interval
-        currentInterval += 1
-        currentRepetition = 0
-
-        if currentInterval < (configuration?.intervals.count ?? 0) {
-            currentPhase = .work
-            lastBeepTime = -1
-            // NEW: sound when new interval starts (rest→work feel)
-            playSound(.restToWork)
-        }
-    }
-
-    // MARK: - Sounds (countdown & phase)
-    private func checkCountdownBeeps(timeRemaining: Int) {
-        // Beep at 3,2,1 remaining once per logical second
-        if timeRemaining >= 1 && timeRemaining <= 3 && lastBeepTime != timeRemaining {
-            lastBeepTime = timeRemaining
-            DispatchQueue.main.async { [weak self] in
-                self?.playCountdownBeep()
-            }
-        }
-    }
-
-    private func playCountdownBeep() {
-        // Keep your existing “countdown” sound mapping here
-        playSound(.countdown)
-    }
-
-    // MARK: - Completion
-    internal func checkForCompletion() {
-        guard let config = configuration else { return }
-
-        // total-time completion
-        if let totalTime = config.totalTimeSeconds, totalElapsedTime >= totalTime {
-            complete()
-            return
-        }
-
-        // interval completion path
-        if config.hasIntervals {
-            let totalIntervals = config.intervals.count
-            let repeatCount = config.isRepeating ? (config.repeatCount ?? 1) : 1
-
-            if isInBetweenIntervalRest { return } // rest between sequences still in progress
-
-            if currentInterval >= totalIntervals {
-                // finished one full sequence
-                currentSequenceRepeat += 1
-
-                if currentSequenceRepeat >= repeatCount {
-                    complete()
-                    return
-                } else {
-                    // another sequence to go
-                    if let restBetween = config.restTimeBetweenIntervals, restBetween > 0 {
-                        isInBetweenIntervalRest = true
-                        betweenIntervalRestStartTime = currentTime
-                        currentPhase = .rest
-                        currentInterval = 0
-                        currentRepetition = 0
-                        playSound(.intervalToInterval)
-                        lastBeepTime = -1
-                    } else {
-                        currentInterval = 0
-                        currentRepetition = 0
-                        currentPhase = .work
-                        isInBetweenIntervalRest = false
-                        lastBeepTime = -1
-                        playSound(.intervalToInterval)
-                    }
-                }
-            }
-        }
-    }
-
     func reset() {
+        ticker?.stop()
+        engine?.reset()
+        configuration = nil
+        session = nil
         currentTime = 0
         totalElapsedTime = 0
         currentInterval = 0
         currentRepetition = 0
         currentSequenceRepeat = 0
         currentPhase = .work
-        isInBetweenIntervalRest = false
-        betweenIntervalRestStartTime = 0
+        refreshDerivedFlags()
+        laps = []
         lastLapTime = 0
-        startTime = nil
-        pausedTime = nil
-        configuration = nil
-        session = nil
-        laps.removeAll()
-        lastBeepTime = -1
-        wasPausedDuringGetReady = false
+        lastBeepSecondForSegment = [:]
+        pausedAtDuringGetReady = false
         state = .reseted
     }
 
-    // MARK: - Formatting helpers (used by views)
+    // MARK: Ticker → Snapshot bridge
+    private func startTicker() {
+        ticker?.stop()
+        ticker?.start { [weak self] in
+            Task { @MainActor in self?.onTick() }
+        }
+    }
+
+    private func onTick() {
+        guard let engine else { return }
+        let snap = engine.snapshot()
+
+        // Publish basic counters
+        currentTime = Int(snap.absoluteElapsed.rounded(.down))
+        totalElapsedTime = Int(snap.countedElapsed.rounded(.down))
+
+        // State & phase
+        if snap.isCompleted {
+            if state != .completed { complete() }
+            lastSnapshot = snap
+            return
+        }
+
+        if engine.isPaused { state = .paused }
+        else if let seg = snap.segment, seg.kind == .getReady { state = .getReady }
+        else { state = .running }
+
+        // Map to IntervalPhase
+        let newPhase: IntervalPhase = {
+            guard let seg = snap.segment else { return .completed }
+            switch seg.kind {
+            case .getReady: return .getReady
+            case .work: return .work
+            case .rest: return .rest
+            case .betweenSets: return .betweenSets
+            }
+        }()
+        if newPhase != currentPhase { currentPhase = newPhase; refreshDerivedFlags() }
+
+        // Map indices
+        if let idx = snap.segmentIndex {
+            if idx < segIntervalIndex.count {
+                let iIdx = segIntervalIndex[idx]
+                currentInterval = max(0, iIdx)
+            }
+            if idx < segRepWithinInterval.count {
+                let rIdx = segRepWithinInterval[idx]
+                currentRepetition = max(0, rIdx)
+            }
+            currentSequenceRepeat = max(0, snap.currentSetIndex)
+        }
+
+        // Sounds (phase transitions & countdown)
+        fireSounds(previous: lastSnapshot, current: snap)
+
+
+        lastSnapshot = snap
+    }
+
+    private func fireSounds(previous: Snapshot?, current: Snapshot) {
+        // Suppress sounds when starting timer
+        guard previous != nil else { return }
+        // Phase changes
+        if previous?.segmentIndex != current.segmentIndex {
+            // Transition cues
+            switch (previous?.segment?.kind, current.segment?.kind) {
+            case (.some(.rest), .some(.work)), (.some(.betweenSets), .some(.work)), (.some(.getReady), .some(.work)):
+                playSound(.restToWork)
+            case (.some(.work), .some(.rest)):
+                playSound(.workToRest)
+            case (.some(.rest), .some(.betweenSets)):
+                playSound(.intervalToInterval)
+            default:
+                playSound(.phaseChange)
+            }
+            // Reset per-segment beep cache
+            if let idx = current.segmentIndex { lastBeepSecondForSegment[idx] = -1 }
+        }
+
+        // 3-2-1 countdown within the active segment
+        if let idx = current.segmentIndex {
+            let remainingWhole = Int(ceil(current.segmentRemaining))
+            if [3,2,1].contains(remainingWhole), lastBeepSecondForSegment[idx] != remainingWhole {
+                playSound(.countdown)
+                lastBeepSecondForSegment[idx] = remainingWhole
+            }
+        }
+    }
+
+    // MARK: Timeline builder for full configuration
+    private func buildTimelineAndMappings(from config: TimerConfiguration) -> (timeline: Timeline, segIntervalIndex: [Int], segRepWithinInterval: [Int]) {
+        var segments: [Segment] = []
+        var cumulative: [TimeInterval] = []
+        var countedCumulative: [TimeInterval] = []
+        var setIndex: [Int] = []
+        var repIndex: [Int] = []
+        var segToInterval: [Int] = []
+        var segToRepWithin: [Int] = []
+
+        var running: TimeInterval = 0
+        var countedRunning: TimeInterval = 0
+
+        func push(_ s: Segment, set: Int, rep: Int, intervalIdx: Int, repWithinInterval: Int) {
+            segments.append(s)
+            running += s.duration
+            cumulative.append(running)
+            if s.countsTowardTotal { countedRunning += s.duration }
+            countedCumulative.append(countedRunning)
+            setIndex.append(set)
+            repIndex.append(rep)
+            segToInterval.append(intervalIdx)
+            segToRepWithin.append(repWithinInterval)
+        }
+
+        // get-ready 5s (not counted)
+        push(Segment(kind: .getReady, duration: 5, countsTowardTotal: false), set: -1, rep: -1, intervalIdx: -1, repWithinInterval: -1)
+
+        // Determine sets
+        let sets = config.isRepeating ? max(1, (config.repeatCount ?? 1)) : 1
+        let restBetween: TimeInterval = TimeInterval(config.restTimeBetweenIntervals ?? 0)
+
+        for set in 0..<sets {
+            // Repetition counter across the set (for engine’s repIndex – keep it simple by using repWithinInterval)
+            for (intervalIdx, interval) in config.intervals.enumerated() {
+                let reps = max(1, interval.repetitions)
+                let work = TimeInterval(max(0, interval.workTimeSeconds))
+                let rest = TimeInterval(max(0, interval.restTimeSeconds))
+
+                for repWithin in 0..<reps {
+                    // Work
+                    if work > 0 {
+                        push(Segment(kind: .work, duration: work, countsTowardTotal: true),
+                             set: set, rep: repWithin, intervalIdx: intervalIdx, repWithinInterval: repWithin)
+                    }
+                    // Rest only between repetitions of the SAME interval
+                    if repWithin < reps - 1, rest > 0 {
+                        push(Segment(kind: .rest, duration: rest, countsTowardTotal: true),
+                             set: set, rep: repWithin, intervalIdx: intervalIdx, repWithinInterval: repWithin)
+                    }
+                }
+            }
+            // Between sets (only if more sets ahead)
+            if set < sets - 1, restBetween > 0 {
+                push(Segment(kind: .betweenSets, duration: restBetween, countsTowardTotal: true),
+                     set: set, rep: -1, intervalIdx: -1, repWithinInterval: -1)
+            }
+        }
+
+        let timeline = Timeline(
+            segments: segments,
+            cumulativeEnds: cumulative,
+            countedCumulativeEnds: countedCumulative,
+            totalSets: sets,
+            repsPerSet: 0, // not used for multi-interval; Live Activity reps come from current interval config
+            segmentSetIndex: setIndex,
+            segmentRepIndex: repIndex
+        )
+        return (timeline, segToInterval, segToRepWithin)
+    }
+}
+
+// MARK: - Formatting helpers (used by views)
+extension TimerManager {
     func formatTime(_ seconds: Int) -> String {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
@@ -639,27 +501,16 @@ class TimerManager: ObservableObject {
         let s = seconds % 60
         return (h, m, s)
     }
+}
 
-    // MARK: - Background handling
+// MARK: - Background handling
+extension TimerManager {
     private func setupBackgroundHandling() {
-        notificationCenter.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleAppDidEnterBackground()
-            }
+        notificationCenter.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.handleAppDidEnterBackground() }
         }
-
-        notificationCenter.addObserver(
-            forName: UIApplication.willEnterForegroundNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleAppWillEnterForeground()
-            }
+        notificationCenter.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.handleAppWillEnterForeground() }
         }
     }
 
@@ -667,42 +518,31 @@ class TimerManager: ObservableObject {
         guard state == .running || state == .getReady else { return }
         backgroundTime = Date()
         wasInBackground = true
-        // Timer continues to run logically; we recompute on foreground via startTime
+        print("TimerManager.didEnterBackground at t=\(currentTime), phase=\(currentPhase)")
     }
 
     private func handleAppWillEnterForeground() {
         guard wasInBackground else { return }
         wasInBackground = false
-
-        // nothing special; our updateTime computes from startTime, so we “catch up”
-        // If you ever want to auto-pause after long background, you could check duration here.
+        print("TimerManager.willEnterForeground at t=\(currentTime), phase=\(currentPhase)")
     }
+}
 
-    // MARK: - Sound routing
-    private enum SoundType {
-        case start, pause, resume, stop, complete, lap, phaseChange, intervalChange, workToRest, restToWork, intervalToInterval, countdown
-    }
-
+// MARK: - Sound routing
+extension TimerManager {
+    private enum SoundType { case start, pause, resume, stop, complete, lap, phaseChange, intervalChange, workToRest, restToWork, intervalToInterval, countdown }
     private func playSound(_ type: SoundType) {
         switch type {
-        case .start, .resume:
-            AudioServicesPlaySystemSound(1104) // Begin record
-        case .pause, .stop:
-            AudioServicesPlaySystemSound(1105) // End record
-        case .complete:
-            AudioServicesPlaySystemSound(1016) // Tock
-        case .lap:
-            AudioServicesPlaySystemSound(1057) // Tink
-        case .phaseChange, .intervalChange:
-            AudioServicesPlaySystemSound(1054) // Timer
-        case .workToRest:
-            AudioServicesPlaySystemSound(1053) // Chime
-        case .restToWork:
-            AudioServicesPlaySystemSound(1052) // Bell
-        case .intervalToInterval:
-            AudioServicesPlaySystemSound(1051) // Tri-tone
-        case .countdown:
-            AudioServicesPlaySystemSound(1156) // Short beep; adjust if you prefer your previous ID
+        case .start, .resume: AudioServicesPlaySystemSound(1104) // Begin record
+        case .pause, .stop:   AudioServicesPlaySystemSound(1105) // End record
+        case .complete:       AudioServicesPlaySystemSound(1016) // Tock
+        case .lap:            AudioServicesPlaySystemSound(1057) // Tink
+        case .phaseChange, .intervalChange: AudioServicesPlaySystemSound(1054) // Timer
+        case .workToRest:     AudioServicesPlaySystemSound(1053) // Chime
+        case .restToWork:     AudioServicesPlaySystemSound(1052) // Bell
+        case .intervalToInterval: AudioServicesPlaySystemSound(1051) // Tri-tone
+        case .countdown:      AudioServicesPlaySystemSound(1156) // Short beep
         }
     }
 }
+

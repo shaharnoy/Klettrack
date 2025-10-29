@@ -21,11 +21,26 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		53BB42FE2EAF7E6A00C242DE /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		53229DCE2E573C2200D1A229 /* klettrack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = klettrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		532A871C2E8F1642002781AE /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		532A872C2E8FC276002781AE /* .gitattributes */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitattributes; sourceTree = "<group>"; };
 		536190D72E5B1211008A8555 /* ClimbingProgramTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClimbingProgramTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		53BB42E92EAF7E6900C242DE /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		53BB42EB2EAF7E6900C242DE /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -38,6 +53,7 @@
 				docs/media/Stats.gif,
 				docs/media/synctb2.gif,
 				docs/media/Timer_repeater.gif,
+				Info.plist,
 			);
 			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
 		};
@@ -83,6 +99,7 @@
 				532A872C2E8FC276002781AE /* .gitattributes */,
 				53229DD02E573C2200D1A229 /* ClimbingProgram */,
 				536190D82E5B1211008A8555 /* ClimbingProgramTests */,
+				53BB42E82EAF7E6900C242DE /* Frameworks */,
 				53229DCF2E573C2200D1A229 /* Products */,
 				532A871C2E8F1642002781AE /* .gitignore */,
 			);
@@ -97,6 +114,15 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		53BB42E82EAF7E6900C242DE /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				53BB42E92EAF7E6900C242DE /* WidgetKit.framework */,
+				53BB42EB2EAF7E6900C242DE /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -107,6 +133,7 @@
 				53229DCA2E573C2200D1A229 /* Sources */,
 				53229DCB2E573C2200D1A229 /* Frameworks */,
 				53229DCC2E573C2200D1A229 /* Resources */,
+				53BB42FE2EAF7E6A00C242DE /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -152,7 +179,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1640;
+				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					53229DCD2E573C2200D1A229 = {
@@ -243,6 +270,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClimbingProgram/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = klettrack;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -255,7 +283,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.somenoys.klettrack;
 				PRODUCT_MODULE_NAME = "$(PRODUCT_NAME)";
 				PRODUCT_NAME = klettrack;
@@ -283,6 +311,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClimbingProgram/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = klettrack;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -295,7 +324,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.somenoys.klettrack;
 				PRODUCT_MODULE_NAME = "$(PRODUCT_NAME)";
 				PRODUCT_NAME = klettrack;

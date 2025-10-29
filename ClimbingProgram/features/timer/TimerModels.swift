@@ -20,6 +20,7 @@ enum TimerState {
 enum IntervalPhase {
     case work
     case rest
+    case betweenSets
     case completed
     case getReady
 }
@@ -81,3 +82,4 @@ enum TimerSound {
     case phaseTransition
     case complete
 }
+

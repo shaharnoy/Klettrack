@@ -24,30 +24,6 @@ class TimerAppState: ObservableObject {
     
     // Reference to shared timer manager
     private let sharedTimerManager = SharedTimerManager.shared
-    private var cancellables = Set<AnyCancellable>()
-    
-    //commented out the init to avoid timer auto-switching once the 5 seconds get ready timer is done.
-    //init() {
-    //    setupTimerObservation()
-    //}
-    
-    deinit {
-        // Explicit cleanup
-        cancellables.removeAll()
-    }
-    
-    private func setupTimerObservation() {
-        // Monitor timer state and auto-switch to timer tab when timer becomes active
-        sharedTimerManager.$isTimerActive
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isActive in
-                guard let self = self else { return }
-                if isActive && self.selectedTab != 5 {
-                    self.selectedTab = 5
-                }
-            }
-            .store(in: &cancellables)
-    }
     
     func switchToTimer(with planDay: PlanDay? = nil) {
         currentPlanDay = planDay
@@ -60,7 +36,6 @@ class TimerAppState: ObservableObject {
 }
 
 // MARK: - Navigation Types for Plans
-// Hashable wrapper types for navigation
 struct PlanNavigationItem: Hashable {
     let planId: UUID
     
