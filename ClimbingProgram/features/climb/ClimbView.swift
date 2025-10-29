@@ -648,7 +648,7 @@ struct EditClimbView: View {
                 Section("Details") {
                     DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
                     LabeledContent("Grade") {
-                            TextField("7A / V6", text: $grade, prompt: nil) //
+                            TextField("Ex: 7A / V6", text: $grade, prompt: nil) //
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled(true)
                                 .multilineTextAlignment(.trailing)
