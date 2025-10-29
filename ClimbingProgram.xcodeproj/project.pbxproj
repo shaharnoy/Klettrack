@@ -53,7 +53,6 @@
 				docs/media/Stats.gif,
 				docs/media/synctb2.gif,
 				docs/media/Timer_repeater.gif,
-				Info.plist,
 			);
 			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
 		};

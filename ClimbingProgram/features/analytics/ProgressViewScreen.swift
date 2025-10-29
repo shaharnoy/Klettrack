@@ -228,8 +228,14 @@ struct ProgressViewScreen: View {
         var gyms: [String] = []
         
         if selectedType == .climb {
-            gyms.append(contentsOf: dateFilteredClimbEntries.map { $0.gym })
-        }
+              gyms.append(contentsOf: dateFilteredClimbEntries.compactMap { entry in
+                  // Exclude TB2-imported climb names from gyms list: they have tb2ClimbUUID set and gym equals notes (climb name)
+                  if let tb2 = entry.tb2ClimbUUID, !tb2.isEmpty {
+                      if let notes = entry.notes, entry.gym == notes { return nil }
+                  }
+                  return entry.gym
+              })
+          }
         
         return Array(Set(gyms)).sorted()
     }
