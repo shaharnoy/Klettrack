@@ -26,38 +26,10 @@ This is a **community-driven project**: created for climbers, shaped by feedback
 
 ---
 
-## 📱 Some Examples
+## 📱 Screenshots and examples
 
-<table>
-  <tr>
-    <td align="center" width="300">
-      <b>Log a Climb</b><br>
-      <img src="ClimbingProgram/docs/media/logaClimb.gif" width="300" alt="Log a Climb">
-    </td>
-    <td width="250" align="center">|</td>
-    <td align="center" width="300">
-      <b>Sync Tension Board</b><br>
-      <img src="ClimbingProgram/docs/media/synctb2.gif" width="300" alt="Sync TB2">
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="300">
-      <b>Add Exercise and Log</b><br>
-      <img src="ClimbingProgram/docs/media/addExerciseAndLog.gif" width="300" alt="Add Exercise and Log">
-    </td>
-    <td width="40" align="center">|</td>
-    <td align="center" width="300">
-      <b>Timer Repeater</b><br>
-      <img src="ClimbingProgram/docs/media/Timer_repeater.gif" width="300" alt="Timer Repeater">
-    </td>
-  </tr>
-  <tr>
-    <td align="center" colspan="3">
-      <b>Stats</b><br>
-      <img src="ClimbingProgram/docs/media/Stats.gif" width="300" alt="Stats">
-    </td>
-  </tr>
-</table>
+See [![App Store](https://img.shields.io/badge/App_Store-Download-blue?logo=apple)](https://apps.apple.com/app/id6754015176)
+
 ---
 
 ## 📖 Table of Contents
