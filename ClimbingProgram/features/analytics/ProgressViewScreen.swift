@@ -126,9 +126,12 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
     @Published var distWeight: [(String, Int)] = []
     @Published var distReps: [(String, Int)] = []
     @Published var distSets: [(String, Int)] = []
+    @Published var distDuration: [(String, Int)] = []
     @Published var weightBreakdown: [String: [(String, Int)]] = [:] // bin → [(value, count)]
     @Published var repsBreakdown:   [String: [(String, Int)]] = [:]
     @Published var setsBreakdown:   [String: [(String, Int)]] = [:]
+    @Published var durationBreakdown:  [String: [(String, Int)]] = [:]
+
 
     @Published var timeSeries: [TimePoint] = []
 
@@ -197,8 +200,8 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
 
         // Distributions
         let d = aggregateDistributionsLite(s3)
-        distWeight = d.weight; distReps = d.reps; distSets = d.sets
-        weightBreakdown = d.wbd; repsBreakdown = d.rbd; setsBreakdown = d.sbd
+        distWeight = d.weight; distReps = d.reps; distSets = d.sets; distDuration = d.duration
+        weightBreakdown = d.wbd; repsBreakdown = d.rbd; setsBreakdown = d.sbd; durationBreakdown = d.dbd
 
         // Time series (count exercises per session date bucket)
         timeSeries = aggregateTimeSeriesLite(s3)
@@ -268,16 +271,19 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
     
     // Aggregations
     private func aggregateDistributionsLite(_ sessions: [SessionLite])
-    -> (weight: [(String,Int)], reps: [(String,Int)], sets: [(String,Int)],
-        wbd:[String:[(String,Int)]], rbd:[String:[(String,Int)]], sbd:[String:[(String,Int)]]) {
+    -> (weight: [(String,Int)], reps: [(String,Int)], sets: [(String,Int)], duration: [(String,Int)],
+        wbd:[String:[(String,Int)]], rbd:[String:[(String,Int)]], sbd:[String:[(String,Int)]], dbd:[String:[(String,Int)]]) {
 
-        let weights: [Double] = sessions.flatMap { s in s.items.compactMap { $0.weightKg }.map { Double($0) } }
-        let reps: [Double] = sessions.flatMap { s in s.items.compactMap { $0.reps }.map { Double($0) } }
-        let sets: [Double] = sessions.flatMap { s in s.items.compactMap { $0.sets }.map { Double($0) } }
+        let weights:   [Double] = sessions.flatMap { s in s.items.compactMap { $0.weightKg   }.map { Double($0) } }
+        let reps:      [Double] = sessions.flatMap { s in s.items.compactMap { $0.reps       }.map { Double($0) } }
+        let sets:      [Double] = sessions.flatMap { s in s.items.compactMap { $0.sets       }.map { Double($0) } }
+        let durations: [Double] = sessions.flatMap { s in s.items.compactMap { $0.duration   }.map { Double($0) } }
 
-        let wBins = makeBins(minVal: weights.min() ?? 0, maxVal: weights.max() ?? 0, targetBins: 6)
-        let rBins = makeBins(minVal: reps.min() ?? 0,    maxVal: reps.max() ?? 0,    targetBins: 6)
-        let sBins = makeBins(minVal: sets.min() ?? 0,    maxVal: sets.max() ?? 0,    targetBins: 6)
+        let wBins = makeBins(minVal: weights.min() ?? 0,   maxVal: weights.max() ?? 0,   targetBins: 6)
+        let rBins = makeBins(minVal: reps.min() ?? 0,      maxVal: reps.max() ?? 0,      targetBins: 6)
+        let sBins = makeBins(minVal: sets.min() ?? 0,      maxVal: sets.max() ?? 0,      targetBins: 6)
+        let dBins = makeBins(minVal: durations.min() ?? 0, maxVal: durations.max() ?? 0, targetBins: 6)
+
 
         func binCounts(values: [Double], bins: [ClosedRange<Double>], unit: String?) -> (rows:[(String,Int)], breakdown:[String:[(String,Int)]]) {
             var counts: [String:Int] = [:]
@@ -306,11 +312,12 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
             return (rows, pretty)
         }
 
-        let w = binCounts(values: weights, bins: wBins, unit: "kg")
-        let r = binCounts(values: reps,    bins: rBins, unit: nil)
-        let s = binCounts(values: sets,    bins: sBins, unit: nil)
+        let w = binCounts(values: weights,   bins: wBins, unit: "kg")
+        let r = binCounts(values: reps,      bins: rBins, unit: nil)
+        let s = binCounts(values: sets,      bins: sBins, unit: nil)
+        let d = binCounts(values: durations, bins: dBins, unit: nil)
 
-        return (w.rows, r.rows, s.rows, w.breakdown, r.breakdown, s.breakdown)
+        return (w.rows, r.rows, s.rows, d.rows, w.breakdown, r.breakdown, s.breakdown, d.breakdown)
     }
     
     private func extractLowerBound(_ label: String) -> Double {
@@ -759,7 +766,7 @@ fileprivate struct ExerciseStatsView: View {
     @State private var showExercisePicker = false
     @State private var selectedExerciseDist: ExerciseDist = .weight
     @State private var didInit = false
-    fileprivate enum ExerciseDist { case weight, reps, sets }
+    fileprivate enum ExerciseDist { case weight, reps, sets,duration}
 
     //init(data: StatsInputData) { _vm = StateObject(wrappedValue: .init(input: data)) }
 
@@ -796,6 +803,7 @@ fileprivate struct ExerciseStatsView: View {
                     Text("Weight").tag(ExerciseDist.weight)
                     Text("Reps").tag(ExerciseDist.reps)
                     Text("Sets").tag(ExerciseDist.sets)
+                    Text("Duration").tag(ExerciseDist.duration)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -807,6 +815,8 @@ fileprivate struct ExerciseStatsView: View {
                     DistributionCards(title: "Reps", rows: vm.distReps, breakdown: vm.repsBreakdown)
                 case .sets:
                     DistributionCards(title: "Sets", rows: vm.distSets, breakdown: vm.setsBreakdown)
+                case .duration:
+                    DistributionCards(title: "Duration", rows: vm.distDuration, breakdown: vm.durationBreakdown)
                 }
 
 

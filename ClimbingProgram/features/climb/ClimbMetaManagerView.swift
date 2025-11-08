@@ -141,9 +141,13 @@ struct ClimbMetaManagerView: View {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
-        let defaultNamesLC = Set(ClimbingDefaults.defaultDayTypes.map {
-            $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        })
+        let allTypes = (try? context.fetch(FetchDescriptor<DayTypeModel>())) ?? []
+        let defaultNamesLC = Set(
+            allTypes
+                .filter { $0.isdefault } // only those marked as default
+                .map { $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+        )
+
         if defaultNamesLC.contains(trimmed.lowercased()) {
             resultAlert = InfoAlert(message: "“\(trimmed)” is a default day type. Edit that default instead.")
             return false
@@ -455,7 +459,16 @@ struct ClimbMetaManagerView: View {
             s.isHidden = false
         }
         // Insert missing default day types (by key)
-        for d in ClimbingDefaults.defaultDayTypes {
+        let defaults: [DayTypeModel]
+        do {
+            let descriptor = FetchDescriptor<DayTypeModel>(
+                predicate: #Predicate { $0.isdefault == true }
+            )
+            defaults = try context.fetch(descriptor)
+        } catch {
+            defaults = []
+        }
+        for d in defaults {
             let key = d.key.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
             if !existingDayKeys.contains(key) {
                 let model = DayTypeModel(key: d.key, name: d.name, order: d.order, colorKey: d.colorKey)

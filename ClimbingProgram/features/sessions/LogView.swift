@@ -274,6 +274,7 @@ struct SessionItemRow: View {
             HStack(spacing: 16) {
                 if let r = item.reps { Text(String(format: "reps: %.1f", r)) }
                 if let s = item.sets { Text(String(format: "sets: %.1f", s)) }
+                if let d = item.duration { Text(String(format: "dur: %.1f", d)) }
                 if let w = item.weightKg { Text(String(format: "Wt: %.1f kg", w)) }
                 if let g = item.grade { Text("Grade: \(g)") }
             }
@@ -300,6 +301,7 @@ struct AddSessionItemSheet: View {
     @State private var selectedPlan: Plan? = nil
     @State private var inputReps: String = ""
     @State private var inputSets: String = ""
+    @State private var inputDuration: String = ""
     @State private var inputWeight: String = ""
     @State private var inputNotes: String = ""
     @State private var inputGrade: String = ""
@@ -335,8 +337,9 @@ struct AddSessionItemSheet: View {
                 Section("Details") {
                     TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
                     TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
-                    TextField("Weight (kg)", text: $inputWeight).keyboardType(.decimalPad)
-                    TextField("Grade (e.g., 6a+)", text: $inputGrade)
+                    TextField("Time", text: $inputDuration).keyboardType(.decimalPad)
+                    TextField("Weight", text: $inputWeight).keyboardType(.decimalPad)
+                    TextField("Grade", text: $inputGrade)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                     TextField("Notes", text: $inputNotes)
@@ -351,6 +354,8 @@ struct AddSessionItemSheet: View {
                             .trimmingCharacters(in: .whitespaces))
                         let sets = Double(inputSets.replacingOccurrences(of: ",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
+                        let duration = Double(inputDuration.replacingOccurrences(of: ",", with: ".")
+                            .trimmingCharacters(in: .whitespaces))
                         let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
                         let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
@@ -362,7 +367,8 @@ struct AddSessionItemSheet: View {
                             sets: sets,
                             weightKg: weight,
                             grade: grade,
-                            notes: inputNotes.isEmpty ? nil : inputNotes
+                            notes: inputNotes.isEmpty ? nil : inputNotes,
+                            duration: duration
                         )
                         item.sort = (session.items.map(\.sort).max() ?? -1) + 1
                         session.items.append(item)
@@ -536,6 +542,7 @@ struct EditSessionItemView: View {
     @State private var selectedPlan: Plan? = nil
     @State private var inputReps: String = ""
     @State private var inputSets: String = ""
+    @State private var inputDuration: String = ""
     @State private var inputWeight: String = ""
     @State private var inputNotes: String = ""
     @State private var inputGrade: String = ""
@@ -587,8 +594,9 @@ struct EditSessionItemView: View {
                     Section("Details") {
                         TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
                         TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
-                        TextField("Weight (kg)", text: $inputWeight).keyboardType(.decimalPad)
-                        TextField("Grade (e.g., 6a+)", text: $inputGrade)
+                        TextField("Time", text: $inputDuration).keyboardType(.decimalPad)
+                        TextField("Weight", text: $inputWeight).keyboardType(.decimalPad)
+                        TextField("Grade", text: $inputGrade)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                         TextField("Notes", text: $inputNotes)
@@ -606,6 +614,8 @@ struct EditSessionItemView: View {
                             item.reps = Double(inputReps.replacingOccurrences(of: ",", with: ".")
                                 .trimmingCharacters(in: .whitespaces))
                             item.sets = Double(inputSets.replacingOccurrences(of: ",", with: ".")
+                                .trimmingCharacters(in: .whitespaces))
+                            item.duration = Double(inputDuration.replacingOccurrences(of: ",", with: ".")
                                 .trimmingCharacters(in: .whitespaces))
                             item.weightKg = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
                                 .trimmingCharacters(in: .whitespaces))
@@ -643,6 +653,7 @@ struct EditSessionItemView: View {
         
         inputReps = item.reps.map { String($0) } ?? ""
         inputSets = item.sets.map { String($0) } ?? ""
+        inputDuration = item.duration.map { String($0) } ?? ""
         inputWeight = item.weightKg.map { String($0) } ?? ""
         inputGrade = item.grade ?? ""
         inputNotes = item.notes ?? ""

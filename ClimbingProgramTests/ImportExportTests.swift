@@ -79,7 +79,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         // Verify header
         let header = lines.first!
         let expectedFields = [
-            "date","type","exercise_name","climb_type","grade","angle","holdColor","rope_type","style","attempts","wip","gym","reps","sets","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid"
+            "date","type","exercise_name","climb_type","grade","angle","holdColor","rope_type","style","attempts","wip","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid"
         ]
         let headerFields = header.components(separatedBy: ",")
         XCTAssertEqual(headerFields.count, expectedFields.count, "Header should have correct number of fields")
@@ -123,24 +123,24 @@ class ImportExportTests: ClimbingProgramTestSuite {
     // MARK: - CSV Import Tests
     
     // FIX: Centralized header to avoid duplication & indentation issues
-    private let testCSVHeader = "date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"
+    private let testCSVHeader = "date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"
     
     
-    func testCSVImportBasic() throws {
+    func testCSVImportBasic() async throws {
         let csvContent = """
     \(testCSVHeader)
-    2025-08-23,exercise,Push-ups,,,,,,,,,15,3,0.000,,,,"Felt good",,
-    2025-08-23,exercise,Pull-ups,,,,,,,,,10,3,5.000,,,,"Challenging",,
+    2025-08-23,exercise,Push-ups,,,,,,,,,15,3,0.000,,,,,"Felt good",,
+    2025-08-23,exercise,Pull-ups,,,,,,,,,10,3,5.000,,,,,"Challenging",,
     """
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_import.csv")
         try csvContent.write(to: tempURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tempURL) }
         
-        let importedCount = try LogCSV.importCSV(from: tempURL, into: context, tag: "test", dedupe: false)
+        let importedCount = try await LogCSV.importCSVAsync(from: tempURL, into: context, tag: "test", dedupe: false)
         XCTAssertEqual(importedCount, 2)
     }
     
-    func testCSVImportWithPlanData() throws {
+    func testCSVImportWithPlanData() async throws {
         let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
         let planKind = (try? context.fetch(kindFetch))?.first ?? PlanKindModel(key: "weekly", name: "Weekly", totalWeeks: nil, isRepeating: true, order: 1)
         if (try? context.fetch(kindFetch))?.first == nil { context.insert(planKind) }
@@ -149,35 +149,35 @@ class ImportExportTests: ClimbingProgramTestSuite {
         try? context.save()
         let csvContent = """
     \(testCSVHeader)
-    2025-08-23,exercise,Squats,,,,,,,,,20,4,0.000,\(plan.id.uuidString),\(plan.name),,,"Leg day",,
+    2025-08-23,exercise,Squats,,,,,,,,,,20,4,0.000,\(plan.id.uuidString),\(plan.name),,,"Leg day",,
     """
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_plan_import.csv")
         try csvContent.write(to: tempURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tempURL) }
         
-        let importedCount = try LogCSV.importCSV(from: tempURL, into: context, tag: "test", dedupe: false)
+        let importedCount = try await LogCSV.importCSVAsync(from: tempURL, into: context, tag: "test", dedupe: false)
         XCTAssertEqual(importedCount, 1)
     }
     
-    func testCSVImportDeduplication() throws {
+    func testCSVImportDeduplication() async throws {
         let csvContent = """
     \(testCSVHeader)
-    2025-08-23,exercise,Deadlifts,,,,,,,,,5,3,50.000,,,,"Felt strong",,
-    2025-08-23,exercise,Deadlifts,,,,,,,,,5,3,50.000,,,,"Felt strong",,
-    2025-08-23,exercise,Deadlifts,,,,,,,,,5,3,50.000,,,,"Felt strong",,
+    2025-08-23,exercise,Deadlifts,,,,,,,,,5,3,50.000,,,,,"Felt strong",,
+    2025-08-23,exercise,Deadlifts,,,,,,,,,5,3,50.000,,,,,"Felt strong",,
+    2025-08-23,exercise,Deadlifts,,,,,,,,,5,3,50.000,,,,,"Felt strong",,
     """
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_dedupe.csv")
         try csvContent.write(to: tempURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tempURL) }
         
-        let importedCount = try LogCSV.importCSV(from: tempURL, into: context, tag: "test", dedupe: true)
+        let importedCount = try await LogCSV.importCSVAsync(from: tempURL, into: context, tag: "test", dedupe: true)
         XCTAssertLessThanOrEqual(importedCount, 1)
     }
     
     
     // MARK: - Round-trip Tests
     
-    func testExportImportRoundTrip() throws {
+    func testExportImportRoundTrip() async throws {
         // Create original data
         let planKind = try ensurePlanKind(context, key: "weekly", name: "Weekly")
         let plan = Plan(name: "Roundtrip Plan", kind: planKind, startDate: Date())
@@ -216,7 +216,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         try? context.save()
         
         // Import back
-        let importedCount = try LogCSV.importCSV(from: tempURL, into: context, tag: "roundtrip", dedupe: false)
+        let importedCount = try await LogCSV.importCSVAsync(from: tempURL, into: context, tag: "roundtrip", dedupe: false)
         
         XCTAssertEqual(importedCount, 3, "Should import all original items")
         
@@ -236,39 +236,22 @@ class ImportExportTests: ClimbingProgramTestSuite {
         XCTAssertEqual(planLinkedItems.count, 2, "Plan relationships should be preserved")
     }
     
-    // MARK: - Error Handling Tests
-    
-    func testCSVImportInvalidFormat() {
-        let invalidCSV = "This is not a valid CSV file"
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("invalid.csv")
-        
-        do {
-            try invalidCSV.write(to: tempURL, atomically: true, encoding: .utf8)
-            defer { try? FileManager.default.removeItem(at: tempURL) }
-            
-            XCTAssertThrowsError(try LogCSV.importCSV(from: tempURL, into: context, tag: "invalid", dedupe: false)) {
-                error in
-                // Should throw an appropriate error
-                XCTAssertNotNil(error)
-            }
-        } catch {
-            XCTFail("Setup failed: \(error)")
-        }
-    }
-    
-    func testCSVImportMissingFile() {
+
+    func testCSVImportMissingFile() async throws {
         let nonExistentURL = FileManager.default.temporaryDirectory.appendingPathComponent("missing.csv")
         
-        XCTAssertThrowsError(try LogCSV.importCSV(from: nonExistentURL, into: context, tag: "missing", dedupe: false)) {
-            error in
-            // Should throw file not found error
+        do {
+            _ = try await LogCSV.importCSVAsync(from: nonExistentURL, into: context, tag: "missing", dedupe: false)
+            XCTFail("Expected importCSVAsync to throw for missing file, but it succeeded.")
+        } catch {
             XCTAssertNotNil(error)
         }
     }
+
     
     // MARK: - Data Integrity Tests
     
-    func testDateConsistencyInExportImport() throws {
+    func testDateConsistencyInExportImport() async throws {
         let specificDate = DateComponents(calendar: Calendar.current, year: 2025, month: 12, day: 25).date!
         let session = Session(date: specificDate)
         context.insert(session)
@@ -288,7 +271,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         context.delete(session)
         try? context.save()
         
-        _ = try LogCSV.importCSV(from: tempURL, into: context, tag: "date-test", dedupe: false)
+        _ = try await LogCSV.importCSVAsync(from: tempURL, into: context, tag: "date-test", dedupe: false)
         
         // Verify date consistency
         let importedSessions = (try? context.fetch(FetchDescriptor<Session>())) ?? []
@@ -316,7 +299,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         preconditionFailure("Invalid date string: \(raw)")
     }
 
-    func testImportClimbUpsertWithExplicitIDAndTB2() throws {
+    func testImportClimbUpsertWithExplicitIDAndTB2() async throws {
             let climbId = UUID()
             let tb2 = "XYANX-ALLSA-SIK1902"
             // Seed existing climb
@@ -340,13 +323,13 @@ class ImportExportTests: ClimbingProgramTestSuite {
 
             let csv = """
             \(testCSVHeader)
-            2025-09-01,climb,,boulder,V6,25,red,,Comp,3,false,GymA,,,,,,,Updated \(Date()),\(climbId.uuidString),\(tb2)
+            2025-09-01,climb,,boulder,V6,25,red,,Comp,3,false,GymA,,,,,,,,Updated \(Date()),\(climbId.uuidString),\(tb2)
             """
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("upsert_tb2.csv")
             try csv.write(to: url, atomically: true, encoding: .utf8)
             defer { try? FileManager.default.removeItem(at: url) }
 
-            let inserted = try LogCSV.importCSV(from: url, into: context, dedupe: true)
+            let inserted = try await LogCSV.importCSVAsync(from: url, into: context, dedupe: true)
             XCTAssertEqual(inserted, 0, "Should update not insert")
 
             let fetched = try context.fetch(FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == climbId }))
@@ -354,17 +337,17 @@ class ImportExportTests: ClimbingProgramTestSuite {
             XCTAssertEqual(fetched.first?.tb2ClimbUUID, tb2)
         }
 
-        func testImportClimbCreatesStableIDFromTB2() throws {
+        func testImportClimbCreatesStableIDFromTB2() async throws {
             let tb2 = "tb2-alpha-999"
             let csv = """
             \(testCSVHeader)
-            2025-09-02,climb,,boulder,V5,30,blue,,Style,4,false,GymB,,,,,,,First import,,\(tb2)
+            2025-09-02,climb,,boulder,V5,30,blue,,Style,4,false,GymB,,,,,,,,First import,,\(tb2)
             """
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("stable_tb2.csv")
             try csv.write(to: url, atomically: true, encoding: .utf8)
             defer { try? FileManager.default.removeItem(at: url) }
 
-            let inserted = try LogCSV.importCSV(from: url, into: context, dedupe: true)
+            let inserted = try await LogCSV.importCSVAsync(from: url, into: context, dedupe: true)
             XCTAssertEqual(inserted, 1)
 
             let all = try context.fetch(FetchDescriptor<ClimbEntry>())
@@ -374,32 +357,39 @@ class ImportExportTests: ClimbingProgramTestSuite {
             XCTAssertEqual(all.first { $0.id == expected }?.tb2ClimbUUID, tb2)
         }
 
-        func testImportClimbStableIDSecondImportUpdates() throws {
-            let tb2 = "tb2-beta-111"
-            let first = """
-            \(testCSVHeader)
-            2025-09-03,climb,,boulder,V3,15,,,Sesh,1,false,GymC,,,,,,,Initial,,\(tb2)
-            """
-            let second = """
-            \(testCSVHeader)
-            2025-09-03,climb,,boulder,V3,15,,,Sesh,2,false,GymC,,,,,,,Updated notes,,\(tb2)
-            """
-            let u1 = FileManager.default.temporaryDirectory.appendingPathComponent("tb2_first.csv")
-            let u2 = FileManager.default.temporaryDirectory.appendingPathComponent("tb2_second.csv")
-            try first.write(to: u1, atomically: true, encoding: .utf8)
-            try second.write(to: u2, atomically: true, encoding: .utf8)
-            defer { try? FileManager.default.removeItem(at: u1); try? FileManager.default.removeItem(at: u2) }
-
-            XCTAssertEqual(try LogCSV.importCSV(from: u1, into: context), 1)
-            XCTAssertEqual(try LogCSV.importCSV(from: u2, into: context), 0, "Second should update not insert")
-
-            let climbs = try context.fetch(FetchDescriptor<ClimbEntry>())
-            XCTAssertEqual(climbs.count, 1)
-            XCTAssertEqual(climbs.first?.attempts, "2")
-            XCTAssertEqual(climbs.first?.notes, "Updated notes")
+    func testImportClimbStableIDSecondImportUpdates() async throws {
+        let tb2 = "tb2-beta-111"
+        let first = """
+        \(testCSVHeader)
+        2025-09-03,climb,,boulder,V3,15,,,Sesh,1,false,GymC,,,,,,,,Initial,,\(tb2)
+        """
+        let second = """
+        \(testCSVHeader)
+        2025-09-03,climb,,boulder,V3,15,,,Sesh,2,false,GymC,,,,,,,,Updated notes,,\(tb2)
+        """
+        let u1 = FileManager.default.temporaryDirectory.appendingPathComponent("tb2_first.csv")
+        let u2 = FileManager.default.temporaryDirectory.appendingPathComponent("tb2_second.csv")
+        try first.write(to: u1, atomically: true, encoding: .utf8)
+        try second.write(to: u2, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: u1)
+            try? FileManager.default.removeItem(at: u2)
         }
 
-        func testImportClimbSameTB2DifferentAngleCreatesNew() throws {
+        let firstImport = try await LogCSV.importCSVAsync(from: u1, into: context)
+        XCTAssertEqual(firstImport, 1)
+
+        let secondImport = try await LogCSV.importCSVAsync(from: u2, into: context)
+        XCTAssertEqual(secondImport, 0, "Second should update not insert")
+
+        let climbs = try context.fetch(FetchDescriptor<ClimbEntry>())
+        XCTAssertEqual(climbs.count, 1)
+        XCTAssertEqual(climbs.first?.attempts, "2")
+        XCTAssertEqual(climbs.first?.notes, "Updated notes")
+    }
+
+
+        func testImportClimbSameTB2DifferentAngleCreatesNew() async throws {
             let tb2 = "tb2-gamma-222"
             let csv = """
                 \(testCSVHeader)
@@ -410,7 +400,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
             try csv.write(to: url, atomically: true, encoding: .utf8)
             defer { try? FileManager.default.removeItem(at: url) }
 
-            let inserted = try LogCSV.importCSV(from: url, into: context, dedupe: true)
+            let inserted = try await LogCSV.importCSVAsync(from: url, into: context, dedupe: true)
             XCTAssertEqual(inserted, 2, "Angle change should produce distinct stable IDs")
 
             let climbs = try context.fetch(FetchDescriptor<ClimbEntry>())

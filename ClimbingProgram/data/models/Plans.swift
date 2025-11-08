@@ -44,16 +44,12 @@ final class PlanKindModel {
 @Model
 final class DayTypeModel {
     @Attribute(.unique) var id: UUID
-    // Stable identifier used for lookups/migrations (e.g., "climbingFull", "core", "rest")
-    var key: String
-    // Display name shown in UI (e.g., "Climb + Hi-Vol. exercises")
-    var name: String
-    // Sort order for pickers
-    var order: Int
-    // Persisted key of a standard iOS Color (e.g., "green", "blue", "orange", etc.)
-    var colorKey: String
-    // Soft-delete / visibility flag
-    var isHidden: Bool = false
+    var key: String // Stable identifier used for lookups/migrations (e.g., "climbingFull", "core", "rest")
+    var name: String // Display name shown in UI (e.g., "Climb + Hi-Vol. exercises")
+    var order: Int // Sort order for pickers
+    var colorKey: String  // Persisted key of a standard iOS Color (e.g., "green", "blue", "orange", etc.)
+    var isdefault: Bool = false // for seed data
+    var isHidden: Bool = false // Soft-delete / visibility flag
 
     // Allowed built-in color keys
     static let allowedColorKeys: Set<String> = [
@@ -92,6 +88,7 @@ final class DayTypeModel {
         name: String,
         order: Int = 0,
         colorKey: String,
+        isdefault: Bool = false,
         isHidden: Bool = false
     ) {
         self.id = id
@@ -104,12 +101,12 @@ final class DayTypeModel {
         } else {
             self.colorKey = "gray"
         }
+        self.isdefault = isdefault
         self.isHidden = isHidden
     }
 }
 
 // MARK: - Plans
-
 @Model
 final class Plan {
     @Attribute(.unique) var id: UUID

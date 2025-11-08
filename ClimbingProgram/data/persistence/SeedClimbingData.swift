@@ -10,10 +10,9 @@ struct SeedClimbingData {
     static func loadIfNeeded(_ context: ModelContext) {
         let styleCount = (try? context.fetchCount(FetchDescriptor<ClimbStyle>())) ?? 0
         let gymCount = (try? context.fetchCount(FetchDescriptor<ClimbGym>())) ?? 0
-        let dayTypeCount = (try? context.fetchCount(FetchDescriptor<DayTypeModel>())) ?? 0
         
         // Only seed if all are empty (first launch scenario)
-        guard styleCount == 0 && gymCount == 0 && dayTypeCount == 0 else { return }
+        guard styleCount == 0 && gymCount == 0 else { return }
         
         // Seed default climbing styles
         for styleName in ClimbingDefaults.defaultStyles {
@@ -25,17 +24,6 @@ struct SeedClimbingData {
         for gymName in ClimbingDefaults.defaultGyms {
             let gym = ClimbGym(name: gymName, isDefault: true)
             context.insert(gym)
-        }
-
-        // Seed default day types
-        for d in ClimbingDefaults.defaultDayTypes {
-            let model = DayTypeModel(
-                key: d.key,
-                name: d.name,
-                order: d.order,
-                colorKey: d.colorKey
-            )
-            context.insert(model)
         }
         
         try? context.save()

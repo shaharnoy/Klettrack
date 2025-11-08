@@ -25,6 +25,7 @@ struct ExerciseHit: Identifiable {
     let repsText: String?
     let setsText: String?
     let restText: String?
+    let durationText: String?
 
     init(ex: Exercise, tint: Color) {
         self.id = ex.id
@@ -34,6 +35,7 @@ struct ExerciseHit: Identifiable {
         self.repsText = ex.repsText
         self.setsText = ex.setsText
         self.restText = ex.restText
+        self.durationText = ex.durationText
     }
 }
 
@@ -66,9 +68,17 @@ struct PlansListView: View {
     @State private var showExporter = false
     @State private var exportDoc: LogCSVDocument? = nil
 
+    // Import (async with progress)
     @State private var showImporter = false
-    @State private var importResultMessage: String? = nil
+    @State private var importing = false
+    @State private var importProgress: Double = 0
+
+    // Share (use Identifiable payload)
+    struct SharePayload: Identifiable { let id = UUID(); let url: URL }
     @State private var sharePayload: SharePayload? = nil
+
+    // Alerts
+    @State private var resultMessage: String? = nil
 
 
     var body: some View {
@@ -134,13 +144,13 @@ struct PlansListView: View {
                             do {
                                 try doc.csv.write(to: url, atomically: true, encoding: .utf8)
                                 guard FileManager.default.fileExists(atPath: url.path) else {
-                                    importResultMessage = "Share failed: file not found."
+                                    resultMessage = "Share failed: file not found."
                                     return
                                 }
                                 // triggers the share sheet
                                 sharePayload = SharePayload(url: url)
                             } catch {
-                                importResultMessage = "Share prep failed: \(error.localizedDescription)"
+                                resultMessage = "Share prep failed: \(error.localizedDescription)"
                             }
                         } label: {
                             Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
@@ -177,24 +187,18 @@ struct PlansListView: View {
                           defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))") { result in
                 switch result {
                 case .success:
-                    importResultMessage = "CSV exported."
+                    resultMessage = "CSV exported."
                 case .failure(let err):
-                    importResultMessage = "Export failed: \(err.localizedDescription)"
+                    resultMessage = "Export failed: \(err.localizedDescription)"
                 }
             }
-            // Importer
-            .fileImporter(isPresented: $showImporter,
-                          allowedContentTypes: [.commaSeparatedText],
-                          allowsMultipleSelection: false) { result in
-                do {
-                    guard let url = try result.get().first else { return }
-                    let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
-                    let tag = "import:\(df.string(from: Date()))"
-                    let inserted = try LogCSV.importCSV(from: url, into: context, tag: tag, dedupe: true)
-                    importResultMessage = "Imported\(inserted) log item(s)."
-                } catch {
-                    importResultMessage = "Import failed: \(error.localizedDescription)"
-                }
+            // Importer (async)
+            .fileImporter(
+                isPresented: $showImporter,
+                allowedContentTypes: [.commaSeparatedText],
+                allowsMultipleSelection: false
+            ) { result in
+                handleImportResult(result)
             }
             // Share
               .sheet(item: $sharePayload) { payload in
@@ -204,10 +208,47 @@ struct PlansListView: View {
                   .presentationDetents([.medium])
               }
             // Result alert
-            .alert(importResultMessage ?? "", isPresented: Binding(
-                get: { importResultMessage != nil },
-                set: { if !$0 { importResultMessage = nil } }
+            .alert(resultMessage ?? "", isPresented: Binding(
+                get: { resultMessage != nil },
+                set: { if !$0 { resultMessage = nil } }
             )) { Button("OK", role: .cancel) {} }
+        }
+    }
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
+            let tag = "import:\(df.string(from: Date()))"
+
+            importing = true
+            importProgress = 0
+
+            Task {
+                do {
+                    let count = try await LogCSV.importCSVAsync(
+                        from: url,
+                        into: context,
+                        tag: tag,
+                        dedupe: true,
+                        progress: { p in
+                            Task { @MainActor in
+                                importProgress = p
+                            }
+                        }
+                    )
+                    await MainActor.run {
+                        importing = false
+                        resultMessage = "Imported \(count) log item(s)."
+                    }
+                } catch {
+                    await MainActor.run {
+                        importing = false
+                        resultMessage = "Import failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+        } catch {
+            resultMessage = "Import failed: \(error.localizedDescription)"
         }
     }
 }
@@ -563,6 +604,7 @@ struct PlanDayEditor: View {
     @State private var loggingExercise: ExerciseSelection? = nil
     @State private var inputReps: String = ""
     @State private var inputSets: String = ""
+    @State private var inputDuration: String = ""
     @State private var inputWeight: String = ""
     @State private var inputGrade: String = ""
     @State private var inputNotes: String = ""
@@ -792,7 +834,8 @@ struct PlanDayEditor: View {
                     // Regular exercise log button for non-bouldering exercises
                     Button {
                         loggingExercise = ExerciseSelection(name: name)
-                        inputReps = ""; inputSets = ""; inputWeight = ""; inputGrade = ""; inputNotes = ""
+                        inputReps = ""; inputSets = ""; inputDuration = ""
+                        inputWeight = ""; inputGrade = ""; inputNotes = ""
                     } label: {
                         Image(systemName: "square.and.pencil")
                     }
@@ -808,14 +851,20 @@ struct PlanDayEditor: View {
                 HStack(spacing: 12) {
                     if let reps = exerciseInfo.repsText {
                         HStack(spacing: 4) {
-                            Text("Reps").bold().foregroundStyle(.primary)
+                            Text("Rep").bold().foregroundStyle(.primary)
                             Text(reps)
                         }
                     }
                     if let sets = exerciseInfo.setsText {
                         HStack(spacing: 4) {
-                            Text("Sets").bold().foregroundStyle(.primary)
+                            Text("Set").bold().foregroundStyle(.primary)
                             Text(sets)
+                        }
+                    }
+                    if let duration = exerciseInfo.durationText {
+                        HStack(spacing: 4) {
+                            Text("Time").bold().foregroundStyle(.primary)
+                            Text(duration)
                         }
                     }
                     if let rest = exerciseInfo.restText {
@@ -833,7 +882,7 @@ struct PlanDayEditor: View {
     }
     
     // Helper to get exercise information from catalog
-    private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?, hasGuidance: Bool) {
+    private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?,durationText: String?, hasGuidance: Bool) {
         let exerciseDescriptor = FetchDescriptor<Exercise>()
         let allExercises = (try? context.fetch(exerciseDescriptor)) ?? []
         
@@ -843,11 +892,13 @@ struct PlanDayEditor: View {
         let reps = exercise?.repsText
         let sets = exercise?.setsText
         let rest = exercise?.restText
+        let duration = exercise?.durationText
         let hasGuidance = (reps != nil && !reps!.isEmpty) ||
                          (sets != nil && !sets!.isEmpty) ||
-                         (rest != nil && !rest!.isEmpty)
+                         (rest != nil && !rest!.isEmpty) ||
+                         (duration != nil && !duration!.isEmpty)
         
-        return (reps, sets, rest, hasGuidance)
+        return (reps, sets, rest, duration, hasGuidance)
     }
     
     // Helper function to check if an exercise has been quick-logged today
@@ -874,8 +925,9 @@ struct PlanDayEditor: View {
                     LogMetricRow(
                         reps: item.reps.map{ String(format: "%.1f", $0) },
                         sets: item.sets.map{ String(format: "%.1f", $0) },
-                        weight: item.weightKg.map { String(format: "%.1f", $0) },
-                        grade: item.grade
+                        weight: item.weightKg.map{ String(format: "%.1f", $0) },
+                        grade: item.grade.map { String(format: "%.1f", $0) },
+                        duration: item.duration.map { String(format: "%.1f", $0) }
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1090,6 +1142,7 @@ struct PlanDayEditor: View {
     private func saveLogEntry(exerciseName: String) {
         let reps = Double(inputReps.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
         let sets = Double(inputSets.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+        let duration = Double(inputDuration.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
         let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
         let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
 
@@ -1114,7 +1167,8 @@ struct PlanDayEditor: View {
             sets: sets,
             weightKg: weight,
             grade: grade,
-            notes: inputNotes.isEmpty ? nil : inputNotes
+            notes: inputNotes.isEmpty ? nil : inputNotes,
+            duration: duration
         ))
         try? context.save()
         saveTick.toggle()
@@ -1140,7 +1194,8 @@ struct PlanDayEditor: View {
             sets: nil,
             weightKg: nil,
             grade: nil,
-            notes: "Quick logged"
+            notes: "Quick logged",
+            duration: nil
         ))
         try? context.save()
         saveTick.toggle()
@@ -1168,7 +1223,13 @@ struct PlanDayEditor: View {
                 } label: {
                     Label("Sets", systemImage: "square.grid.3x3")
                 }
-
+                
+                LabeledContent {
+                        TextField("e.g. 20", text: $inputDuration)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    } label: { Label("Duration (min)", systemImage: "clock") }
+                
                 LabeledContent {
                     TextField("e.g. 12.5", text: $inputWeight)
                         .keyboardType(.decimalPad)
@@ -1196,7 +1257,8 @@ struct PlanDayEditor: View {
                     reps: inputReps.isEmpty ? nil : inputReps,
                     sets: inputSets.isEmpty ? nil : inputSets,
                     weight: inputWeight.isEmpty ? nil : inputWeight,
-                    grade: inputGrade.isEmpty ? nil : inputGrade
+                    grade: inputGrade.isEmpty ? nil : inputGrade, //tak out, not very useful
+                    duration: inputDuration.isEmpty ? nil : inputDuration
                 )
             }
 
@@ -1249,7 +1311,8 @@ struct PlanClimbLogView: View {
             sets: nil,
             weightKg: nil,
             grade: climbEntry.grade != "Unknown" ? climbEntry.grade : nil,
-            notes: buildSessionNotes(from: climbEntry)
+            notes: buildSessionNotes(from: climbEntry),
+            duration: nil
         ))
         
         try? context.save()
@@ -1281,15 +1344,16 @@ private struct QuickExerciseProgress: View {
     @State private var pointsReps: [DataPoint] = []
     @State private var pointsSets: [DataPoint] = []
     @State private var pointsWeight: [DataPoint] = []
+    @State private var pointsDuration: [DataPoint] = []
 
     struct DataPoint: Identifiable { let id = UUID(); let date: Date; let value: Double }
 
-    enum Metric: String, CaseIterable, Identifiable { case reps = "Reps", sets = "Sets", weight = "Weight (kg)"; var id: String { rawValue } }
+    enum Metric: String, CaseIterable, Identifiable { case reps = "Reps", sets = "Sets", weight = "Weight (kg)", duration = "Duration (min)"; var id: String { rawValue } }
     @State private var metric: Metric = .reps
     
     // Break down complex view hierarchy into smaller components
     @ViewBuilder
-    private func recentLogsSection(recent: [(date: Date, reps: Double?, sets: Double?, weight: Double?, notes: String?)]) -> some View {
+    private func recentLogsSection(recent: [(date: Date, reps: Double?, sets: Double?, weight: Double?, duration: Double?, notes: String?)]) -> some View {
         Section {
             if recent.isEmpty {
                 Text("No logs yet for this exercise").foregroundStyle(.secondary)
@@ -1302,11 +1366,13 @@ private struct QuickExerciseProgress: View {
                             let repsTxt   = r.reps.map   { String(format: "%.1f", $0) }
                             let setsTxt   = r.sets.map   { String(format: "%.1f", $0) }
                             let weightTxt = r.weight.map { String(format: "%.1f", $0) }
+                            let durationTxt = r.duration.map { String(format: "%.1f", $0) }
 
                             Text([
                                 repsTxt.map { "\($0)x reps" },
                                 setsTxt.map { "\($0) sets" },
-                                weightTxt.map { "\($0) kg" }
+                                weightTxt.map { "\($0) kg" },
+                                durationTxt.map { "\($0) mirn" },
                             ].compactMap { $0 }.joined(separator: " · "))
                             .foregroundStyle(.secondary)
                         }
@@ -1375,7 +1441,7 @@ private struct QuickExerciseProgress: View {
     }
 
     // Build recent rows quickly from all sessions
-    private func rows() -> [(date: Date, reps: Double?, sets: Double?, weight: Double?, notes: String?)] {
+    private func rows() -> [(date: Date, reps: Double?, sets: Double?, weight: Double?, duration: Double?, notes: String?)] {
         let descriptor = FetchDescriptor<Session>(
             sortBy: [SortDescriptor<Session>(\.date, order: .reverse)]
         )
@@ -1389,6 +1455,7 @@ private struct QuickExerciseProgress: View {
                      reps: $0.reps,
                      sets: $0.sets,
                      weight: $0.weightKg,
+                     duration: $0.duration,
                      notes: $0.notes) // <- add notes
                 }
         }.sorted { $0.date < $1.date }
@@ -1401,13 +1468,15 @@ private struct QuickExerciseProgress: View {
         case .reps:   return pointsReps
         case .sets:   return pointsSets
         case .weight: return pointsWeight
+        case .duration: return pointsDuration
         }
     }
 
-    private func loadSeries(from rows: [(Date, Double?, Double?, Double?, String?)]) {
-        pointsReps   = rows.compactMap { (d, r, _, _, _) in r.map { DataPoint(date: d, value: $0) } }
-        pointsSets   = rows.compactMap { (d, _, s, _, _) in s.map { DataPoint(date: d, value: $0) } }
-        pointsWeight = rows.compactMap { (d, _, _, w, _) in w.map { DataPoint(date: d, value: $0) } }
+    private func loadSeries(from rows: [(Date, Double?, Double?, Double?,Double?, String?)]) {
+        pointsReps   = rows.compactMap { (d, r, _, _,_, _) in r.map { DataPoint(date: d, value: $0) } }
+        pointsSets   = rows.compactMap { (d, _, s, _,_, _) in s.map { DataPoint(date: d, value: $0) } }
+        pointsWeight = rows.compactMap { (d, _, _, w,_, _) in w.map { DataPoint(date: d, value: $0) } }
+        pointsDuration = rows.compactMap { (d, _, _, _,dr, _) in dr.map { DataPoint(date: d, value: $0) } }
     }
 
 
@@ -1478,7 +1547,7 @@ struct CatalogExercisePicker: View {
                         ExercisePickRow(
                             name: hit.name,
                             subtitle: hit.subtitle,
-                            reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
+                            reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
                             tint: hit.tint,
                             isSelected: selected.contains(hit.name)
                         ) {
@@ -1641,7 +1710,7 @@ struct TypesList: View {
                             ExercisePickRow(
                                 name: hit.name,
                                 subtitle: hit.subtitle,
-                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
                                 tint: hit.tint,
                                 isSelected: selected.contains(hit.name)
                             ) {
@@ -1751,7 +1820,7 @@ struct CombosList: View {
                             ExercisePickRow(
                                 name: hit.name,
                                 subtitle: hit.subtitle,
-                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
                                 tint: hit.tint,
                                 isSelected: selected.contains(hit.name)
                             ) {
@@ -1849,7 +1918,7 @@ struct ComboExercisesList: View {
                             ExercisePickRow(
                                 name: hit.name,
                                 subtitle: hit.subtitle,
-                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
                                 tint: hit.tint,
                                 isSelected: selected.contains(hit.name)
                             ) {
@@ -1874,7 +1943,7 @@ struct ComboExercisesList: View {
                     ExercisePickRow(
                         name: ex.name,
                         subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                        reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
+                        reps: ex.repsText, sets: ex.setsText, rest: ex.restText, duration: ex.durationText,
                         tint: tint,
                         isSelected: selected.contains(ex.name)
                     ) {
@@ -1962,7 +2031,7 @@ struct ExercisesList: View {
                             ExercisePickRow(
                                 name: hit.name,
                                 subtitle: hit.subtitle,
-                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,duration: hit.durationText,
                                 tint: hit.tint,
                                 isSelected: selected.contains(hit.name)
                             ) {
@@ -1990,7 +2059,7 @@ struct ExercisesList: View {
                                 ExercisePickRow(
                                     name: ex.name,
                                     subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                                    reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
+                                    reps: ex.repsText, sets: ex.setsText, rest: ex.restText, duration: ex.durationText,
                                     tint: tint,
                                     isSelected: selected.contains(ex.name)
                                 ) {
@@ -2007,7 +2076,7 @@ struct ExercisesList: View {
                             ExercisePickRow(
                                 name: ex.name,
                                 subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                                reps: ex.repsText, sets: ex.setsText, rest: ex.restText,
+                                reps: ex.repsText, sets: ex.setsText, rest: ex.restText,duration: ex.durationText,
                                 tint: tint,
                                 isSelected: selected.contains(ex.name)
                             ) {
@@ -2045,6 +2114,7 @@ private struct ExercisePickRow: View {
     let reps: String?
     let sets: String?
     let rest: String?
+    let duration: String?
     let tint: Color
     let isSelected: Bool
     let onTap: () -> Void
@@ -2057,7 +2127,7 @@ private struct ExercisePickRow: View {
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
-                MetricRow(reps: reps, sets: sets, rest: rest)
+                MetricRow(reps: reps, sets: sets, rest: rest, duration: duration)
             }
             Spacer()
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -2073,14 +2143,16 @@ private struct MetricRow: View {
     let reps: String?
     let sets: String?
     let rest: String?
+    let duration: String?
 
     var body: some View {
         HStack(spacing: 12) {
             metric("Reps", reps)
             metric("Sets", sets)
+            metric("Time", duration)
             metric("Rest", rest)
         }
-        .font(.caption.monospacedDigit())           // 👈 monospaced digits
+        .font(.caption.monospacedDigit())
     }
 
     @ViewBuilder
@@ -2098,11 +2170,13 @@ private struct LogMetricRow: View {
     let sets: String?
     let weight: String?
     let grade: String?
+    let duration: String?
 
     var body: some View {
         HStack(spacing: 12) {
             metric("Reps", reps)
             metric("Sets", sets)
+            metric("Duration", duration)
             metric("Weight", weight.map { "\($0) kg" })
             metric("Grade", grade)
         }
@@ -2111,12 +2185,15 @@ private struct LogMetricRow: View {
 
     @ViewBuilder
     private func metric(_ label: String, _ value: String?) -> some View {
-        HStack(spacing: 4) {
-            Text(label).bold().foregroundStyle(.secondary)
-            Text(value ?? "—")
+        if let v = value, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            HStack(spacing: 4) {
+                Text(label).bold().foregroundStyle(.secondary)
+                Text(v)
+            }
         }
     }
 }
+
 
 // Helper function to find or create a session for a given date
 private func findOrCreateSession(for date: Date, in context: ModelContext) -> Session {

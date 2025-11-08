@@ -9,7 +9,6 @@ import SwiftData
 struct CatalogSeeder {
     // Find or create an Activity by name
     static func ensureActivity(_ name: String, in ctx: ModelContext) -> Activity {
-        // Fetch all once and filter in Swift (keeps it simple/portable)
         let all: [Activity] = (try? ctx.fetch(FetchDescriptor<Activity>())) ?? []
         if let found = all.first(where: { $0.name == name }) {
             return found
@@ -36,6 +35,7 @@ struct CatalogSeeder {
         _ name: String,
         in type: TrainingType,
         reps: String? = nil,
+        duration: String? = nil,
         sets: String? = nil,
         rest: String? = nil,
         notes: String? = nil,
@@ -47,7 +47,7 @@ struct CatalogSeeder {
         }
         // Otherwise insert it.
         type.exercises.append(
-            Exercise(name: name, area:area, repsText: reps, setsText: sets, restText: rest, notes: notes)
+            Exercise(name: name, area:area, repsText: reps, durationText:duration, setsText: sets, restText: rest, notes: notes)
         )
     }
 }

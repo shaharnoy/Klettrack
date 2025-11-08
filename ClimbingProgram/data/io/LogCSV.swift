@@ -57,7 +57,7 @@ enum LogCSV {
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
         // Header extended with climb_id and tb2_uuid at the end (backward compatible)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -105,6 +105,7 @@ enum LogCSV {
                     "", // gym
                     i.reps.map{ String(format: "%.3f", $0) } ?? "",
                     i.sets.map{ String(format: "%.3f", $0) } ?? "",
+                    i.duration.map{ String(format: "%.3f", $0) } ?? "",
                     i.weightKg.map { String(format: "%.3f", $0) } ?? "",
                     i.planSourceId?.uuidString ?? "",
                     csvEscape(i.planName ?? ""),
@@ -147,488 +148,6 @@ enum LogCSV {
         
         return LogCSVDocument(csv: rows.joined(separator: "\n"))
     }
-
-    /// Import CSV rows into SwiftData. Creates (or merges into) Sessions by date.
-    /// - Parameters:
-    ///   - url: CSV file URL
-    ///   - context: SwiftData context
-    ///   - tag: optional tag applied to each imported item, e.g. "import:2025-08-22"
-    ///   - dedupe: if true, avoids inserting exact-duplicate rows (same day+name+numbers+notes)
-    /// - Returns: number of inserted items
-    /// Synchronous version that *applies* parsed entries to the store (mirrors importCSVAsync behavior).
-    @discardableResult
-    static func importCSV(
-        from url: URL,
-        into context: ModelContext,
-        tag: String? = nil,
-        dedupe: Bool = true
-    ) throws -> Int {
-
-        // Security-scoped access for files coming from .fileImporter / document picker
-        var didAccess = false
-        if url.startAccessingSecurityScopedResource() { didAccess = true }
-        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-
-        let data = try Data(contentsOf: url)
-        guard let text = String(data: data, encoding: .utf8) else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-
-        let lines = text.split(whereSeparator: \.isNewline).map(String.init)
-        guard !lines.isEmpty else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-
-        // Optional header on first line
-        let first = lines[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let startIdx = first.hasPrefix("date,") ? 1 : 0
-
-        // Validate we have data rows
-        if startIdx >= lines.count {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-
-        let df = ISO8601DateFormatter()
-        df.formatOptions = [.withFullDate] // YYYY-MM-DD
-
-        // Parse → entries (off-model, in-memory)
-        var entries: [Entry] = []
-        entries.reserveCapacity(max(0, lines.count - startIdx))
-
-        var hasValidRows = false
-
-        for idx in startIdx..<lines.count {
-            let parts = parseCSVLine(lines[idx])
-
-            // Skip empty lines
-            if parts.isEmpty || parts.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-                continue
-            }
-
-            // Expect minimal columns present
-            guard parts.count >= 3 else {
-                if !hasValidRows {
-                    throw CocoaError(.fileReadCorruptFile)
-                }
-                continue
-            }
-
-            // date,type,exercise_name,climb_type,grade,angle,holdColor,ropetype,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid
-            let dateStr      = parts[safe: 0] ?? ""
-            let typeStr      = parts[safe: 1] ?? ""
-            let exerciseName = parts[safe: 2] ?? ""
-            let climbTypeStr = parts[safe: 3] ?? ""
-            let gradeStr     = parts[safe: 4] ?? ""
-            let angleStr     = parts[safe: 5] ?? ""
-            let holdColorStr = parts[safe: 6] ?? ""
-            let ropeTypeStr  = parts[safe: 7] ?? ""
-            let styleStr     = parts[safe: 8] ?? ""
-            let attemptsStr  = parts[safe: 9] ?? ""
-            let wipStr       = parts[safe: 10] ?? ""
-            let gymStr       = parts[safe: 11] ?? ""
-            let repsStr      = parts[safe: 12] ?? ""
-            let setsStr      = parts[safe: 13] ?? ""
-            let weightStr    = parts[safe: 14] ?? ""
-            let planIdStr    = parts[safe: 15] ?? ""
-            let planName     = parts[safe: 16] ?? ""
-            let dayTypeStr   = parts[safe: 17] ?? ""
-            let notesRaw     = parts[safe: 18] ?? ""
-            let climbIdStr   = parts[safe: 19] ?? ""
-            let tb2UUIDStr   = parts[safe: 20] ?? ""
-
-            guard
-                let dayDate = df.date(from: dateStr),
-                !typeStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else {
-                if !hasValidRows {
-                    throw CocoaError(.fileReadCorruptFile)
-                }
-                continue
-            }
-
-            hasValidRows = true
-
-            let type = typeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
-            let angle = angleStr.isEmpty ? nil : Int(angleStr)
-            let holdColor = holdColorStr.isEmpty ? nil : holdColorStr
-            let ropeType = ropeTypeStr.isEmpty ? nil : ropeTypeStr
-            let style = styleStr.trimmingCharacters(in: .whitespacesAndNewlines)
-            let attempts = attemptsStr.trimmingCharacters(in: .whitespacesAndNewlines)
-            let isWIP = wipStr.lowercased() == "true"
-            let gym = gymStr.trimmingCharacters(in: .whitespacesAndNewlines)
-            let name = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
-            let reps = Double(repsStr.replacingOccurrences(of: ",", with: ".")
-                .trimmingCharacters(in: .whitespacesAndNewlines))
-            let sets = Double(setsStr.replacingOccurrences(of: ",", with: ".")
-                .trimmingCharacters(in: .whitespacesAndNewlines))
-            let weight = Double(weightStr
-                .replacingOccurrences(of: ",", with: ".")
-                .trimmingCharacters(in: .whitespacesAndNewlines))
-            let planId = UUID(uuidString: planIdStr)
-            let dayTypeKey = dayTypeStr.isEmpty ? nil : dayTypeStr
-            let notes = notesRaw.trimmingCharacters(in: .whitespacesAndNewlines)
-            let notesOpt = notes.isEmpty ? nil : notes
-            let climbId = UUID(uuidString: climbIdStr)
-            let tb2uuid = tb2UUIDStr.trimmingCharacters(in: .whitespacesAndNewlines)
-            let tb2uuidOpt = tb2uuid.isEmpty ? nil : tb2uuid
-
-            entries.append(Entry(
-                date: dayDate,
-                type: type,
-                name: name,
-                climbType: climbTypeStr.isEmpty ? nil : climbTypeStr,
-                grade: grade.isEmpty ? nil : grade,
-                angle: angle,
-                holdColor: holdColor,
-                ropeType: ropeType,
-                style: style.isEmpty ? nil : style,
-                attempts: attempts.isEmpty ? nil : attempts,
-                isWIP: isWIP,
-                gym: gym.isEmpty ? nil : gym,
-                reps: reps,
-                sets: sets,
-                weight: weight,
-                planId: planId,
-                planName: planName.isEmpty ? nil : planName,
-                dayTypeKey: dayTypeKey,
-                notes: notesOpt,
-                climbId: climbId,
-                tb2UUID: tb2uuidOpt
-            ))
-        }
-
-        if !hasValidRows || entries.isEmpty {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-
-        // APPLY to SwiftData (mirrors importCSVAsync)
-        let cal = Calendar.current
-        var inserted = 0
-
-        // Cache sessions per day
-        var sessionCache: [Date: Session] = [:]
-        sessionCache.reserveCapacity(32)
-
-        // Cache plans we create/find during import
-        var knownPlans: [UUID: Plan] = [:]
-
-        // Cache signature sets per session for dedupe
-        var sigCache: [ObjectIdentifier: Set<String>] = [:]
-
-        // Track exercises by date for each plan to reconstruct plan structure
-        var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
-
-        // Track day types by date for each plan to preserve day type information
-        var planDayTypesByDate: [UUID: [Date: String]] = [:]
-
-        for e in entries {
-            let startOfDay = cal.startOfDay(for: e.date)
-
-            if e.type == "exercise" {
-                guard !e.name.isEmpty else { continue }
-
-                // Find or create session for this day
-                let session: Session
-                if let cached = sessionCache[startOfDay] {
-                    session = cached
-                } else {
-                    let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay)!
-                    let fetch = FetchDescriptor<Session>(predicate: #Predicate {
-                        $0.date >= startOfDay && $0.date < endOfDay
-                    })
-                    let matches = (try? context.fetch(fetch)) ?? []
-                    if let found = matches.first {
-                        session = found
-                    } else {
-                        let s = Session(date: startOfDay)
-                        context.insert(s)
-                        session = s
-                    }
-                    sessionCache[startOfDay] = session
-                }
-
-                // Handle plan reference if present (create if missing, requires id + name)
-                if let planId = e.planId, !knownPlans.keys.contains(planId), let planName = e.planName {
-                    let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == planId })
-                    if let existing = try? context.fetch(planDescriptor).first {
-                        knownPlans[planId] = existing
-                    } else {
-                        let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
-                        let weeklyKind = (try? context.fetch(kindFetch))?.first
-                        let plan = Plan(id: planId, name: planName, kind: weeklyKind, startDate: startOfDay)
-                        context.insert(plan)
-                        knownPlans[planId] = plan
-                    }
-                }
-
-                // Track exercises for plan reconstruction if planId exists
-                if let planId = e.planId {
-                    if planExercisesByDate[planId] == nil {
-                        planExercisesByDate[planId] = [:]
-                    }
-                    if planExercisesByDate[planId]![startOfDay] == nil {
-                        planExercisesByDate[planId]![startOfDay] = Set()
-                    }
-                    planExercisesByDate[planId]![startOfDay]!.insert(e.name)
-
-                    if let dayTypeKey = e.dayTypeKey {
-                        if planDayTypesByDate[planId] == nil { planDayTypesByDate[planId] = [:] }
-                        planDayTypesByDate[planId]![startOfDay] = dayTypeKey
-                    }
-                }
-
-                // Build/get signature set for dedupe
-                let sid = ObjectIdentifier(session)
-                var existing = sigCache[sid]
-                if existing == nil {
-                    existing = Set(session.items.map {
-                        itemSignature(date: session.date,
-                                      name: $0.exerciseName,
-                                      reps: $0.reps,
-                                      sets: $0.sets,
-                                      weight: $0.weightKg,
-                                      planId: $0.planSourceId,
-                                      planName: $0.planName,
-                                      notes: $0.notes)
-                    })
-                }
-
-                let sig = itemSignature(date: session.date,
-                                        name: e.name,
-                                        reps: e.reps,
-                                        sets: e.sets,
-                                        weight: e.weight,
-                                        planId: e.planId,
-                                        planName: e.planName,
-                                        notes: e.notes)
-
-                if !dedupe || !(existing?.contains(sig) ?? false) {
-                    let item = SessionItem(
-                        exerciseName: e.name,
-                        planSourceId: e.planId,
-                        planName: e.planName,
-                        reps: e.reps,
-                        sets: e.sets,
-                        weightKg: e.weight,
-                        grade: e.grade,
-                        notes: e.notes
-                    )
-                    item.sourceTag = tag
-                    session.items.append(item)
-                    existing?.insert(sig)
-                    inserted += 1
-                }
-
-                sigCache[sid] = existing ?? []
-
-            } else if e.type == "climb" {
-                // Handle climb entries
-                guard let grade = e.grade, !grade.isEmpty else { continue }
-
-                // Parse climb type
-                let climbType: ClimbType
-                if let climbTypeStr = e.climbType, let parsedType = ClimbType(rawValue: climbTypeStr) {
-                    climbType = parsedType
-                } else {
-                    climbType = .boulder // default
-                }
-
-                let ropeClimbType = e.ropeType.flatMap { RopeClimbType(rawValue: $0) }
-
-                // 1) Upsert by explicit climb_id if provided
-                if let providedId = e.climbId {
-                    let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == providedId })
-                    if let existing = (try? context.fetch(fetch))?.first {
-                        existing.climbType = climbType
-                        existing.grade = grade
-                        existing.angleDegrees = e.angle
-                        existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
-                        existing.attempts = e.attempts
-                        existing.isWorkInProgress = e.isWIP
-                        existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
-                        existing.ropeClimbType = ropeClimbType
-                        existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
-                        existing.notes = e.notes
-                        existing.dateLogged = startOfDay
-                        if let tb2 = e.tb2UUID { existing.tb2ClimbUUID = tb2 }
-                        continue
-                    } else {
-                        let climbEntry = ClimbEntry(
-                            id: providedId,
-                            climbType: climbType,
-                            ropeClimbType: ropeClimbType,
-                            grade: grade,
-                            angleDegrees: e.angle,
-                            style: e.style?.isEmpty == false ? e.style! : "Unknown",
-                            attempts: e.attempts,
-                            isWorkInProgress: e.isWIP,
-                            holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
-                            gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
-                            notes: e.notes,
-                            dateLogged: startOfDay,
-                            tb2ClimbUUID: e.tb2UUID
-                        )
-                        context.insert(climbEntry)
-                        inserted += 1
-                        continue
-                    }
-                }
-
-                // 2) If no id but we have tb2 uuid, compute TB2-stable id and upsert
-                if let tb2 = e.tb2UUID {
-                    let stable = stableID(
-                        climbUUID: tb2,
-                        day: startOfDay,
-                        angle: e.angle,
-                        isMirror: false,
-                        isAscent: !e.isWIP
-                    )
-                    let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == stable })
-                    if let existing = (try? context.fetch(fetch))?.first {
-                        existing.climbType = climbType
-                        existing.grade = grade
-                        existing.angleDegrees = e.angle
-                        existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
-                        existing.attempts = e.attempts
-                        existing.isWorkInProgress = e.isWIP
-                        existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
-                        existing.ropeClimbType = ropeClimbType
-                        existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
-                        existing.notes = e.notes
-                        existing.dateLogged = startOfDay
-                        existing.tb2ClimbUUID = tb2
-                        continue
-                    } else {
-                        let climbEntry = ClimbEntry(
-                            id: stable,
-                            climbType: climbType,
-                            ropeClimbType: ropeClimbType,
-                            grade: grade,
-                            angleDegrees: e.angle,
-                            style: e.style?.isEmpty == false ? e.style! : "Unknown",
-                            attempts: e.attempts,
-                            isWorkInProgress: e.isWIP,
-                            holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
-                            gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
-                            notes: e.notes,
-                            dateLogged: startOfDay,
-                            tb2ClimbUUID: tb2
-                        )
-                        context.insert(climbEntry)
-                        inserted += 1
-                        continue
-                    }
-                }
-
-                // 3) Fallback: DEDUPE by content signature (legacy CSVs)
-                if dedupe {
-                    let climbSig = climbSignature(
-                        date: startOfDay,
-                        climbType: climbType,
-                        grade: grade,
-                        angle: e.angle,
-                        holdColor: e.holdColor,
-                        style: e.style ?? "",
-                        attempts: e.attempts,
-                        isWIP: e.isWIP,
-                        gym: e.gym ?? "",
-                        notes: e.notes
-                    )
-
-                    let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay)!
-                    let climbDescriptor = FetchDescriptor<ClimbEntry>(predicate: #Predicate<ClimbEntry> {
-                        $0.dateLogged >= startOfDay && $0.dateLogged < endOfDay
-                    })
-                    let existingClimbs = (try? context.fetch(climbDescriptor)) ?? []
-
-                    let duplicate = existingClimbs.first { climb in
-                        let existingSig = climbSignature(
-                            date: Calendar.current.startOfDay(for: climb.dateLogged),
-                            climbType: climb.climbType,
-                            grade: climb.grade,
-                            angle: climb.angleDegrees,
-                            holdColor: climb.holdColor?.rawValue,
-                            style: climb.style,
-                            attempts: climb.attempts,
-                            isWIP: climb.isWorkInProgress,
-                            gym: climb.gym,
-                            notes: climb.notes
-                        )
-                        return existingSig == climbSig
-                    }
-
-                    if duplicate != nil { continue }
-                }
-
-                // Create climb entry (no id / no tb2 uuid path)
-                let climbEntry = ClimbEntry(
-                    climbType: climbType,
-                    grade: grade,
-                    angleDegrees: e.angle,
-                    style: e.style?.isEmpty == false ? e.style! : "Unknown",
-                    attempts: e.attempts,
-                    isWorkInProgress: e.isWIP,
-                    holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
-                    gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
-                    notes: e.notes,
-                    dateLogged: startOfDay
-                )
-
-                context.insert(climbEntry)
-                inserted += 1
-            }
-        }
-
-        // Rebuild plan days (only if the plan currently has no days)
-        for (planId, exercisesByDate) in planExercisesByDate {
-            guard let plan = knownPlans[planId] else { continue }
-            if plan.days.isEmpty {
-                let sortedDates = Array(exercisesByDate.keys).sorted()
-                for date in sortedDates {
-                    let exercises = Array(exercisesByDate[date] ?? [])
-                    if !exercises.isEmpty {
-                        let dayTypeKey = planDayTypesByDate[planId]?[date]
-                        var resolvedType: DayTypeModel? = nil
-                        if let raw = dayTypeKey {
-                            let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !key.isEmpty {
-                                // 1) Try by key
-                                let byKey = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == key })
-                                resolvedType = (try? context.fetch(byKey))?.first
-
-                                // 2) Fallback: try by name (for older exports that stored the display name)
-                                if resolvedType == nil {
-                                    let byName = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.name == key })
-                                    resolvedType = (try? context.fetch(byName))?.first
-                                }
-
-                                // 3) Create on miss (critical for fresh stores)
-                                if resolvedType == nil {
-                                    let model = DayTypeModel(
-                                        key: key,                // keep the exported identifier (e.g., "climbingFull")
-                                        name: key,               // or provide a nicer default if you prefer
-                                        colorKey: "gray"
-                                    )
-                                    context.insert(model)
-                                    resolvedType = model
-                                }
-                            }
-                        }
-
-                        let planDay = PlanDay(date: date, type: resolvedType)
-                        planDay.chosenExercises = exercises
-                        plan.days.append(planDay)
-                    }
-                }
-            }
-        }
-
-        try context.save()
-        return inserted
-    }
-
-
 }
 
 // MARK: - Helpers
@@ -676,6 +195,7 @@ private func itemSignature(date: Date,
                            name: String,
                            reps: Double?,
                            sets: Double?,
+                           duration: Double?,
                            weight: Double?,
                            planId: UUID?,
                            planName: String?,
@@ -691,6 +211,7 @@ private func itemSignature(date: Date,
         norm(name),
         reps.map{ String(format: "%.3f", $0) } ?? "",
         sets.map{ String(format: "%.3f", $0) } ?? "",
+        duration.map { String(format: "%.3f", $0) } ?? "",
         weight.map { String(format: "%.3f", $0) } ?? "",
         planId?.uuidString ?? "",
         norm(planName)
@@ -753,6 +274,7 @@ extension LogCSV {
         let gym: String?
         let reps: Double?
         let sets: Double?
+        let duration: Double?
         let weight: Double?
         let planId: UUID?
         let planName: String?
@@ -763,7 +285,6 @@ extension LogCSV {
         let tb2UUID: String?
     }
     
-    /// Async importer: parses off-main, then mutates SwiftData on the main actor.
     @MainActor
     static func importCSVAsync(
         from url: URL,
@@ -777,7 +298,7 @@ extension LogCSV {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
         
-        // 1) Read + parse OFF-MAIN (no ModelContext captured)
+        //Read + parse OFF-MAIN (no ModelContext captured)
         let entries: [Entry] = try await Task.detached(priority: .userInitiated) { () -> [Entry] in
             let data = try Data(contentsOf: url)
             guard let text = String(data: data, encoding: .utf8) else { return [] }
@@ -785,56 +306,139 @@ extension LogCSV {
             let lines = text.split(whereSeparator: \.isNewline).map(String.init)
             guard !lines.isEmpty else { return [] }
             
-            let first = lines[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let startIdx = first.hasPrefix("date,") ? 1 : 0
+            // --- Header-based mapping ---
+            // Parse the first line as potential header
+            let headerParts = parseCSVLine(lines[0]).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            // Build a raw header index (lowercased, strip spaces/underscores)
+            func norm(_ s: String) -> String {
+                s.lowercased()
+                    .replacingOccurrences(of: " ", with: "")
+                    .replacingOccurrences(of: "_", with: "")
+            }
+            var headerIndex: [String: Int] = [:]
+            for (i, h) in headerParts.enumerated() {
+                headerIndex[norm(h)] = i
+            }
+            
+            // Recognize if a header is present by looking for key columns via aliases
+            func idx(_ aliases: [String]) -> Int? {
+                for a in aliases { if let i = headerIndex[norm(a)] { return i } }
+                return nil
+            }
+            
+            // Column aliases (expand in case of naming changes)
+            struct Cols {
+                static let date       = ["date"]
+                static let type       = ["type"]
+                static let exercise   = ["exercise_name"]
+                static let climbType  = ["climb_type"]
+                static let grade      = ["grade"]
+                static let angle      = ["angle"]
+                static let holdColor  = ["hold_color", "holdcolor"]
+                static let ropeType   = ["rope_type"]
+                static let style      = ["style"]
+                static let attempts   = ["attempts"]
+                static let wip        = ["wip", "is_wip", "isworkinprogress"]
+                static let gym        = ["gym"]
+                static let reps       = ["reps"]
+                static let sets       = ["sets"]
+                static let duration   = ["duration", "time"]
+                static let weight     = ["weight_kg", "weight", "kg"]
+                static let planId     = ["plan_id", "planid"]
+                static let planName   = ["plan_name"]
+                static let dayType    = ["day_type", "daytype"]
+                static let notes      = ["notes", "note", "comment", "comments"]
+                static let climbId    = ["climb_id", "climbid"]
+                static let tb2UUID    = ["tb2_uuid", "tb2"]
+            }
+            
+            let hasHeader = (idx(Cols.date) != nil && idx(Cols.type) != nil)
+            let startIdx = hasHeader ? 1 : 0
             
             let df = ISO8601DateFormatter()
             df.formatOptions = [.withFullDate] // YYYY-MM-DD
             
+            // Helper for per-row value lookup by aliases
+            func val(_ parts: [String], _ aliases: [String]) -> String {
+                guard hasHeader, let i = idx(aliases), i < parts.count else { return "" }
+                return parts[i]
+            }
+            
             var out: [Entry] = []
             out.reserveCapacity(max(0, lines.count - startIdx))
             
-            for (n, idx) in (startIdx..<lines.count).enumerated() {
-                // brief cooperative yield to keep the system responsive
+            for (n, rowIndex) in (startIdx..<lines.count).enumerated() {
                 if n % 500 == 0 { await Task.yield() }
                 
-                let parts = parseCSVLine(lines[idx])
+                let parts = parseCSVLine(lines[rowIndex])
                 
                 // Skip empty lines
                 if parts.isEmpty || parts.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
                     continue
                 }
                 
-                guard parts.count >= 2 else { continue }
+                // --- Extract values (header-based or legacy positional fallback) ---
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr: String
                 
-                // date,type,exercise_name,climb_type,grade,angle,holdColor,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid
-                let dateStr      = parts[safe: 0] ?? ""
-                let typeStr      = parts[safe: 1] ?? ""
-                let exerciseName = parts[safe: 2] ?? ""
-                let climbTypeStr = parts[safe: 3] ?? ""
-                let gradeStr     = parts[safe: 4] ?? ""
-                let angleStr     = parts[safe: 5] ?? ""
-                let holdColorStr = parts[safe: 6] ?? ""
-                let ropeTypeStr  = parts[safe: 7] ?? ""
-                let styleStr     = parts[safe: 8] ?? ""
-                let attemptsStr  = parts[safe: 9] ?? ""
-                let wipStr       = parts[safe: 10] ?? ""
-                let gymStr       = parts[safe: 11] ?? ""
-                let repsStr      = parts[safe: 12] ?? ""
-                let setsStr      = parts[safe: 13] ?? ""
-                let weightStr    = parts[safe: 14] ?? ""
-                let planIdStr    = parts[safe: 15] ?? ""
-                let planName     = parts[safe: 16] ?? ""
-                let dayTypeStr   = parts[safe: 17] ?? ""
-                let notesRaw     = parts[safe: 18] ?? ""
-                let climbIdStr   = parts[safe: 19] ?? ""
-                let tb2UUIDStr   = parts[safe: 20] ?? ""
+                if hasHeader {
+                    dateStr      = val(parts, Cols.date)
+                    typeStr      = val(parts, Cols.type)
+                    exerciseName = val(parts, Cols.exercise)
+                    climbTypeStr = val(parts, Cols.climbType)
+                    gradeStr     = val(parts, Cols.grade)
+                    angleStr     = val(parts, Cols.angle)
+                    holdColorStr = val(parts, Cols.holdColor)
+                    ropeTypeStr  = val(parts, Cols.ropeType)
+                    styleStr     = val(parts, Cols.style)
+                    attemptsStr  = val(parts, Cols.attempts)
+                    wipStr       = val(parts, Cols.wip)
+                    gymStr       = val(parts, Cols.gym)
+                    repsStr      = val(parts, Cols.reps)
+                    setsStr      = val(parts, Cols.sets)
+                    durationStr  = val(parts, Cols.duration)
+                    weightStr    = val(parts, Cols.weight)
+                    planIdStr    = val(parts, Cols.planId)
+                    planName     = val(parts, Cols.planName)
+                    dayTypeStr   = val(parts, Cols.dayType)
+                    notesRaw     = val(parts, Cols.notes)
+                    climbIdStr   = val(parts, Cols.climbId)
+                    tb2UUIDStr   = val(parts, Cols.tb2UUID)
+                } else {
+                    // Legacy positional fallback (will be removed in future)
+                    func p(_ i: Int) -> String { parts.indices.contains(i) ? parts[i] : "" }
+                    dateStr      = p(0)
+                    typeStr      = p(1)
+                    exerciseName = p(2)
+                    climbTypeStr = p(3)
+                    gradeStr     = p(4)
+                    angleStr     = p(5)
+                    holdColorStr = p(6)
+                    ropeTypeStr  = p(7)
+                    styleStr     = p(8)
+                    attemptsStr  = p(9)
+                    wipStr       = p(10)
+                    gymStr       = p(11)
+                    repsStr      = p(12)
+                    setsStr      = p(13)
+                    durationStr  = p(14)
+                    weightStr    = p(15)
+                    planIdStr    = p(16)
+                    planName     = p(17)
+                    dayTypeStr   = p(18)
+                    notesRaw     = p(19)
+                    climbIdStr   = p(20)
+                    tb2UUIDStr   = p(21)
+                }
                 
+                // Minimal validity check
                 guard
                     let dayDate = df.date(from: dateStr),
                     !typeStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 else { continue }
                 
+                // Normalize/convert
                 let type = typeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let angle = angleStr.isEmpty ? nil : Int(angleStr)
@@ -848,6 +452,8 @@ extension LogCSV {
                 let reps = Double(repsStr.replacingOccurrences(of: ",", with: ".")
                     .trimmingCharacters(in: .whitespacesAndNewlines))
                 let sets = Double(setsStr.replacingOccurrences(of: ",", with: ".")
+                    .trimmingCharacters(in: .whitespacesAndNewlines))
+                let duration = Double(durationStr.replacingOccurrences(of: ",", with: ".")
                     .trimmingCharacters(in: .whitespacesAndNewlines))
                 let weight = Double(weightStr
                     .replacingOccurrences(of: ",", with: ".")
@@ -875,6 +481,7 @@ extension LogCSV {
                     gym: gym.isEmpty ? nil : gym,
                     reps: reps,
                     sets: sets,
+                    duration: duration,
                     weight: weight,
                     planId: planId,
                     planName: planName.isEmpty ? nil : planName,
@@ -896,7 +503,7 @@ extension LogCSV {
         // Optional half-way signal after parse
         progress?(0.5)
         
-        // 2) Apply ON MAIN (safe for ModelContext) + progressive progress
+        //Apply ON MAIN (safe for ModelContext) + progressive progress
         let cal = Calendar.current
         var inserted = 0
         
@@ -926,7 +533,6 @@ extension LogCSV {
             let startOfDay = cal.startOfDay(for: e.date)
             
             if e.type == "exercise" {
-                // Handle exercise entries
                 guard !e.name.isEmpty else { continue }
                 
                 // Find or create session for this day
@@ -963,20 +569,14 @@ extension LogCSV {
                     }
                 }
                 
-                // Track exercises for plan reconstruction if planId exists
+                // Track exercises for plan reconstruction
                 if let planId = e.planId {
-                    if planExercisesByDate[planId] == nil {
-                        planExercisesByDate[planId] = [:]
-                    }
-                    if planExercisesByDate[planId]![startOfDay] == nil {
-                        planExercisesByDate[planId]![startOfDay] = Set()
-                    }
+                    if planExercisesByDate[planId] == nil { planExercisesByDate[planId] = [:] }
+                    if planExercisesByDate[planId]![startOfDay] == nil { planExercisesByDate[planId]![startOfDay] = Set() }
                     planExercisesByDate[planId]![startOfDay]!.insert(e.name)
                     
                     if let dayTypeKey = e.dayTypeKey {
-                        if planDayTypesByDate[planId] == nil {
-                            planDayTypesByDate[planId] = [:]
-                        }
+                        if planDayTypesByDate[planId] == nil { planDayTypesByDate[planId] = [:] }
                         planDayTypesByDate[planId]![startOfDay] = dayTypeKey
                     }
                 }
@@ -990,6 +590,7 @@ extension LogCSV {
                                       name: $0.exerciseName,
                                       reps: $0.reps,
                                       sets: $0.sets,
+                                      duration: $0.duration,
                                       weight: $0.weightKg,
                                       planId: $0.planSourceId,
                                       planName: $0.planName,
@@ -1001,6 +602,7 @@ extension LogCSV {
                                         name: e.name,
                                         reps: e.reps,
                                         sets: e.sets,
+                                        duration: e.duration,
                                         weight: e.weight,
                                         planId: e.planId,
                                         planName: e.planName,
@@ -1015,7 +617,8 @@ extension LogCSV {
                         sets: e.sets,
                         weightKg: e.weight,
                         grade: e.grade,
-                        notes: e.notes
+                        notes: e.notes,
+                        duration: e.duration
                     )
                     item.sourceTag = tag
                     session.items.append(item)
@@ -1029,17 +632,15 @@ extension LogCSV {
                 // Handle climb entries
                 guard let grade = e.grade, !grade.isEmpty else { continue }
                 
-                // Parse climb type
                 let climbType: ClimbType
                 if let climbTypeStr = e.climbType, let parsedType = ClimbType(rawValue: climbTypeStr) {
                     climbType = parsedType
                 } else {
                     climbType = .boulder // default
                 }
-
                 let ropeClimbType = e.ropeType.flatMap { RopeClimbType(rawValue: $0) }
                 
-                // 1) Upsert by explicit climb_id if provided
+                //Upsert by explicit climb_id if provided
                 if let providedId = e.climbId {
                     let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.id == providedId })
                     if let existing = (try? context.fetch(fetch))?.first {
@@ -1055,7 +656,6 @@ extension LogCSV {
                         existing.notes = e.notes
                         existing.dateLogged = startOfDay
                         if let tb2 = e.tb2UUID { existing.tb2ClimbUUID = tb2 }
-                        continue
                     } else {
                         let climbEntry = ClimbEntry(
                             id: providedId,
@@ -1074,11 +674,11 @@ extension LogCSV {
                         )
                         context.insert(climbEntry)
                         inserted += 1
-                        continue
                     }
+                    continue
                 }
                 
-                // 2) If no id but we have tb2 uuid, compute TB2-stable id and upsert
+                //Stable TB2 id upsert
                 if let tb2 = e.tb2UUID {
                     let stable = stableID(
                         climbUUID: tb2,
@@ -1101,7 +701,6 @@ extension LogCSV {
                         existing.notes = e.notes
                         existing.dateLogged = startOfDay
                         existing.tb2ClimbUUID = tb2
-                        continue
                     } else {
                         let climbEntry = ClimbEntry(
                             id: stable,
@@ -1120,11 +719,11 @@ extension LogCSV {
                         )
                         context.insert(climbEntry)
                         inserted += 1
-                        continue
                     }
+                    continue
                 }
                 
-                // 3) Fallback: DEDUPE by content signature (legacy CSVs)
+                //Fallback: DEDUPE by content signature (legacy CSVs)
                 if dedupe {
                     let climbSig = climbSignature(
                         date: startOfDay,
@@ -1161,9 +760,7 @@ extension LogCSV {
                         return existingSig == climbSig
                     }
                     
-                    if duplicate != nil {
-                        continue // Skip duplicate
-                    }
+                    if duplicate != nil { continue }
                 }
                 
                 // Create climb entry (no id / no tb2 uuid path)
@@ -1179,7 +776,6 @@ extension LogCSV {
                     notes: e.notes,
                     dateLogged: startOfDay
                 )
-                
                 context.insert(climbEntry)
                 inserted += 1
             }
@@ -1189,46 +785,30 @@ extension LogCSV {
         for (planId, exercisesByDate) in planExercisesByDate {
             guard let plan = knownPlans[planId] else { continue }
             
-            // Only populate if the plan doesn't already have days (avoid overwriting existing plans)
             if plan.days.isEmpty {
                 let sortedDates = Array(exercisesByDate.keys).sorted()
-                
                 for date in sortedDates {
                     let exercises = Array(exercisesByDate[date] ?? [])
                     if !exercises.isEmpty {
-                        // Use the imported day type if available, otherwise no default here
                         let dayTypeKey = planDayTypesByDate[planId]?[date]
                         var resolvedType: DayTypeModel? = nil
                         if let raw = dayTypeKey {
                             let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                             if !key.isEmpty {
-                                // 1) Try by key
                                 let byKey = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == key })
                                 resolvedType = (try? context.fetch(byKey))?.first
-
-                                // 2) Fallback: try by name (for older exports that stored the display name)
                                 if resolvedType == nil {
                                     let byName = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.name == key })
                                     resolvedType = (try? context.fetch(byName))?.first
                                 }
-
-                                // 3) Create on miss (critical for fresh stores)
                                 if resolvedType == nil {
-                                    let model = DayTypeModel(
-                                        key: key,                // keep the exported identifier (e.g., "climbingFull")
-                                        name: key,               // or provide a nicer default if you prefer
-                                        colorKey: "gray"
-                                    )
+                                    let model = DayTypeModel(key: key, name: key, colorKey: "gray")
                                     context.insert(model)
                                     resolvedType = model
                                 }
                             }
                         }
-
-                        let planDay = PlanDay(
-                            date: date,
-                            type: resolvedType
-                        )
+                        let planDay = PlanDay(date: date, type: resolvedType)
                         planDay.chosenExercises = exercises
                         plan.days.append(planDay)
                     }
@@ -1240,9 +820,7 @@ extension LogCSV {
         return inserted
     }
 }
-
 // MARK: - Deterministic ID helpers (TB2 parity)
-
 private func stableID(climbUUID: String, day: Date, angle: Int?, isMirror: Bool?, isAscent: Bool) -> UUID {
     let dayEpoch = Int((day.timeIntervalSince1970 / 86400.0).rounded(.down))
     let key = "tb2|\(climbUUID)|\(dayEpoch)|\(angle ?? -999)|\((isMirror ?? false) ? 1 : 0)|\((isAscent) ? 1 : 0)"

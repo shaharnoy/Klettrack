@@ -183,20 +183,20 @@ struct SettingsSheet: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
-                Text("Made with ❤️ in Berlin")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 6)
-                    .allowsHitTesting(false)
-            }
-            .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
-                Text("©klettrack")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 6)
-                    .allowsHitTesting(false)
-            }
+        }
+        .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
+            Text("Made with ❤️ in Berlin")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 6)
+                .allowsHitTesting(false)
+        }
+        .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
+            Text("©klettrack")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 6)
+                .allowsHitTesting(false)
         }
         // Credentials prompt sheet (shared view)
         .sheet(isPresented: $showingCredentialsSheet) {

@@ -133,16 +133,10 @@ struct RootTabView: View {
             // Longer delay to ensure SwiftData container is fully ready
             try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
 
-            //runDayTypesRepairIfNeeded(context)  // delete duplicates, reseed
-            //SeedData.loadIfNeeded(context)      // after repair, reseed
+            //runDayTypesRepairIfNeeded(context)  // delete duplicate days and reseed
+            SeedData.loadIfNeeded(context)      // Always seed - logic in place to not overwrite existing data
             
-            // Seed timer templates 
-            SeedTimerTemplates.loadIfNeeded(context)
-            
-            // Non-destructive catalog deltas migration (run once per key)
-            runOnce(per: "catalog_2025-10-11_bouldering") {
-                applyCatalogUpdates(context)
-            }
+        
             runOnce(per: "session_item_sort_backfill_2025-10-20") {
                 backfillSessionItemSort(context)
             }
@@ -157,6 +151,9 @@ struct RootTabView: View {
                     }
                 }
             }
+            runOnce(per: "daytypedefaultflags_backfill_2025-11-08") {
+                backfillDefaultFlags(context)
+            }
             // Ensure all changes are committed
             try context.save()
             
@@ -170,15 +167,14 @@ struct RootTabView: View {
     }
 }
 
-// MARK: - Environment Key for Data Ready State
 func runDayTypesRepairIfNeeded(_ context: ModelContext) {
-    // 1) Delete all DayTypeModel rows
+    //Delete all DayTypeModel rows
     try? context.delete(model: DayTypeModel.self)
     try? context.save()
-
-    // 2) Reseed just the day types
     seedDayTypes(context)
 }
+
+// MARK: - Environment Key for Data Ready State
 private struct DataReadyKey: EnvironmentKey {
     static let defaultValue = false
 }
@@ -202,8 +198,23 @@ private func backfillSessionItemSort(_ context: ModelContext) {
                 item.sort = idx
             }
         }
-        // Save is handled by initializeData(); keep this idempotent.
+        // Save is handled by initializeData();
     } catch {
-        print("⚠️ backfillSessionItemSort failed: \(error.localizedDescription)")
+        print("backfillSessionItemSort failed: \(error.localizedDescription)")
     }
+}
+//one time migration to add isDefault flags to existing day types
+func backfillDefaultFlags(_ context: ModelContext) {
+    let seedKeys: Set<String> = [
+        "climbingFull","climbingSmall","climbingReduced","Perclimbing",
+        "core","antagonist","rest","vacation","sick"
+    ]
+
+    let all: [DayTypeModel] = (try? context.fetch(FetchDescriptor<DayTypeModel>())) ?? []
+    var touched = 0
+    for d in all where seedKeys.contains(d.key) && d.isdefault == false {
+        d.isdefault = true
+        touched += 1
+    }
+    if touched > 0 { try? context.save() }
 }

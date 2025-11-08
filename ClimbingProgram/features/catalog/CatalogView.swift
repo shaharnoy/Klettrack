@@ -228,6 +228,7 @@ struct TrainingTypeDetailView: View {
     @State private var draftArea = ""
     @State private var draftReps = ""
     @State private var draftSets = ""
+    @State private var draftDuration = ""
     @State private var draftRest = ""
     @State private var draftNotes = ""
     @State private var draftDescription = ""
@@ -372,6 +373,7 @@ struct TrainingTypeDetailView: View {
                 area: $draftArea,
                 reps: $draftReps,
                 sets: $draftSets,
+                duration: $draftDuration,
                 rest: $draftRest,
                 notes: $draftNotes,
                 description: $draftDescription,
@@ -384,6 +386,7 @@ struct TrainingTypeDetailView: View {
                     order: nextOrder,
                     exerciseDescription: draftDescription.isEmpty ? nil : draftDescription,
                     repsText: draftReps.isEmpty ? nil : draftReps,
+                    durationText: draftDuration.isEmpty ? nil : draftDuration,
                     setsText: draftSets.isEmpty ? nil : draftSets,
                     restText: draftRest.isEmpty ? nil : draftRest,
                     notes: draftNotes.isEmpty ? nil : draftNotes
@@ -401,6 +404,7 @@ struct TrainingTypeDetailView: View {
                 area: $draftArea,
                 reps: $draftReps,
                 sets: $draftSets,
+                duration: $draftDuration,
                 rest: $draftRest,
                 notes: $draftNotes,
                 description: $draftDescription,
@@ -411,6 +415,7 @@ struct TrainingTypeDetailView: View {
                 ex.exerciseDescription = draftDescription.isEmpty ? nil : draftDescription
                 ex.repsText = draftReps.isEmpty ? nil : draftReps
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
+                ex.durationText = draftSets.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
                 try? context.save()
@@ -419,7 +424,7 @@ struct TrainingTypeDetailView: View {
     }
 
     private func startNewExercise() {
-        draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""
+        draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDuration = "";
         showingNewExercise = true
     }
     private func openEditor(for ex: Exercise) {
@@ -428,6 +433,7 @@ struct TrainingTypeDetailView: View {
         draftDescription = ex.exerciseDescription ?? ""
         draftReps = ex.repsText ?? ""
         draftSets = ex.setsText ?? ""
+        draftDuration = ex.durationText ?? ""
         draftRest = ex.restText ?? ""
         draftNotes = ex.notes ?? ""
         editingExercise = ex
@@ -448,6 +454,7 @@ struct CombinationDetailView: View {
     @State private var draftArea = ""
     @State private var draftReps = ""
     @State private var draftSets = ""
+    @State private var draftDuration = ""
     @State private var draftRest = ""
     @State private var draftNotes = ""
     @State private var draftDesc = ""
@@ -518,6 +525,7 @@ struct CombinationDetailView: View {
                 area: $draftArea,
                 reps: $draftReps,
                 sets: $draftSets,
+                duration: $draftDuration,
                 rest: $draftRest,
                 notes: $draftNotes,
                 description: $draftDesc,
@@ -530,6 +538,7 @@ struct CombinationDetailView: View {
                     order: nextOrder,
                     exerciseDescription: draftDesc.isEmpty ? nil : draftDesc,
                     repsText: draftReps.isEmpty ? nil : draftReps,
+                    durationText: draftDuration.isEmpty ? nil : draftDuration,
                     setsText: draftSets.isEmpty ? nil : draftSets,
                     restText: draftRest.isEmpty ? nil : draftRest,
                     notes: draftNotes.isEmpty ? nil : draftNotes
@@ -547,6 +556,7 @@ struct CombinationDetailView: View {
                 area: $draftArea,
                 reps: $draftReps,
                 sets: $draftSets,
+                duration: $draftDuration,
                 rest: $draftRest,
                 notes: $draftNotes,
                 description: $draftDesc,
@@ -557,6 +567,7 @@ struct CombinationDetailView: View {
                 ex.exerciseDescription = draftDesc.isEmpty ? nil : draftDesc
                 ex.repsText = draftReps.isEmpty ? nil : draftReps
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
+                ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
                 try? context.save()
@@ -565,7 +576,7 @@ struct CombinationDetailView: View {
     }
 
     private func startNewExercise() {
-        draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDesc = ""
+        draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDesc = ""; draftDuration = "";
         showingNew = true
     }
     private func openEditor(for ex: Exercise) {
@@ -574,6 +585,7 @@ struct CombinationDetailView: View {
         draftDesc = ex.exerciseDescription ?? ""
         draftReps = ex.repsText ?? ""
         draftSets = ex.setsText ?? ""
+        draftDuration = ex.durationText ?? ""
         draftRest = ex.restText ?? ""
         draftNotes = ex.notes ?? ""
         editingExercise = ex
@@ -581,27 +593,30 @@ struct CombinationDetailView: View {
 }
 
 // MARK: - Shared UI bits
-
 private struct MetricRow: View {
     let reps: String?
     let sets: String?
+    let duration: String?
     let rest: String?
 
     var body: some View {
         HStack(spacing: 12) {
             metric("Reps", reps)
             metric("Sets", sets)
+            metric("Duration", duration)
             metric("Rest", rest)
         }
-        .font(.caption.monospacedDigit())          // 👈 monospaced digits
+        .font(.caption.monospacedDigit())
         .foregroundStyle(.primary)
     }
 
     @ViewBuilder
     private func metric(_ label: String, _ value: String?) -> some View {
-        HStack(spacing: 4) {
-            Text(label).bold().foregroundStyle(.secondary)
-            Text(value ?? "—")
+        if let v = value, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            HStack(spacing: 4) {
+                Text(label).bold().foregroundStyle(.secondary)
+                Text(v)
+            }
         }
     }
 }
@@ -620,7 +635,7 @@ private struct ExerciseRow: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.9)
             }
-            MetricRow(reps: ex.repsText, sets: ex.setsText, rest: ex.restText)
+            MetricRow(reps: ex.repsText, sets: ex.setsText,duration: ex.durationText, rest: ex.restText)
             if let desc = ex.exerciseDescription, !desc.isEmpty {
                 Text(desc).font(.footnote)
             } else if let notes = ex.notes, !notes.isEmpty {
@@ -628,7 +643,7 @@ private struct ExerciseRow: View {
             }
         }
         .padding(.vertical, 4)
-        .contentShape(Rectangle())                 // 👈 larger tap target
+        .contentShape(Rectangle())
     }
 }
 
@@ -695,6 +710,7 @@ struct ExerciseEditSheet: View {
     @Binding var area: String
     @Binding var reps: String
     @Binding var sets: String
+    @Binding var duration: String
     @Binding var rest: String
     @Binding var notes: String
     @Binding var description: String
@@ -732,13 +748,19 @@ struct ExerciseEditSheet: View {
                 
                 Section {
                     LabeledContent {
-                        TextField("e.g. 15–25 / 10s", text: $reps)
+                        TextField("e.g. 15–25", text: $reps)
                             .keyboardType(.numbersAndPunctuation)
                             .multilineTextAlignment(.trailing)
                     } label: {
-                        Label("Reps / Time", systemImage: "repeat")
+                        Label("Reps", systemImage: "repeat")
                         }
-                    
+                    LabeledContent {
+                        TextField("e.g. 2 min", text: $duration)
+                            .keyboardType(.numbersAndPunctuation)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Label("Duration", systemImage: "clock")
+                    }
                     LabeledContent {
                         TextField("e.g. 2–3", text: $sets)
                             .keyboardType(.numbersAndPunctuation)
@@ -764,6 +786,7 @@ struct ExerciseEditSheet: View {
                 Section("Preview") {
                     MetricRow(reps: reps.isEmpty ? nil : reps,
                               sets: sets.isEmpty ? nil : sets,
+                              duration: duration.isEmpty ? nil : duration,
                               rest: rest.isEmpty ? nil : rest)
                 }
                 

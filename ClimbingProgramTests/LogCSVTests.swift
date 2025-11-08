@@ -9,7 +9,7 @@ import SwiftData
 
 final class LogCSVTests: BaseSwiftDataTestCase {
     
-    func testExerciseExportImportRoundTrip_RebuildsPlanDaysAndDayTypes() throws {
+    func testExerciseExportImportRoundTrip_RebuildsPlanDaysAndDayTypes() async throws {
         // Prepare a plan with a day and an exercise, and a matching session item
         let plan = createTestPlan(name: "RoundTrip Plan", kindKey: "weekly", start: Calendar.current.startOfDay(for: Date()))
         let planDay = try XCTUnwrap(plan.days.first)
@@ -47,7 +47,7 @@ final class LogCSVTests: BaseSwiftDataTestCase {
         )
         let freshCtx = ModelContext(fresh)
         
-        let inserted = try LogCSV.importCSV(from: tmpURL, into: freshCtx, tag: "test", dedupe: true)
+        let inserted = try await LogCSV.importCSVAsync(from: tmpURL, into: freshCtx, tag: "test", dedupe: true)
         XCTAssertEqual(inserted, 1, "Should import exactly one exercise item")
         
         // Verify plan reconstructed with day and chosen exercise + day type
@@ -69,7 +69,7 @@ final class LogCSVTests: BaseSwiftDataTestCase {
         XCTAssertEqual(items.first?.planName, importedPlan.name)
     }
     
-    func testClimbImportUpsert_ByExplicitIdAndTB2StableId() throws {
+    func testClimbImportUpsert_ByExplicitIdAndTB2StableId() async throws {
         // Build CSV rows manually
         let day = "2025-08-28"
         let header = "date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"
@@ -94,12 +94,12 @@ final class LogCSVTests: BaseSwiftDataTestCase {
         
         // Import first time
         let url1 = try writeCSV([row1, row2])
-        var inserted = try LogCSV.importCSV(from: url1, into: context, tag: "t1", dedupe: true)
+        var inserted = try await LogCSV.importCSVAsync(from: url1, into: context, tag: "t1", dedupe: true)
         XCTAssertEqual(inserted, 2)
         
         // Import updates (should upsert; no new insertions)
         let url2 = try writeCSV([row1Update, row2Update])
-        inserted = try LogCSV.importCSV(from: url2, into: context, tag: "t2", dedupe: true)
+        inserted = try await LogCSV.importCSVAsync(from: url2, into: context, tag: "t2", dedupe: true)
         XCTAssertEqual(inserted, 0, "Upserts should not count as insertions")
         
         // Verify we have two climbs and they reflect updated values

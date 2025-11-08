@@ -24,14 +24,8 @@ final class TrainingType {
     @Attribute(.unique) var id: UUID
     var name: String
     var area: String?
-    /// NEW: rich description for this training type
     var typeDescription: String?
-
-    /// Default path: exercises belong directly to a TrainingType
     var exercises: [Exercise] = []
-
-    /// Bouldering-only path: extra level between type and exercises
-    /// If non-empty, UI will present these combinations instead of `exercises`.
     var combinations: [BoulderCombination] = []
 
     init(
@@ -66,13 +60,10 @@ final class Exercise {
     @Attribute(.unique) var id: UUID
     var name: String
     var area: String?
-    var order: Int = 0  // New field to maintain exercise order
-
-    /// NEW: rich description for the exercise
+    var order: Int = 0  // maintain exercise order
     var exerciseDescription: String?
-
-    /// Display fields
     var repsText: String?
+    var durationText: String?
     var setsText: String?
     var restText: String?
     var notes: String?
@@ -84,6 +75,7 @@ final class Exercise {
         order: Int = 0,
         exerciseDescription: String? = nil,
         repsText: String? = nil,
+        durationText: String? = nil,
         setsText: String? = nil,
         restText: String? = nil,
         notes: String? = nil
@@ -94,6 +86,7 @@ final class Exercise {
         self.order = order
         self.exerciseDescription = exerciseDescription
         self.repsText = repsText
+        self.durationText = durationText
         self.setsText = setsText
         self.restText = restText
         self.notes = notes
@@ -118,10 +111,7 @@ final class SessionItem {
     var exerciseName: String
     
     @Relationship var session: Session?
-    
     var sort: Int = 0
-    
-    // Plan source tracking
     var planSourceId: UUID?
     var planName: String?
 
@@ -129,8 +119,9 @@ final class SessionItem {
     var reps: Double?
     var sets: Double?
     var weightKg: Double?
-    var grade: String?  // For bouldering grades (e.g., "6a+", "7b")
+    var grade: String?
     var notes: String?
+    var duration: Double?
 
     init(
         id: UUID = UUID(),
@@ -141,7 +132,8 @@ final class SessionItem {
         sets: Double? = nil,
         weightKg: Double? = nil,
         grade: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        duration: Double? = nil
     ) {
         self.id = id
         self.exerciseName = exerciseName
@@ -152,6 +144,7 @@ final class SessionItem {
         self.weightKg = weightKg
         self.grade = grade
         self.notes = notes
+        self.duration = duration
     }
 }
 
@@ -168,7 +161,6 @@ final class TimerTemplate {
     var intervals: [TimerInterval] = []
     var isRepeating: Bool
     var repeatCount: Int?
-    /// Rest time between repeated cycles (applied between repeats when isRepeating is true)
     var restTimeBetweenIntervals: Int?
     
     // Metadata
@@ -301,3 +293,4 @@ final class TimerLap {
         self.notes = notes
     }
 }
+
