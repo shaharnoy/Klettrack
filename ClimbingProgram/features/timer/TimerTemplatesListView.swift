@@ -16,8 +16,9 @@ struct TimerTemplatesListView: View {
     @Query(sort: [SortDescriptor(\TimerTemplate.name, order: .forward)]) private var templates: [TimerTemplate]
     
     @State private var showingNewTemplate = false
-    @State private var selectedTemplate: TimerTemplate?
-    @State private var showingEditTemplate = false
+    @State private var editingTemplate: TimerTemplate? = nil
+
+
     
     var body: some View {
         NavigationStack {
@@ -30,24 +31,28 @@ struct TimerTemplatesListView: View {
                     )
                 } else {
                     ForEach(templates) { template in
-                        TimerTemplateListRow(template: template) {
-                            // Edit action guarded by isDataReady
-                            guard isDataReady else { return }
-                            prewarm(template)
-                            selectedTemplate = template
-                            showingEditTemplate = true
-                        }
+                        TimerTemplateListRow(template: template)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    delete(template)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+
+                                Button {
+                                    editingTemplate = template
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
+                            }
                     }
-                    .onDelete(perform: deleteTemplates)
+
                 }
             }
             .navigationTitle("Timer Templates")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }
-                }
-                
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New") {
                         guard isDataReady else { return }
@@ -55,34 +60,21 @@ struct TimerTemplatesListView: View {
                     }
                     .disabled(!isDataReady)
                 }
-                
-                if !templates.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        EditButton()
-                            .disabled(!isDataReady)
-                    }
-                }
             }
             .sheet(isPresented: $showingNewTemplate) {
                 TimerTemplateEditor()
             }
-            .sheet(isPresented: $showingEditTemplate) {
-                if let template = selectedTemplate {
-                    TimerTemplateEditor(existingTemplate: template)
-                }
+            .sheet(item: $editingTemplate) { template in
+                TimerTemplateEditor(existingTemplate: template)
             }
         }
     }
     
-    private func deleteTemplates(offsets: IndexSet) {
-        guard isDataReady else { return }
-        for index in offsets {
-            context.delete(templates[index])
-        }
+    
+    private func delete(_ template: TimerTemplate) {
+        context.delete(template)
         try? context.save()
     }
-    
-    
     // Touching relationships to ensure SwiftData realizes them before presenting the editor
     private func prewarm(_ template: TimerTemplate) {
         // Force access to commonly used properties to avoid first-render hiccups
@@ -99,7 +91,6 @@ struct TimerTemplatesListView: View {
 // MARK: - Timer Template List Row
 struct TimerTemplateListRow: View {
     let template: TimerTemplate
-    let onEdit: () -> Void
     
     var body: some View {
         HStack {
@@ -162,13 +153,6 @@ struct TimerTemplateListRow: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
-            }
-            
-            Spacer()
-            
-            Button(action: onEdit) {
-                Image(systemName: "pencil")
-                    .foregroundColor(.blue)
             }
             .buttonStyle(.plain)
         }

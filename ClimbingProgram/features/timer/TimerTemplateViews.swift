@@ -16,6 +16,7 @@ struct TimerTemplateSelector: View {
     let onTemplateSelected: (TimerTemplate) -> Void
     
     @State private var showingNewTemplate = false
+    @State private var editingTemplate: TimerTemplate? = nil
     
     var body: some View {
         NavigationStack {
@@ -32,8 +33,20 @@ struct TimerTemplateSelector: View {
                             onTemplateSelected(template)
                             dismiss()
                         }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                delete(template)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button {
+                                editingTemplate = template
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
                     }
-                    .onDelete(perform: deleteTemplates)
                 }
             }
             .navigationTitle("Timer Templates")
@@ -52,13 +65,15 @@ struct TimerTemplateSelector: View {
             .sheet(isPresented: $showingNewTemplate) {
                 TimerTemplateEditor()
             }
+            .sheet(item: $editingTemplate) { template in
+                TimerTemplateEditor(existingTemplate: template)
+            }
+
         }
     }
     
-    private func deleteTemplates(offsets: IndexSet) {
-        for index in offsets {
-            context.delete(templates[index])
-        }
+    private func delete(_ template: TimerTemplate) {
+        context.delete(template)
         try? context.save()
     }
 }
