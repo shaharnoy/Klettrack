@@ -411,10 +411,12 @@ fileprivate final class ClimbStatsVM: ObservableObject {
     @Published var seasonality: [SeasonalitySlice] = []
     @Published var gradeByStyleStacks: [StackedBar<String,String>] = []
     @Published var angleByGradeStacks: [StackedBar<String,String>] = []
-    
+    @Published var gradeByPrevStacks: [StackedBar<String,String>] = []
+
     @Published var sendRatioByGradeStyle: [(grade: String, style: String, ratio: Double)] = []
     @Published var sendRatioByGrade: [(grade: String, ratio: Double)] = []
     @Published var sendRatioByStyle: [(style: String, ratio: Double)] = []
+
 
 
 
@@ -531,6 +533,8 @@ fileprivate final class ClimbStatsVM: ObservableObject {
 
         func sortPairs(_ d: [String:Int]) -> [(String,Int)] { d.map{($0.key,$0.value)}.sorted{ $0.1 > $1.1 } }
         distStyle = sortPairs(style); distGrade = sortPairs(grade); distAngle = sortPairs(angle)
+        gradeByPrevStacks = buildGradeByPrevStacks(sends: sendsBase)
+
 
 
         // Time series (auto bucket) — count climbs per bucket
@@ -693,6 +697,40 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         return out
     }
 
+    private func buildGradeByPrevStacks(sends: [ClimbEntry]) -> [StackedBar<String,String>] {
+        // keys for stacks
+        let prevKey = "Yes"
+        let newKey  = "No"
+
+        // set of grades to keep consistent columns
+        let grades = Array(Set(sends.map { $0.grade }))
+
+        // initialize rows per grade
+        var mapByGrade: [String: [String:Int]] = [:]
+        for g in grades {
+            mapByGrade[g] = [prevKey: 0, newKey: 0]
+        }
+
+        // count sends per boolean
+        for e in sends {
+            let g = e.grade
+            let wasPrev = (e.isPreviouslyClimbed ?? false)
+            if wasPrev {
+                mapByGrade[g, default: [prevKey:0, newKey:0]][prevKey, default: 0] += 1
+            } else {
+                mapByGrade[g, default: [prevKey:0, newKey:0]][newKey, default: 0] += 1
+            }
+        }
+
+        // turn into rows
+        var out: [StackedBar<String,String>] = grades.map { g in
+            .init(x: g, stacks: mapByGrade[g] ?? [prevKey:0, newKey:0])
+        }
+
+        // order by total desc like other stacks
+        out.sort { a, b in (a.stacks.values.reduce(0,+)) > (b.stacks.values.reduce(0,+)) }
+        return out
+    }
     private func buildSeasonality(entries: [ClimbEntry]) -> [SeasonalitySlice] {
         guard !entries.isEmpty else { return [] }
         var dict: [String: [Int: Double]] = [:] // style -> month -> value
@@ -934,6 +972,7 @@ fileprivate struct ClimbStatsView: View {
                 .padding(.horizontal)
 
                 DistributionCards(title: "Sends by Grade", rows: vm.distGrade, interactionsEnabled: false, vertical: true)
+                StackedByIsPreviouslyClimbedSection(title: "Sends by Grade (climbed before?)",stacks: vm.gradeByPrevStacks)
                 SendRatioSwitcherSection(gradeRows: vm.sendRatioByGrade, styleRows: vm.sendRatioByStyle)
                 StackedByGradeSection(title: "Grade by Angle", stacks: vm.angleByGradeStacks)
                 ClimbTimeSeriesSection(title: "Climbs over time", sends: vm.timeSeries, attempts: vm.attemptsSeries, ratio: vm.ratioSeries)
@@ -1538,6 +1577,64 @@ private func quarterLabel(_ d: Date) -> String {
     return "Q\(q)/\(String(format: "%02d", yy))"
 }
 
+
+fileprivate struct StackedByIsPreviouslyClimbedSection: View {
+    let title: String
+    let stacks: [StackedBar<String, String>]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+
+            if stacks.isEmpty {
+                EmptyStateCard()
+            } else {
+                let wanted = ["No", "Yes"] // stack order: "No" at bottom, "Yes" on top
+                Chart {
+                    ForEach(stacks) { row in
+                        let total = row.stacks.values.reduce(0, +)
+
+                        ForEach(wanted, id: \.self) { seg in
+                            let v = row.stacks[seg] ?? 0
+                            BarMark(
+                                x: .value("Grade", row.x),
+                                y: .value("Count", v),
+                                stacking: .standard
+                            )
+                            .cornerRadius(4)
+                            .foregroundStyle(by: .value("Segment", seg))
+                            .annotation(position: .top, alignment: .center) {
+                                if seg == wanted.last, total > 0 {
+                                    Text("\(total)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // consistent green palette like “Sends by Grade”
+                .chartForegroundStyleScale([
+                    "Yes": Color.yellow,
+                    "No": Color.green
+                ])
+                .chartLegend(.automatic)
+                .frame(height: 220)
+                .chartXAxis { AxisMarks(position: .bottom) }
+                .chartYAxis {
+                    AxisMarks(position: .leading) {
+                        AxisValueLabel().font(.caption)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal)
+    }
+}
 
 
 // MARK: - Grade stack charts

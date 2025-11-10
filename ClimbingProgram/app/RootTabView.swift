@@ -154,6 +154,9 @@ struct RootTabView: View {
             runOnce(per: "daytypedefaultflags_backfill_2025-11-08") {
                 backfillDefaultFlags(context)
             }
+            runOnce(per: "isPreviouslyClimbed_backfill_2025-11-09") {
+                backfillIsWorkInProgressIfNeeded(context)
+            }
             // Ensure all changes are committed
             try context.save()
             
@@ -218,3 +221,26 @@ func backfillDefaultFlags(_ context: ModelContext) {
     }
     if touched > 0 { try? context.save() }
 }
+//migration to move isPreviouslyClimbed to non-optional with default false
+  func backfillIsWorkInProgressIfNeeded(_ context: ModelContext) {
+      do {
+          let descriptor = FetchDescriptor<ClimbEntry>()
+          let entries = try context.fetch(descriptor)
+          var updatedCount = 0
+          for entry in entries {
+              if entry.isPreviouslyClimbed == false {
+                  continue
+              }
+              updatedCount += 1
+          }
+          if updatedCount > 0 {
+              try context.save()
+              print("Backfilled \(updatedCount) ClimbEntry records with isPreviouslyClimbed = false")
+          } else {
+              print("No missing isPreviouslyClimbed values found — migration not needed")
+          }
+      } catch {
+          print("backfillIsWorkInProgressIfNeeded failed: \(error.localizedDescription)")
+      }
+  }
+

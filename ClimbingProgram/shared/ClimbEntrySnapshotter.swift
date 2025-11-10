@@ -20,7 +20,7 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             style: c.style,
             attempts: c.attempts,
             isWorkInProgress: c.isWorkInProgress,
-            isPreviouslyClimbed: c.isPreviouslyClimbed,
+            isPreviouslyClimbed: c.isPreviouslyClimbed ?? false,
             holdColor: c.holdColor,
             gym: c.gym,
             notes: c.notes,
@@ -64,7 +64,7 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
         let style: String
         let attempts: String?
         let isWorkInProgress: Bool
-        let isPreviouslyClimbed: Bool?
+        let isPreviouslyClimbed: Bool
         let holdColor: HoldColor?
         let gym: String
         let notes: String?

@@ -57,7 +57,7 @@ enum LogCSV {
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
         // Header extended with climb_id and tb2_uuid at the end (backward compatible)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -102,6 +102,7 @@ enum LogCSV {
                     "", // style
                     "", // attempts
                     "", // wip
+                    "", //ispreviouslyClimbed
                     "", // gym
                     i.reps.map{ String(format: "%.3f", $0) } ?? "",
                     i.sets.map{ String(format: "%.3f", $0) } ?? "",
@@ -133,9 +134,11 @@ enum LogCSV {
                 csvEscape(climb.style),
                 csvEscape(climb.attempts ?? ""),
                 climb.isWorkInProgress ? "true" : "false",
+                climb.isPreviouslyClimbed ?? false ? "true" : "false" ,
                 csvEscape(climb.gym),
                 "", // reps
                 "", // sets
+                "", // duration
                 "", // weight_kg
                 "", // plan_id
                 "", // plan_name
@@ -228,6 +231,7 @@ private func climbSignature(date: Date,
                            style: String,
                            attempts: String?,
                            isWIP: Bool,
+                           ispreviouslyClimbed: Bool,
                            gym: String,
                            notes: String?) -> String {
     func norm(_ s: String?) -> String {
@@ -245,6 +249,7 @@ private func climbSignature(date: Date,
         norm(style),
         norm(attempts),
         isWIP ? "true" : "false",
+        ispreviouslyClimbed ? "true" : "false",
         norm(gym)
         // Notes intentionally excluded from deduplication
     ].joined(separator: "|")
@@ -271,6 +276,7 @@ extension LogCSV {
         let style: String?
         let attempts: String?
         let isWIP: Bool
+        let ispreviouslyClimbed: Bool
         let gym: String?
         let reps: Double?
         let sets: Double?
@@ -280,7 +286,6 @@ extension LogCSV {
         let planName: String?
         let dayTypeKey: String?
         let notes: String?
-        // New for climbs
         let climbId: UUID?
         let tb2UUID: String?
     }
@@ -341,6 +346,7 @@ extension LogCSV {
                 static let style      = ["style"]
                 static let attempts   = ["attempts"]
                 static let wip        = ["wip", "is_wip", "isworkinprogress"]
+                static let ispreviouslyClimbed = ["ispreviouslyclimbed", "previouslyclimbed"]
                 static let gym        = ["gym"]
                 static let reps       = ["reps"]
                 static let sets       = ["sets"]
@@ -380,7 +386,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -394,6 +400,7 @@ extension LogCSV {
                     styleStr     = val(parts, Cols.style)
                     attemptsStr  = val(parts, Cols.attempts)
                     wipStr       = val(parts, Cols.wip)
+                    ispreviouslyClimbedStr = val(parts, Cols.ispreviouslyClimbed)
                     gymStr       = val(parts, Cols.gym)
                     repsStr      = val(parts, Cols.reps)
                     setsStr      = val(parts, Cols.sets)
@@ -419,17 +426,18 @@ extension LogCSV {
                     styleStr     = p(8)
                     attemptsStr  = p(9)
                     wipStr       = p(10)
-                    gymStr       = p(11)
-                    repsStr      = p(12)
-                    setsStr      = p(13)
-                    durationStr  = p(14)
-                    weightStr    = p(15)
-                    planIdStr    = p(16)
-                    planName     = p(17)
-                    dayTypeStr   = p(18)
-                    notesRaw     = p(19)
-                    climbIdStr   = p(20)
-                    tb2UUIDStr   = p(21)
+                    ispreviouslyClimbedStr = p(11)
+                    gymStr       = p(12)
+                    repsStr      = p(13)
+                    setsStr      = p(14)
+                    durationStr  = p(15)
+                    weightStr    = p(16)
+                    planIdStr    = p(17)
+                    planName     = p(18)
+                    dayTypeStr   = p(19)
+                    notesRaw     = p(20)
+                    climbIdStr   = p(21)
+                    tb2UUIDStr   = p(22)
                 }
                 
                 // Minimal validity check
@@ -447,6 +455,7 @@ extension LogCSV {
                 let style = styleStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let attempts = attemptsStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let isWIP = wipStr.lowercased() == "true"
+                let ispreviouslyClimbed = ispreviouslyClimbedStr.lowercased() == "true"
                 let gym = gymStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let name = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
                 let reps = Double(repsStr.replacingOccurrences(of: ",", with: ".")
@@ -478,6 +487,7 @@ extension LogCSV {
                     style: style.isEmpty ? nil : style,
                     attempts: attempts.isEmpty ? nil : attempts,
                     isWIP: isWIP,
+                    ispreviouslyClimbed: ispreviouslyClimbed,
                     gym: gym.isEmpty ? nil : gym,
                     reps: reps,
                     sets: sets,
@@ -650,6 +660,7 @@ extension LogCSV {
                         existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
                         existing.attempts = e.attempts
                         existing.isWorkInProgress = e.isWIP
+                        existing.isPreviouslyClimbed = e.ispreviouslyClimbed
                         existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
                         existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
@@ -666,6 +677,7 @@ extension LogCSV {
                             style: e.style?.isEmpty == false ? e.style! : "Unknown",
                             attempts: e.attempts,
                             isWorkInProgress: e.isWIP,
+                            isPreviouslyClimbed: e.ispreviouslyClimbed,
                             holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
                             gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                             notes: e.notes,
@@ -695,6 +707,7 @@ extension LogCSV {
                         existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
                         existing.attempts = e.attempts
                         existing.isWorkInProgress = e.isWIP
+                        existing.isPreviouslyClimbed = e.ispreviouslyClimbed
                         existing.holdColor = e.holdColor.flatMap { HoldColor(rawValue: $0) }
                         existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
@@ -711,6 +724,7 @@ extension LogCSV {
                             style: e.style?.isEmpty == false ? e.style! : "Unknown",
                             attempts: e.attempts,
                             isWorkInProgress: e.isWIP,
+                            isPreviouslyClimbed: e.ispreviouslyClimbed,
                             holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
                             gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                             notes: e.notes,
@@ -734,6 +748,7 @@ extension LogCSV {
                         style: e.style ?? "",
                         attempts: e.attempts,
                         isWIP: e.isWIP,
+                        ispreviouslyClimbed: e.ispreviouslyClimbed,
                         gym: e.gym ?? "",
                         notes: e.notes
                     )
@@ -754,6 +769,7 @@ extension LogCSV {
                             style: climb.style,
                             attempts: climb.attempts,
                             isWIP: climb.isWorkInProgress,
+                            ispreviouslyClimbed: climb.isPreviouslyClimbed ?? false,
                             gym: climb.gym,
                             notes: climb.notes
                         )
@@ -771,6 +787,7 @@ extension LogCSV {
                     style: e.style?.isEmpty == false ? e.style! : "Unknown",
                     attempts: e.attempts,
                     isWorkInProgress: e.isWIP,
+                    isPreviouslyClimbed: e.ispreviouslyClimbed,
                     holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
                     gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                     notes: e.notes,

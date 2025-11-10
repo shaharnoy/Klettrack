@@ -35,7 +35,7 @@ final class ClimbEntry {
         style: String,
         attempts: String? = nil,
         isWorkInProgress: Bool = false,
-        isPreviouslyClimbed: Bool? = nil,
+        isPreviouslyClimbed: Bool = false,
         holdColor: HoldColor? = Optional.none,
         gym: String,
         notes: String? = nil,

@@ -37,13 +37,13 @@ enum TB2SyncManager {
     static func sync(using creds: TB2Credentials, board: TB2Client.Board, into context: ModelContext) async throws {
         let client = TB2Client()
         
-        // 1) Login -> token
+        // Login -> token
         let token = try await client.login(board: board, username: creds.username, password: creds.password)
         
-        // 2) Fetch shared maps: climbs + difficulties
+        //Fetch shared maps: climbs + difficulties
         let (climbsByUUID, diffByKey, fallbackDiffs) = try await fetchSharedMaps(client: client, board: board, token: token)
         
-        // 3) Pull ascents and bids
+        //Pull ascents and bids
         async let ascPages = client.syncPages(board: board, tablesAndSyncDates: ["ascents": TB2Client.Constants.baseSyncDate], token: token, maxPages: TB2Client.Constants.defaultMaxSyncPages)
         async let bidPages = client.syncPages(board: board, tablesAndSyncDates: ["bids": TB2Client.Constants.baseSyncDate], token: token, maxPages: TB2Client.Constants.defaultMaxSyncPages)
         let ascents = (try await ascPages).flatMap { $0.ascents ?? [] }
@@ -236,7 +236,7 @@ enum TB2SyncManager {
                 style: styleName,
                 attempts: String(r.tries),
                 isWorkInProgress: !r.isAscent,
-                isPreviouslyClimbed: previously ? true : nil,
+                isPreviouslyClimbed: previously ? true : false,
                 holdColor: nil,
                 gym: String(r.climbName ?? ""),
                 notes: r.climbName,
