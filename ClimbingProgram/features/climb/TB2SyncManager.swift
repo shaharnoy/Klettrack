@@ -52,13 +52,13 @@ enum TB2SyncManager {
         // 4) Summarize bids (tries per day/climb/angle/mirror)
         struct BidKey: Hashable { let uuid: String; let day: Date; let angle: Int?; let isMirror: Bool? }
         struct BidSum { var tries: Int; var comment: String? }
-        let cal = Calendar.current
+        //let cal = Calendar.current
         var bidSummary: [BidKey: BidSum] = [:]
         
         for b in bids {
             guard let uuid = b.climbUUID else { continue }
             guard let date = TB2DateParser.parse(b.climbedAt) else { continue } // strict: no fallback to now
-            let day = cal.startOfDay(for: date)
+            let day = date
             let key = BidKey(uuid: uuid, day: day, angle: b.angle, isMirror: b.isMirror)
             var sum = bidSummary[key] ?? BidSum(tries: 0, comment: nil)
             sum.tries += (b.bidCount ?? 1)
@@ -95,7 +95,7 @@ enum TB2SyncManager {
             let loggedGrade = TB2GradeMapper.grade(of: loggedNum)
             let displayedGrade = TB2GradeMapper.grade(of: disp)
             guard let date = TB2DateParser.parse(a.climbedAt) else { continue }
-            let day = cal.startOfDay(for: date)
+            let day = date
             let tries = (a.bidCount ?? a.attemptID ?? 1)
             let key = BidKey(uuid: uuid ?? "", day: day, angle: angle, isMirror: a.isMirror)
             let extra = bidSummary[key]?.tries ?? 0
@@ -149,6 +149,11 @@ enum TB2SyncManager {
         
         // Sort outside and pass into a MainActor-isolated function to avoid Swift 6 Sendable captures
         let sortedRows = rows.sorted(by: { $0.day < $1.day })
+        
+        //run migration to backfill precise climb times, once per board
+        runOnce(per: "tb2_backfill_precise_times_v1_4\(board.rawValue)") {
+            try? Self.backfillClimbTimesFromAPI(using: rows, into: context)
+        }
         try await applyRows(sortedRows, styleName: styleName, into: context)
     }
     
@@ -178,6 +183,7 @@ enum TB2SyncManager {
         }
         return (climbsByUUID, diffByKey, fallback)
     }
+    
     
     // MARK: - Apply to SwiftData (MainActor)
     
@@ -262,9 +268,98 @@ enum TB2SyncManager {
         let uuid = uuid_t(bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15])
         return UUID(uuid: uuid)
     }
+    
+    private static func dayKeyLocal(_ date: Date) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone.current   // ← match how startOfDay behaved before
+        let localStart = cal.startOfDay(for: date)
+        let comps = cal.dateComponents([.year, .month, .day], from: localStart)
+        return String(format: "%04d-%02d-%02d", comps.year ?? 0, comps.month ?? 0, comps.day ?? 0)
+    }
+
+
+    //one time migration to fix missing timestamps from boards api
+    private static func backfillClimbTimesFromAPI(using rows: [Row], into context: ModelContext) throws {
+        // Build an index from API rows: (uuid, angle, dayKeyUTC) -> precise Date
+        struct Key: Hashable { let uuid: String; let angle: Int?; let dayKey: String }
+
+        // Use only rows that have a UUID (TB2)
+        let apiRows = rows.filter { !$0.climbUUID.isEmpty }
+        guard !apiRows.isEmpty else { return }
+
+        var apiIndex: [Key: Date] = [:]
+
+        for r in apiRows {
+            let k = Key(uuid: r.climbUUID, angle: r.angle, dayKey: dayKeyLocal(r.day))
+            if let cur = apiIndex[k] {
+                // Prefer ascents; otherwise keep the earliest time as tiebreaker
+                if r.isAscent {
+                    apiIndex[k] = r.day
+                } else if cur > r.day {
+                    apiIndex[k] = r.day
+                }
+            } else {
+                apiIndex[k] = r.day
+            }
+        }
+        // Fetch existing climbs
+        let fetch = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.tb2ClimbUUID != nil })
+        let existing = (try? context.fetch(fetch)) ?? []
+
+        let localCal = Calendar(identifier: .gregorian)
+        let localTZ  = TimeZone.current
+        var changed = 0
+
+        for e in existing {
+            guard let uuid = e.tb2ClimbUUID else { continue }
+            let k = Key(uuid: uuid, angle: e.angleDegrees, dayKey: dayKeyLocal(e.dateLogged))
+            guard let apiDate = apiIndex[k] else { continue }
+
+            // If time is missing (00:00:00 local) OR differs from API timestamp, update it
+            let comps = localCal.dateComponents(in: localTZ, from: e.dateLogged)
+            let looksTruncated = (comps.hour == 0 && comps.minute == 0 && comps.second == 0)
+
+            if looksTruncated || e.dateLogged != apiDate {
+                print("date before: \(e.dateLogged)  datetime after: \(apiDate)")
+                e.dateLogged = apiDate
+                changed += 1
+            }
+        }
+
+        if changed > 0 { try context.save() }
+        
+        // --- Deduplicate exact-second duplicates (same uuid + timestamp) ---
+        let fetch2 = FetchDescriptor<ClimbEntry>(predicate: #Predicate { $0.tb2ClimbUUID != nil })
+        let allTB2 = (try? context.fetch(fetch2)) ?? []
+
+        struct DedupeKey: Hashable { let uuid: String; let angle: Int?; let tsSec: Int }
+        var buckets: [DedupeKey: [ClimbEntry]] = [:]
+
+        for e in allTB2 {
+            guard let uuid = e.tb2ClimbUUID else { continue }
+            let tsSec = Int(e.dateLogged.timeIntervalSince1970) // second precision
+            let key = DedupeKey(uuid: uuid, angle: e.angleDegrees, tsSec: tsSec)
+            buckets[key, default: []].append(e)
+        }
+
+        var deleted = 0
+        for (_, group) in buckets where group.count > 1 {
+            // Keep one deterministically (smallest UUID), delete the rest
+            let sorted = group.sorted { $0.id.uuidString < $1.id.uuidString }
+            for dup in sorted.dropFirst() {
+                print("Deleting duplicate ClimbEntry \(dup.id.uuidString) at \(dup.dateLogged)")
+                context.delete(dup)
+                deleted += 1
+            }
+        }
+
+        if deleted > 0 { try context.save() }
+
+    }
+
 }
 
-// MARK: - Local helpers (duplicated here so this target builds)
+// MARK: - Local helpers
 
 private struct TB2GradeMapper {
     static let mappingCSV = """
@@ -341,6 +436,8 @@ private struct TB2GradeMapper {
         return diffToGrade[key]
     }
 }
+
+
 
 private enum TB2DateParser {
     // ISO8601 variants

@@ -60,7 +60,7 @@ enum LogCSV {
         var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
 
         let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd"
+        df.dateFormat = "yyyy-MM-dd HH:mm:ss"
         df.timeZone = TimeZone.current
         df.locale = Locale(identifier: "en_US_POSIX")
 
@@ -363,8 +363,11 @@ extension LogCSV {
             let hasHeader = (idx(Cols.date) != nil && idx(Cols.type) != nil)
             let startIdx = hasHeader ? 1 : 0
             
-            let df = ISO8601DateFormatter()
-            df.formatOptions = [.withFullDate] // YYYY-MM-DD
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            df.timeZone = TimeZone.current
+            df.locale = Locale(identifier: "en_US_POSIX")
+
             
             // Helper for per-row value lookup by aliases
             func val(_ parts: [String], _ aliases: [String]) -> String {
@@ -665,7 +668,7 @@ extension LogCSV {
                         existing.ropeClimbType = ropeClimbType
                         existing.gym = e.gym?.isEmpty == false ? e.gym! : "Unknown"
                         existing.notes = e.notes
-                        existing.dateLogged = startOfDay
+                        existing.dateLogged = e.date
                         if let tb2 = e.tb2UUID { existing.tb2ClimbUUID = tb2 }
                     } else {
                         let climbEntry = ClimbEntry(
@@ -681,7 +684,7 @@ extension LogCSV {
                             holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
                             gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                             notes: e.notes,
-                            dateLogged: startOfDay,
+                            dateLogged: e.date,
                             tb2ClimbUUID: e.tb2UUID
                         )
                         context.insert(climbEntry)
@@ -728,7 +731,7 @@ extension LogCSV {
                             holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
                             gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                             notes: e.notes,
-                            dateLogged: startOfDay,
+                            dateLogged: e.date,
                             tb2ClimbUUID: tb2
                         )
                         context.insert(climbEntry)
@@ -791,7 +794,7 @@ extension LogCSV {
                     holdColor: e.holdColor.flatMap { HoldColor(rawValue: $0) },
                     gym: e.gym?.isEmpty == false ? e.gym! : "Unknown",
                     notes: e.notes,
-                    dateLogged: startOfDay
+                    dateLogged: e.date
                 )
                 context.insert(climbEntry)
                 inserted += 1
