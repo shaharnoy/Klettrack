@@ -146,7 +146,7 @@ struct SeedData {
             ensureEx("Boulder Campusing", into: contactPower, order: 2, area: "Pull",
                      reps: "3–8 moves", sets: "3–5", rest: "3 min")
             ensureEx("Big-Move Boulder Problems", into: contactPower, order: 3, area: "Pull",
-                     reps: "6–10 moves", sets: "5 sends", rest: "3 min")
+                     reps: "6–10 moves", sets: "5 ascents", rest: "3 min")
 
             let strengthEndurance = CatalogSeeder.ensureType("Strength-Endurance", in: climb)
             strengthEndurance.typeDescription = "Endurance work for fingers and pull muscles"
@@ -171,57 +171,59 @@ struct SeedData {
             let bMax = CatalogSeeder.ensureType("Maximum & contact Strength", in: boulder)
             bMax.typeDescription = "Bouldering"
 
-            let comb1 = ensureCombo("Combination 1", desc: "Limit and casual bouldering; 1:30 hours", in: bMax)
-            ensureComboEx("3–6 near-maximal boulders", into: comb1, order: 1, reps: "30 min", rest: "3 min/asc")
-            ensureComboEx("Work on 1–3 limit boulders", into: comb1, order: 2, reps: "30 min", rest: "3 min/asc")
+            let comb1 = ensureCombo("Limit combo", desc: "Limit and casual bouldering; 1:30 hours", in: bMax, deletingLegacyNames: ["Combination 1"])
+            ensureComboEx("3–6 near-maximal boulders", into: comb1, order: 1, duration: "30 min", rest: "3 min/asc")
+            ensureComboEx("Work on 1–3 limit boulders", into: comb1, order: 2, duration: "60 min", rest: "3 min/asc")
 
-            let comb2 = ensureCombo("Combination 2", desc: "Mixed combination, rest 8 min between blocks; 1:45 hours", in: bMax)
-            ensureComboEx("Big, powerful moves", into: comb2, order: 1, reps: "35–45° for 25 min", rest: "3 min/asc")
-            ensureComboEx("Footless problem on big holds", into: comb2, order: 2, reps: "20–45° for 15 min", rest: "3 min/asc")
-            ensureComboEx("Coordination / dyno", into: comb2, order: 3, reps: "vertical–30° for 20 min", rest: "3 min/asc")
-            ensureComboEx("Slabs", into: comb2, order: 4, reps: "vertical–30° for 20 min", rest: "3 min/asc")
+            let comb2 = ensureCombo("Styles combo", desc: "Mixed combination, rest 8 min between blocks; 1:45 hours", in: bMax, deletingLegacyNames: ["Combination 2"])
+            ensureComboEx("Big, powerful moves", into: comb2, order: 1, duration: "25 min", rest: "3 min/asc", notes:"35°–45°")
+            ensureComboEx("Footless problem on big holds", into: comb2, order: 2, duration: "15 min", rest: "3 min/asc" ,notes:"20°–45°")
+            ensureComboEx("Coordination / dyno", into: comb2, order: 3, duration: "20 min", rest: "3 min/asc" ,notes:"0°–30°")
+            ensureComboEx("Slabs", into: comb2, order: 4, duration: "20 min", rest: "3 min/asc" ,notes:"0°–30°")
 
-            let comb3 = ensureCombo("Combination 3", desc: "Grade blocks with 6 min rest blocks", in: bMax)
-            ensureComboEx("1. 3 problems V0–V2", into: comb3, order: 1, rest: "1 min/send", notes: "rest block 3 min")
-            ensureComboEx("2. 3 problems V3–V4", into: comb3, order: 2, rest: "3 min/send", notes: "rest block 6 min")
-            ensureComboEx("3. 3 problems V4–V5", into: comb3, order: 3, rest: "3 min/send", notes: "rest block 6 min")
-            ensureComboEx("4. 3-5 problems V5–V6", into: comb3, order: 4, rest: "5 min/send", notes: "rest block 6 min")
-            ensureComboEx("5. 3 problems V4–V5", into: comb3, order: 5, rest: "3 min/send", notes: "rest block 6 min")
+            let comb3 = ensureCombo("Grades combo", desc: "Grade blocks with 6 min rest blocks; 1:50 hours", in: bMax, deletingLegacyNames: ["Combination 3"])
+            ensureComboEx("V0–V2", into: comb3, order: 1,reps:"3", rest: "1 min/asc", notes: "rest block 3 min",  deletingLegacyNames: ["1. 3 problems V0–V2"])
+            ensureComboEx("V3–V4", into: comb3, order: 2,reps:"3", rest: "3 min/asc", notes: "rest block 6 min",  deletingLegacyNames: ["2. 3 problems V3–V4"])
+            ensureComboEx("V4–V5 (1st)", into: comb3, order: 3, reps:"3", rest: "3 min/asc", notes: "rest block 6 min",  deletingLegacyNames: ["3. 3 problems V4–V5"])
+            ensureComboEx("V5–V6", into: comb3, order: 4, reps:"5", rest: "5 min/asc", notes: "rest block 6 min",  deletingLegacyNames: ["4. 3-5 problems V5–V6, 4. 5 problems V5–V6"])
+            ensureComboEx("V4–V5 (2nd)", into: comb3, order: 5, reps:"3", rest: "3 min/asc", notes: "rest block 6 min",  deletingLegacyNames: ["5. 3 problems V4–V5"])
 
-            let comb4 = ensureCombo("Combination 4", desc: "Boards & limit boulders", in: bMax)
-            ensureComboEx("Work on 1–3 limit boulders", into: comb4, order: 1, reps: "30 min")
-            ensureComboEx("Board", into: comb4, order: 2, reps: "45 min", rest: "3 min/attempt")
+            let comb4 = ensureCombo("Board & limit combo", desc: "Boards & limit boulders; 1:30 hours", in: bMax, deletingLegacyNames: ["Combination 4"])
+            ensureComboEx("Work on 1–3 limit boulders", into: comb4, order: 1, duration: "30 min", rest: "3 min/asc")
+            ensureComboEx("Board", into: comb4, order: 2, duration: "60 min", rest: "3 min/asc")
 
             bMax.combinations = dedupPreserveOrder(bMax.combinations)
 
             let bSE = CatalogSeeder.ensureType("Strength-Endurance", in: boulder)
-            bSE.typeDescription = "SE circuits for bouldering"
+            bSE.typeDescription = "SE circuits"
 
-            let combSE1 = ensureCombo("Combination 1", in: bSE)
+            let combSE1 = ensureCombo("Classic 4X4", in: bSE, deletingLegacyNames: ["Combination 1"])
             ensureComboEx("Bouldering 4×4s", into: combSE1, order: 1,
+                          reps: "4", duration: "on the minute", sets: "4", rest: "4 min",
                           notes: "4 boulders, 4 times on the minute - rest 4 minutes between problmes")
 
-            let combSE2 = ensureCombo("Combination 2", in: bSE)
+            let combSE2 = ensureCombo("Big moves 4×4s", in: bSE, deletingLegacyNames: ["Combination 2"])
             ensureComboEx("Big-holds, big-move 4×4s", into: combSE2, order: 1,
+                          reps: "4", duration: "on the minute", sets: "4", rest: "4 min",
                           notes: "4 boulders, 4 times on the minute - rest 4 minutes between problmes")
 
-            let combSE3 = ensureCombo("Combination 3", desc: "Alternating V-grade blocks, no rest between sends, rest block 6 min", in: bSE)
-            ensureComboEx("1. 6 problems V0–V2", into: combSE3, order: 1, rest: "45 sec/send")
-            ensureComboEx("2. 3 problems V3–V4", into: combSE3, order: 2, reps: "no rest between sends", notes: "rest block 6 min")
-            ensureComboEx("3. 3 problems V4–V5", into: combSE3, order: 3, reps: "no rest between sends", notes: "rest block 6 min")
-            ensureComboEx("4. 3 problems V3–V4", into: combSE3, order: 4, reps: "no rest between sends", notes: "rest block 6 min")
-            ensureComboEx("5. 3 problems V4–V5", into: combSE3, order: 5, reps: "no rest between sends", notes: "rest block 6 min")
-            ensureComboEx("6. 3 problems V3–V4", into: combSE3, order: 6, reps: "no rest between sends", notes: "rest block 6 min")
-            ensureComboEx("7. 3 problems V4–V5", into: combSE3, order: 7, reps: "no rest between sends", notes: "rest block 6 min")
-            ensureComboEx("8. 3 problems V3–V4", into: combSE3, order: 8, reps: "no rest between sends", notes: "rest block 6 min")
+            let combSE3 = ensureCombo("Grades combo", desc: "Alternating grade blocks with no rest between sends; 1:30 hours", in: bSE, deletingLegacyNames: ["Combination 3"])
+            ensureComboEx("V0–V2", into: combSE3, order: 1, reps:"6", rest: "45 sec/asc", notes: "rest block 2 min",  deletingLegacyNames: ["1. 6 problems V0–V2"])
+            ensureComboEx("V3–V4 (1st)", into: combSE3, order: 2, reps:"3", rest: "no rest between ascents", notes: "rest block 6 min",  deletingLegacyNames: ["2. 3 problems V3–V4"])
+            ensureComboEx("V4–V5 (1st)" , into: combSE3, order: 3, reps:"3", rest: "no rest between ascents", notes: "rest block 6 min",  deletingLegacyNames: ["3. 3 problems V4–V5"])
+            ensureComboEx("V3–V4 (2nd)", into: combSE3, order: 4, reps:"3", rest: "no rest between ascents", notes: "rest block 6 min",  deletingLegacyNames: ["4. 3 problems V3–V4"])
+            ensureComboEx("V4–V5 (2nd)", into: combSE3, order: 5, reps:"3", rest: "no rest between ascents", notes: "rest block 6 min",  deletingLegacyNames: ["5. 3 problems V4–V5"])
+            ensureComboEx("V3–V4 (3rd)", into: combSE3, order: 6, reps:"3", rest: "no rest between ascents", notes: "rest block 6 min",  deletingLegacyNames: ["6. 3 problems V3–V4"])
+            ensureComboEx("V4–V5 (3rd)", into: combSE3, order: 7, reps:"3", rest: "no rest between ascents", notes: "rest block 6 min",  deletingLegacyNames: ["7. 3 problems V4–V5"])
+            ensureComboEx("V3–V4 (4th)", into: combSE3, order: 8, reps:"3", rest: "no rest between ascents", notes: "rest block 6 min",  deletingLegacyNames: ["8. 3 problems V3–V4"])
 
-            let combSE4 = ensureCombo("Combination 4", in: bSE)
+            let combSE4 = ensureCombo("Board 3×6 combo", desc: "like 4×4s but for boards and harder", in: bSE, deletingLegacyNames: ["Combination 4"])
             ensureComboEx("Board 3×6", into: combSE4, order: 1,
+                          reps: "3", duration: "on the minute", sets: "6", rest: "3 min",
                           notes: "6 boulders, 3 times on the minute - rest 3 minutes between boulders")
 
             bSE.combinations = dedupPreserveOrder(bSE.combinations)
 
-            // Commit upserted activities/types/combos/exercises
             try? ctx.save()
         }
     }
@@ -269,7 +271,33 @@ struct SeedData {
 
     /// Upsert a BoulderCombination by name
     @discardableResult
-    private static func ensureCombo(_ name: String, desc: String? = nil, in type: TrainingType) -> BoulderCombination {
+    private static func ensureCombo(
+        _ name: String,
+        desc: String? = nil,
+        in type: TrainingType,
+        deletingLegacyNames legacyNames: [String] = [],
+        context: ModelContext? = nil
+    ) -> BoulderCombination {
+        //Optionally remove legacy combos first
+        if !legacyNames.isEmpty {
+            func norm(_ s: String) -> String {
+                s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }
+            let legacy = Set(legacyNames.map(norm))
+
+            // collect matches
+            let toDelete = type.combinations.filter { legacy.contains(norm($0.name)) }
+            if !toDelete.isEmpty {
+                // detach from relationship
+                type.combinations.removeAll { combo in
+                    toDelete.contains(where: { $0 === combo })
+                }
+                // hard-delete if context provided (SwiftData)
+                if let ctx = context {
+                    toDelete.forEach { ctx.delete($0) }
+                }
+            }
+        }
         if let c = type.combinations.first(where: { $0.name == name }) {
             if c.comboDescription != desc { c.comboDescription = desc }
             return c
@@ -290,8 +318,29 @@ struct SeedData {
         sets: String? = nil,
         rest: String? = nil,
         notes: String? = nil,
-        description: String? = nil
+        description: String? = nil,
+        deletingLegacyNames legacyNames: [String] = [],
+        context: ModelContext? = nil
     ) -> Exercise {
+        //Optionally remove legacy exercises first
+        if !legacyNames.isEmpty {
+            func norm(_ s: String) -> String {
+                s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }
+            let legacy = Set(legacyNames.map(norm))
+            let toDelete = combo.exercises.filter { legacy.contains(norm($0.name)) }
+
+            if !toDelete.isEmpty {
+                // detach from relationship
+                combo.exercises.removeAll { ex in
+                    toDelete.contains(where: { $0 === ex })
+                }
+                // hard-delete if context provided (SwiftData)
+                if let ctx = context {
+                    toDelete.forEach { ctx.delete($0) }
+                }
+            }
+        }
         if let ex = combo.exercises.first(where: { $0.name == name }) {
             ex.order = order
             ex.repsText = reps
@@ -419,4 +468,6 @@ private func reconcilePlanDayTypesIfNeeded(_ context: ModelContext) {
     for d in nilTypeDays { d.type = restType }
     try? context.save()
 }
+
+
 
