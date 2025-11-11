@@ -1348,7 +1348,7 @@ private struct QuickExerciseProgress: View {
 
     struct DataPoint: Identifiable { let id = UUID(); let date: Date; let value: Double }
 
-    enum Metric: String, CaseIterable, Identifiable { case reps = "Reps", sets = "Sets", weight = "Weight (kg)", duration = "Duration (min)"; var id: String { rawValue } }
+    enum Metric: String, CaseIterable, Identifiable { case reps = "Reps", sets = "Sets", weight = "Weight", duration = "Duration"; var id: String { rawValue } }
     @State private var metric: Metric = .reps
     
     // Break down complex view hierarchy into smaller components
@@ -1372,7 +1372,7 @@ private struct QuickExerciseProgress: View {
                                 repsTxt.map { "\($0)x reps" },
                                 setsTxt.map { "\($0) sets" },
                                 weightTxt.map { "\($0) kg" },
-                                durationTxt.map { "\($0) mirn" },
+                                durationTxt.map { "\($0) min" },
                             ].compactMap { $0 }.joined(separator: " · "))
                             .foregroundStyle(.secondary)
                         }
