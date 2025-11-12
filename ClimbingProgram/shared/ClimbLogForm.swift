@@ -40,6 +40,12 @@ struct ClimbLogForm: View {
     @State private var newStyleName = ""
     @State private var newGymName = ""
     
+    // Focus management
+        enum Field: Hashable {
+            case grade, angle
+        }
+        @FocusState private var focusedField: Field?
+    
     // Computed properties to get available options
     private var availableStyles: [String] {
         // Prefer live SwiftData; only fall back to defaults if none exist in the store
@@ -140,17 +146,47 @@ struct ClimbLogForm: View {
                 Section("Details") {
                     DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
                     LabeledContent("Grade") {
-                            TextField("7A / V6", text: $grade, prompt: nil) //
+                            TextField("e.g. 7a/V6", text: $grade, prompt: nil) //
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled(true)
                                 .multilineTextAlignment(.trailing)
-                        }
+                                .keyboardType(.numbersAndPunctuation)
+                                .focused($focusedField, equals: .grade)
+                                .submitLabel(.done)
+                                .onSubmit {
+                                    focusedField = .angle
+                                }
+}
                     LabeledContent("Angle") {
                             HStack(spacing: 6) {
                                 TextField("0", text: $angleDegrees, prompt: nil)
                                     .keyboardType(.numberPad)
                                     .multilineTextAlignment(.trailing)
                                     .frame(width: 80)
+                                    .focused($focusedField, equals: .angle)
+                                    .toolbar {
+                                        ToolbarItemGroup(placement: .keyboard) {
+                                            if focusedField == .angle {
+                                                Spacer()
+                                                Button {
+                                                    focusedField = nil
+                                                } label: {
+                                                    Image(systemName: "checkmark")
+                                                        .font(.system(size: 12, weight: .bold))
+                                                        .foregroundStyle(.primary)
+                                                        .frame(width: 28, height: 28)
+                                                        .background(Color.accentColor.opacity(0.15))
+                                                        .clipShape(Circle())
+                                                        .overlay(
+                                                            Circle()
+                                                                .stroke(.secondary.opacity(0.3), lineWidth: 0.5)
+                                                        )
+                                                        .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                    }
                             }
                         }
                     Stepper(value: attemptsIntBinding, in: 1...9999) {
