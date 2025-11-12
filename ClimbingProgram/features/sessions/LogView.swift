@@ -14,35 +14,23 @@ import UIKit // uses ShareSheet from your Plans module (or provide a local one)
 extension Session {
     @MainActor
     func removeItem(_ item: SessionItem, in context: ModelContext, deleteEmptySession: Bool = true) throws {
-        print("🧹 removeItem called for session:", id, "item:", item.id)
-        print("   Items before:", items.map(\.id))
-
         let foundIdx = items.firstIndex(where: { $0.id == item.id })
-        print("   Found index:", String(describing: foundIdx))
-
         if let idx = foundIdx {
             items.remove(at: idx)
-            print("   ✅ Removed by index at:", idx)
         } else {
             // Fallback: if the item isn't in this session array (shouldn't happen), try deleting it directly
-            print("   ⚠️ Item not found in session.items; deleting directly from context")
             context.delete(item)
         }
 
         if deleteEmptySession && items.isEmpty {
-            print("   🗑️ Session now empty; deleting session:", id)
             context.delete(self)
         }
 
         do {
             try context.save()
-            print("   💾 Context save OK after delete")
         } catch {
-            print("   ❌ Context save failed:", error.localizedDescription)
             throw error
         }
-
-        print("   Items after:", items.map(\.id))
     }
 }
 
@@ -713,7 +701,7 @@ private struct CombinedLogList: View {
             if grouped[dateKey] == nil {
                 grouped[dateKey] = (exercises: 0, climbs: 0, session: nil, climbEntries: [])
             }
-            grouped[dateKey]?.exercises = session.items.count
+            grouped[dateKey]?.exercises = Array(session.items).count
             grouped[dateKey]?.session = session
         }
         
@@ -757,23 +745,30 @@ private struct CombinedLogList: View {
         .listStyle(.insetGrouped)
     }
     
+    @MainActor
     private func delete(_ offsets: IndexSet) {
-        for index in offsets {
-            let date = sortedDates[index]
-            let dayData = groupedData[date]!
-            
-            // Delete session if exists
-            if let session = dayData.session {
-                context.delete(session)
+        withAnimation {
+            for index in offsets {
+                let date = sortedDates[index]
+                guard let dayData = groupedData[date] else { continue }
+
+                //If there's a Session, remove its items first
+                if let session = dayData.session {
+                    for item in Array(session.items) {
+                        context.delete(item)
+                    }
+                    context.delete(session)
+                }
+
+                // 2) Delete all climbs for that day
+                for climb in dayData.climbEntries {
+                    context.delete(climb)
+                }
             }
-            
-            // Delete climb entries
-            for climbEntry in dayData.climbEntries {
-                context.delete(climbEntry)
-            }
+            try? context.save()
         }
-        try? context.save()
     }
+
 }
 
 private struct CombinedDayRow: View {
@@ -913,20 +908,22 @@ private struct CombinedDayDetailView: View {
         .navigationTitle(date.formatted(date: .abbreviated, time: .omitted))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 10) {
-                    // Reorder toggle (three horizontal lines ↔ checkmark)
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            editMode?.wrappedValue =
-                            (editMode?.wrappedValue == .active) ? .inactive : .active
+            // Only show the reorder toggle if there are exercises
+            if let session, !session.items.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                editMode?.wrappedValue =
+                                    (editMode?.wrappedValue == .active) ? .inactive : .active
+                            }
+                        } label: {
+                            Image(systemName:
+                                    editMode?.wrappedValue == .active
+                                  ? "checkmark"
+                                  : "line.3.horizontal"
+                            )
                         }
-                    } label: {
-                        Image(systemName:
-                                editMode?.wrappedValue == .active
-                              ? "checkmark"
-                              : "line.3.horizontal"
-                        )
                     }
                 }
             }
@@ -935,7 +932,6 @@ private struct CombinedDayDetailView: View {
                     Button(action: { addExercise() }) {
                         Label("Add Exercise", systemImage: "dumbbell")
                     }
-                    
                     Button(action: { showingAddClimb = true }) {
                         Label("Add Climb", systemImage: "figure.climbing")
                     }
@@ -945,6 +941,7 @@ private struct CombinedDayDetailView: View {
                 .disabled(!isDataReady)
             }
         }
+
         .sheet(isPresented: $showingAddItem) {
             if let session = session {
                 AddSessionItemSheet(session: session)
