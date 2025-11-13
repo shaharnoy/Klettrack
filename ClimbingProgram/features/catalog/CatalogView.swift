@@ -628,7 +628,7 @@ private struct ExerciseRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Circle().fill(tint.gradient)        // 👈 subtle gradient, Dark Mode safe
+                Circle().fill(tint.gradient)
                     .frame(width: 8, height: 8)
                 Text(ex.name)
                     .font(.headline)

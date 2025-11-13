@@ -851,19 +851,19 @@ struct PlanDayEditor: View {
                 HStack(spacing: 12) {
                     if let reps = exerciseInfo.repsText {
                         HStack(spacing: 4) {
-                            Text("Rep").bold().foregroundStyle(.primary)
+                            Text("Reps").bold().foregroundStyle(.primary)
                             Text(reps)
                         }
                     }
                     if let sets = exerciseInfo.setsText {
                         HStack(spacing: 4) {
-                            Text("Set").bold().foregroundStyle(.primary)
+                            Text("Sets").bold().foregroundStyle(.primary)
                             Text(sets)
                         }
                     }
                     if let duration = exerciseInfo.durationText {
                         HStack(spacing: 4) {
-                            Text("Time").bold().foregroundStyle(.primary)
+                            Text("Duration").bold().foregroundStyle(.primary)
                             Text(duration)
                         }
                     }
@@ -877,12 +877,22 @@ struct PlanDayEditor: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 4)
+                HStack(spacing: 12) {
+                    if let notes = exerciseInfo.notes {
+                        HStack(spacing: 4) {
+                            Text(notes).italic()
+                        }
+                    }
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 4)
             }
         }
     }
     
     // Helper to get exercise information from catalog
-    private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?,durationText: String?, hasGuidance: Bool) {
+    private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?,notes: String?,durationText: String?, hasGuidance: Bool) {
         let exerciseDescriptor = FetchDescriptor<Exercise>()
         let allExercises = (try? context.fetch(exerciseDescriptor)) ?? []
         
@@ -892,13 +902,15 @@ struct PlanDayEditor: View {
         let reps = exercise?.repsText
         let sets = exercise?.setsText
         let rest = exercise?.restText
+        let notes = exercise?.notes
         let duration = exercise?.durationText
         let hasGuidance = (reps != nil && !reps!.isEmpty) ||
                          (sets != nil && !sets!.isEmpty) ||
                          (rest != nil && !rest!.isEmpty) ||
+                         (notes != nil && !notes!.isEmpty) ||
                          (duration != nil && !duration!.isEmpty)
         
-        return (reps, sets, rest, duration, hasGuidance)
+        return (reps, sets, rest,notes, duration, hasGuidance)
     }
     
     // Helper function to check if an exercise has been quick-logged today
