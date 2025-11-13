@@ -390,6 +390,28 @@ struct ClimbView: View {
     
     private func deleteClimb(_ climb: ClimbEntry) {
         withAnimation {
+            // media will be deleted and cannot be undo
+            let climbID = climb.id
+                    //Fetch all media linked to this climb
+                    let mediaToDelete: [ClimbMedia]
+                    do {
+                        let descriptor = FetchDescriptor<ClimbMedia>(
+                            predicate: #Predicate<ClimbMedia> { media in
+                                media.climb.id == climbID
+                            }
+                        )
+                        mediaToDelete = try modelContext.fetch(descriptor)
+                    } catch {
+                        print("Failed to fetch media for climb \(climbID): \(error)")
+                        // Fallback: use the relationship if available
+                        mediaToDelete = climb.media
+                    }
+
+                    //Delete their files from Documents
+                    for media in mediaToDelete {
+                        deleteMediaFile(named: media.fileName)
+                    }
+            //all other data is being "undo"
             dumpUndoContext("deleteClimb.begin")
             // Ensure we have an UndoManager attached and connect handler
             let assigned = undoManager ?? UndoManager()
@@ -402,16 +424,44 @@ struct ClimbView: View {
             
             // Show Undo snackbar using shared controller + banner
             undoSnackbar.show(message: "Climb deleted") {
-                // On undo, handler will undo and ensure restore
-                deleteHandler.performUndoAndEnsureRestore()
+            // On undo, handler will undo and ensure restore
+            deleteHandler.performUndoAndEnsureRestore()
+                
+            //clean up any media rows whose files no longer exist since we don't restore files on undo
+            cleanUpMissingMedia(for: climbID, in: modelContext)
             }
         }
     }
-
+    
     private func handleUndoTap() {
         // If you still call this from anywhere, route through the snackbar controller
         undoSnackbar.performUndo()
     }
+   
+    private func cleanUpMissingMedia(for climbID: UUID, in context: ModelContext) {
+        do {
+            let descriptor = FetchDescriptor<ClimbMedia>(
+                predicate: #Predicate<ClimbMedia> { media in
+                    media.climb.id == climbID
+                }
+            )
+            let medias = try context.fetch(descriptor)
+            var removed = 0
+            for media in medias {
+                if !media.hasFileOnDisk {
+                    context.delete(media)
+                    removed += 1
+                }
+            }
+            if removed > 0 {
+                try context.save()
+                print("Removed \(removed) media entries without files for climb \(climbID)")
+            }
+        } catch {
+            print("Failed to clean up missing media for climb \(climbID): \(error)")
+        }
+    }
+
 }
 
 // MARK: - Snapshot of a climb for robust undo fallback
@@ -1027,23 +1077,19 @@ struct EditClimbView: View {
             print("Failed to save context after adding media: \(error)")
         }
     }
-
-
-
-
+    
     private func deleteMedia(_ media: ClimbMedia) {
-            let fm = FileManager.default
-            if let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-                let url = dir.appendingPathComponent(media.fileName)
-                try? fm.removeItem(at: url)
-            }
-            modelContext.delete(media)
-            do {
-                try modelContext.save()
-            } catch {
-                print("Failed to delete media: \(error)")
-            }
+        deleteMediaFile(named: media.fileName)
+
+        modelContext.delete(media)
+        do {
+            try modelContext.save()
+        } catch {
+            print(" Failed to delete media entity: \(error)")
         }
+    }
+
+
     // Generate a thumbnail UIImage for a video URL
         private func generateVideoThumbnail(for url: URL) -> UIImage? {
             let asset = AVAsset(url: url)
@@ -1057,7 +1103,7 @@ struct EditClimbView: View {
                 let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
                 return UIImage(cgImage: cgImage)
             } catch {
-                print("⚠️ Failed to generate video thumbnail: \(error)")
+                print("Failed to generate video thumbnail: \(error)")
                 return nil
             }
         }
@@ -1258,6 +1304,56 @@ struct EdgeHoldShape: Shape {
         return p
     }
 }
+
+func deleteMediaFile(named fileName: String) {
+    let fm = FileManager.default
+    
+    func deleteSingle(_ name: String, label: String) {
+            do {
+                let url = try MediaStorage.url(forFileName: name)
+                let path = url.path
+                
+                print("Trying to delete \(label) at: \(path)")
+                
+                if fm.fileExists(atPath: path) {
+                    try fm.removeItem(at: url)
+                    print("Deleted \(label): \(path)")
+                } else {
+                    print("\(label.capitalized) does not exist (nothing to delete): \(path)")
+                }
+            } catch {
+                print("Error deleting \(label) '\(name)': \(error)")
+            }
+        }
+        
+        deleteSingle(fileName, label: "media file")
+
+        // Delete thumbnail(s)
+        do {
+            // base without extension, e.g. "climb-...0071" from "climb-...0071.mov"
+            let originalURL = URL(fileURLWithPath: fileName)
+            let base = originalURL.deletingPathExtension().lastPathComponent
+
+            let docs = try MediaStorage.mediaDirectory()
+            let allFiles = try fm.contentsOfDirectory(
+                at: docs,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+
+            // Match anything that starts with "<base>-thumb"
+            let thumbPrefix = base + "-thumb"
+
+            for url in allFiles {
+                let name = url.lastPathComponent
+                if name.hasPrefix(thumbPrefix) {
+                    deleteSingle(name, label: "thumbnail")
+                }
+            }
+        } catch {
+            print("Error while scanning for thumbnails of '\(fileName)': \(error)")
+        }
+    }
 
 // MARK: - Utilities
 

@@ -6,6 +6,7 @@
 //
 import SwiftUI
 import SwiftData
+import Foundation
 
 struct MediaManagerView: View {
     @Environment(\.modelContext) private var context
@@ -79,3 +80,25 @@ struct MediaManagerView: View {
         try? context.save()
     }
 }
+enum MediaStorage {
+    static func mediaDirectory() throws -> URL {
+        try FileManager.default.url(
+            for: .documentDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+    }
+
+    static func url(forFileName fileName: String) throws -> URL {
+        //fileName is an absolute path (e.g. "/var/mobile/Containers/...")
+        if fileName.hasPrefix("/") {
+            return URL(fileURLWithPath: fileName)
+        }
+        //fileName is just "abc123.jpg"
+        let docs = try mediaDirectory()
+        return docs.appendingPathComponent(fileName, isDirectory: false)
+    }
+}
+
+

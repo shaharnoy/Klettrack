@@ -252,3 +252,12 @@ final class ClimbMedia {
         self.climb = climb
     }
 }
+//helper to detect missing files
+extension ClimbMedia {
+    var hasFileOnDisk: Bool {
+        guard let url = try? MediaStorage.url(forFileName: fileName) else {
+            return false
+        }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+}
