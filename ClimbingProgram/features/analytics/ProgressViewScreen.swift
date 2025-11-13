@@ -149,19 +149,26 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
     }
     private func resetDateRangeToData() {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let earliest = input.sessions.map { $0.date }.min().map { cal.startOfDay(for: $0) } ?? today
-        let latest = input.sessions.map { $0.date }.max().map { cal.startOfDay(for: $0) } ?? today
-        dateRange.customStart = earliest
-        dateRange.customEnd = latest
+        let today = Date()
+        let earliest = input.sessions.map(\.date).min() ?? today
+        let latest  = input.sessions.map(\.date).max() ?? today
+        dateRange.customStart = cal.startOfDay(for: earliest)
+        dateRange.customEnd   = cal.date(byAdding: .second, value: -1,
+                               to: cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: latest))!)!
     }
 
+
     private func filterByDate(_ sessions: [Session]) -> [Session] {
+        let cal = Calendar.current
         let today = Date()
-        let start = dateRange.customStart ?? input.sessions.map { $0.date }.min() ?? today
-        let end = min(dateRange.customEnd ?? today, today)
+        let rawStart = dateRange.customStart ?? input.sessions.map(\.date).min() ?? today
+        let rawEnd   = dateRange.customEnd   ?? input.sessions.map(\.date).max() ?? today
+        let start = cal.startOfDay(for: rawStart)
+        let end   = cal.date(byAdding: .second, value: -1,
+                     to: cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: rawEnd))!)!
         return sessions.filter { $0.date >= start && $0.date <= end }
     }
+
 
     func updateInput(_ input: StatsInputData) {
         self.input = input
@@ -350,14 +357,16 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
         }
         return out
     }
-    // Inside ExerciseStatsVM
     private func fullDateRange() -> (start: Date, end: Date) {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let start = input.sessions.map { cal.startOfDay(for: $0.date) }.min() ?? today
-        let end   = input.sessions.map { cal.startOfDay(for: $0.date) }.max() ?? today
+        let todaySOD = cal.startOfDay(for: Date())
+        let start = input.climbs.map { cal.startOfDay(for: $0.dateLogged) }.min() ?? todaySOD
+        let latestSOD = input.climbs.map { cal.startOfDay(for: $0.dateLogged) }.max() ?? todaySOD
+        let end = cal.date(byAdding: .second, value: -1,
+                  to: cal.date(byAdding: .day, value: 1, to: latestSOD)!)!
         return (start, end)
     }
+
     private func isDateFiltered() -> Bool {
         let (s, e) = fullDateRange()
         return (dateRange.customStart != s) || (dateRange.customEnd != e)
@@ -446,25 +455,41 @@ fileprivate final class ClimbStatsVM: ObservableObject {
     }
     private func resetDateRangeToData() {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let earliest = input.climbs.map { $0.dateLogged }.min().map { cal.startOfDay(for: $0) } ?? today
-        let latest = input.climbs.map { $0.dateLogged }.max().map { cal.startOfDay(for: $0) } ?? today
+        let todayStart = cal.startOfDay(for: Date())
+        let earliest = input.climbs.map(\.dateLogged).min().map { cal.startOfDay(for: $0) } ?? todayStart
+        let latestSOD = input.climbs.map(\.dateLogged).max().map { cal.startOfDay(for: $0) } ?? todayStart
+        let endOfDay = cal.date(byAdding: .second, value: -1,
+                        to: cal.date(byAdding: .day, value: 1, to: latestSOD)!)!
         dateRange.customStart = earliest
-        dateRange.customEnd = latest
+        dateRange.customEnd   = endOfDay
     }
+
     private func filterByDate(_ climbs: [ClimbEntry]) -> [ClimbEntry] {
+        let cal = Calendar.current
         let today = Date()
-        let start = dateRange.customStart ?? input.climbs.map { $0.dateLogged }.min() ?? today
-        let end = min(dateRange.customEnd ?? today, today)
+        let rawStart = dateRange.customStart ?? input.climbs.map(\.dateLogged).min() ?? today
+        let rawEnd   = dateRange.customEnd   ?? input.climbs.map(\.dateLogged).max() ?? today
+        let start = cal.startOfDay(for: rawStart)
+        let end   = cal.date(byAdding: .second, value: -1,
+                     to: cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: rawEnd))!)!
         return climbs.filter { $0.dateLogged >= start && $0.dateLogged <= end }
     }
+
     
     private func buildCatalogs() {
         let climbs = input.climbs  // no date filtering here
         let gymsSet = Set(climbs.compactMap { e -> String? in
             // Exclude TB2 “fake gym” rows
-            if let tb2 = e.tb2ClimbUUID, !tb2.isEmpty, let notes = e.notes, e.gym == notes {
-                return nil
+            if let tb2 = e.tb2ClimbUUID, !tb2.isEmpty {
+                if e.gym.isEmpty {
+                    return nil
+                }
+                if e.gym == "Unknown" {
+                    return nil
+                }
+                if let notes = e.notes, e.gym == notes {
+                    return nil
+                }
             }
             return e.gym
         })
@@ -755,11 +780,14 @@ fileprivate final class ClimbStatsVM: ObservableObject {
     }
     private func fullDateRange() -> (start: Date, end: Date) {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let start = input.climbs.map { cal.startOfDay(for: $0.dateLogged) }.min() ?? today
-        let end   = input.climbs.map { cal.startOfDay(for: $0.dateLogged) }.max() ?? today
+        let todaySOD = cal.startOfDay(for: Date())
+        let start = input.climbs.map { cal.startOfDay(for: $0.dateLogged) }.min() ?? todaySOD
+        let latestSOD = input.climbs.map { cal.startOfDay(for: $0.dateLogged) }.max() ?? todaySOD
+        let end = cal.date(byAdding: .second, value: -1,
+                  to: cal.date(byAdding: .day, value: 1, to: latestSOD)!)!
         return (start, end)
     }
+
     private func isDateFiltered() -> Bool {
         let (s, e) = fullDateRange()
         return (dateRange.customStart != s) || (dateRange.customEnd != e)
