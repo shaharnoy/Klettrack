@@ -44,23 +44,6 @@ struct SettingsSheet: View {
                         .padding(.vertical, 1)
                     }
                     
-                    NavigationLink {
-                        TimerTemplatesListView()
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Image(systemName: "timer")
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Timer Templates")
-                                    .font(.body)
-                                Text("Create or customize timer templates")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .padding(.vertical, 1)
-                    }
-                    
                     //metadata manager
                     NavigationLink {
                         ClimbMetaManagerView()
@@ -88,6 +71,23 @@ struct SettingsSheet: View {
                                 Text("Media Manager")
                                     .font(.body)
                                 Text("Browse all climbs photos and videos")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 1)
+                    }
+                    
+                    NavigationLink {
+                        TimerTemplatesListView()
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "timer")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Timer Templates")
+                                    .font(.body)
+                                Text("Create or customize timer templates")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
