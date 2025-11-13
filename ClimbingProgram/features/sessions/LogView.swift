@@ -7,7 +7,7 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
-import UIKit // uses ShareSheet from your Plans module (or provide a local one)
+import UIKit
 
 // MARK: - Session helpers (deletion)
 

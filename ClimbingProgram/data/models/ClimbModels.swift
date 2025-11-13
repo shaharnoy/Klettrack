@@ -26,6 +26,10 @@ final class ClimbEntry {
     var dateLogged: Date
     var tb2ClimbUUID: String?
     
+    //support multiple media files per climb
+        @Relationship(deleteRule: .cascade, inverse: \ClimbMedia.climb)
+        var media: [ClimbMedia] = []
+    
     init(
         id: UUID = UUID(),
         climbType: ClimbType,
@@ -211,3 +215,40 @@ final class ClimbGym {
     }
 }
 
+// MARK: - Climb Media
+enum ClimbMediaType: String, Codable {
+    case photo
+    case video
+}
+
+@Model
+final class ClimbMedia {
+    @Attribute(.unique) var id: UUID
+    var fileName: String
+    var thumbnailFileName: String?
+    var typeRaw: String
+    var createdAt: Date
+
+    @Relationship var climb: ClimbEntry
+
+    var type: ClimbMediaType {
+        get { ClimbMediaType(rawValue: typeRaw) ?? .photo }
+        set { typeRaw = newValue.rawValue }
+    }
+
+    init(
+        id: UUID = UUID(),
+        fileName: String,
+        thumbnailFileName: String? = nil,
+        type: ClimbMediaType,
+        createdAt: Date = .now,
+        climb: ClimbEntry
+    ) {
+        self.id = id
+        self.fileName = fileName
+        self.thumbnailFileName = thumbnailFileName
+        self.typeRaw = type.rawValue
+        self.createdAt = createdAt
+        self.climb = climb
+    }
+}

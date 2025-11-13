@@ -12,9 +12,21 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
     typealias Item = ClimbEntry
 
     func makeSnapshot(from c: ClimbEntry) -> Any {
-        Snapshot(
+        // Snapshot associated media (if any)
+        let mediaSnapshots: [Snapshot.MediaSnapshot] = (c.media).map { m in
+            Snapshot.MediaSnapshot(
+                id: m.id,
+                fileName: m.fileName,
+                thumbnailFileName: m.thumbnailFileName,
+                typeRaw: m.type.rawValue,
+                createdAt: m.createdAt
+            )
+        }
+
+        return Snapshot(
             id: c.id,
             climbType: c.climbType,
+            ropeClimbType: c.ropeClimbType,
             grade: c.grade,
             angleDegrees: c.angleDegrees,
             style: c.style,
@@ -25,16 +37,20 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             gym: c.gym,
             notes: c.notes,
             dateLogged: c.dateLogged,
-            tb2ClimbUUID: c.tb2ClimbUUID
+            tb2ClimbUUID: c.tb2ClimbUUID,
+            media: mediaSnapshots
         )
     }
 
     @MainActor
     func restore(from snapshot: Any, into context: ModelContext) throws {
         guard let s = snapshot as? Snapshot else { return }
+
+        // 1) Restore the climb itself
         let restored = ClimbEntry(
             id: s.id,
             climbType: s.climbType,
+            ropeClimbType: s.ropeClimbType,
             grade: s.grade,
             angleDegrees: s.angleDegrees,
             style: s.style,
@@ -48,6 +64,20 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             tb2ClimbUUID: s.tb2ClimbUUID
         )
         context.insert(restored)
+
+        // 2) Restore associated media and re-link to this climb
+        for m in s.media {
+            let mediaType = ClimbMediaType(rawValue: m.typeRaw) ?? .photo
+            let media = ClimbMedia(
+                id: m.id,
+                fileName: m.fileName,
+                thumbnailFileName: m.thumbnailFileName,
+                type: mediaType,
+                createdAt: m.createdAt,
+                climb: restored
+            )
+            context.insert(media)
+        }
     }
 
     @MainActor
@@ -59,6 +89,7 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
     struct Snapshot {
         let id: UUID
         let climbType: ClimbType
+        let ropeClimbType: RopeClimbType?
         let grade: String
         let angleDegrees: Int?
         let style: String
@@ -70,6 +101,18 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
         let notes: String?
         let dateLogged: Date
         let tb2ClimbUUID: String?
+
+        // NEW: snapshot of all media entries for this climb
+        let media: [MediaSnapshot]
+
+        struct MediaSnapshot {
+            let id: UUID
+            let fileName: String
+            let thumbnailFileName: String?
+            /// Raw string for the media type ("photo" / "video") to avoid protocol issues
+            let typeRaw: String
+            let createdAt: Date
+        }
     }
 }
 

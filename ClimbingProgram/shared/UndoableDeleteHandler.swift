@@ -61,16 +61,14 @@ public struct UndoableDeleteHandler<S: UndoSnapshotting> {
 
     public func performUndoAndEnsureRestore() {
         guard let context else { return }
-        undoManager?.undo()
-        do { try context.save() } catch { }
 
-        guard let id = lastDeletedID else { return }
+        guard let snap = lastSnapshot else { return }
+
         do {
-            let match = try snapshotter.fetchByID(id, in: context)
-            if match == nil, let snap = lastSnapshot {
-                try snapshotter.restore(from: snap, into: context)
-                try context.save()
-            }
-        } catch { }
+            try snapshotter.restore(from: snap, into: context)
+            try context.save()
+        } catch {
+            print("Undo restore failed: \(error)")
+        }
     }
 }

@@ -35,7 +35,7 @@ struct SettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Exercise Catalog")
                                     .font(.body)
-                                Text("Browse and edit your climbing and training exercises")
+                                Text("Your climbing and training exercises")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -61,7 +61,7 @@ struct SettingsSheet: View {
                         .padding(.vertical, 1)
                     }
                     
-                    // NEW: metadata manager
+                    //metadata manager
                     NavigationLink {
                         ClimbMetaManagerView()
                     } label: {
@@ -70,7 +70,7 @@ struct SettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Data Manager")
                                     .font(.body)
-                                Text("Edit the plans, training day types, styles, and gyms used in the app")
+                                Text("Edit day types, styles, and gyms")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -78,7 +78,23 @@ struct SettingsSheet: View {
                         }
                         .padding(.vertical, 1)
                     }
-                    
+                    //Media Manager
+                    NavigationLink {
+                        MediaManagerView()
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "photo.stack")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Media Manager")
+                                    .font(.body)
+                                Text("Browse all climbs photos and videos")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 1)
+                    }
                     // Boards credentials menu
                     Menu {
                         Button("TB2 Login") {
@@ -183,20 +199,6 @@ struct SettingsSheet: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-        }
-        .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
-            Text("Made with ❤️ in Berlin")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 6)
-                .allowsHitTesting(false)
-        }
-        .safeAreaInset(edge: .bottom, alignment: .center, spacing: 0) {
-            Text("©klettrack")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 6)
-                .allowsHitTesting(false)
         }
         // Credentials prompt sheet (shared view)
         .sheet(isPresented: $showingCredentialsSheet) {

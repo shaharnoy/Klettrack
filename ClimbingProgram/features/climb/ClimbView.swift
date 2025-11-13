@@ -5,6 +5,10 @@
 
 import SwiftUI
 import SwiftData
+import PhotosUI
+import UIKit
+import AVKit
+import AVFoundation
 
 struct ClimbView: View {
     @Environment(\.isDataReady) private var isDataReady
@@ -228,7 +232,6 @@ struct ClimbView: View {
         Section {
             Button {
                 guard isDataReady else {
-                    print("debug:AddClimb tapped while isDataReady=false — ignoring")
                     return
                 }
                 showingAddClimb = true
@@ -567,7 +570,12 @@ struct EditClimbView: View {
     @State private var selectedDate: Date = Date()
     @State private var isPreviouslyClimbed: Bool = false
     @State private var selectedHoldColor: HoldColor = .none
-    @State private var selectedRopeClimbType: RopeClimbType = .lead //
+    @State private var selectedRopeClimbType: RopeClimbType = .lead
+    @State private var mediaPickerItems: [PhotosPickerItem] = []
+    @State private var mediaToViewFullScreen: ClimbMedia?
+    @State private var isDeletingMedia: Bool = false
+    @State private var isSaving: Bool = false
+    @State private var isLoadingMedia: Bool = false
     
     // Focus management
         enum Field: Hashable {
@@ -607,6 +615,7 @@ struct EditClimbView: View {
     
     var body: some View {
         NavigationStack {
+            ZStack {
             Form {
                 // Climb Type Picker
                 Picker("Type", selection: $climb.climbType) {
@@ -655,49 +664,49 @@ struct EditClimbView: View {
                 Section("Details") {
                     DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
                     LabeledContent("Grade") {
-                            TextField("e.g. 7a/V6", text: $grade, prompt: nil) //
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled(true)
-                                .multilineTextAlignment(.trailing)
-                                .keyboardType(.numbersAndPunctuation)
-                                .focused($focusedField, equals: .grade)
-                                .submitLabel(.done)
-                                .onSubmit {
-                                    focusedField = .angle
-                                }
-}
+                        TextField("e.g. 7a/V6", text: $grade, prompt: nil) //
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                            .multilineTextAlignment(.trailing)
+                            .keyboardType(.numbersAndPunctuation)
+                            .focused($focusedField, equals: .grade)
+                            .submitLabel(.done)
+                            .onSubmit {
+                                focusedField = .angle
+                            }
+                    }
                     LabeledContent("Angle") {
-                            HStack(spacing: 6) {
-                                TextField("0", text: $angleDegrees, prompt: nil)
-                                    .keyboardType(.numberPad)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(width: 80)
-                                    .focused($focusedField, equals: .angle)
-                                    .toolbar {
-                                        ToolbarItemGroup(placement: .keyboard) {
-                                            if focusedField == .angle {
-                                                Spacer()
-                                                Button {
-                                                    focusedField = nil
-                                                } label: {
-                                                    Image(systemName: "checkmark")
-                                                        .font(.system(size: 12, weight: .bold))
-                                                        .foregroundStyle(.primary)
-                                                        .frame(width: 28, height: 28)
-                                                        .background(Color.accentColor.opacity(0.15))
-                                                        .clipShape(Circle())
-                                                        .overlay(
-                                                            Circle()
-                                                                .stroke(.secondary.opacity(0.3), lineWidth: 0.5)
-                                                        )
-                                                        .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
-                                                }
-                                                .buttonStyle(.plain)
+                        HStack(spacing: 6) {
+                            TextField("0", text: $angleDegrees, prompt: nil)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 80)
+                                .focused($focusedField, equals: .angle)
+                                .toolbar {
+                                    ToolbarItemGroup(placement: .keyboard) {
+                                        if focusedField == .angle {
+                                            Spacer()
+                                            Button {
+                                                focusedField = nil
+                                            } label: {
+                                                Image(systemName: "checkmark")
+                                                    .font(.system(size: 12, weight: .bold))
+                                                    .foregroundStyle(.primary)
+                                                    .frame(width: 28, height: 28)
+                                                    .background(Color.accentColor.opacity(0.15))
+                                                    .clipShape(Circle())
+                                                    .overlay(
+                                                        Circle()
+                                                            .stroke(.secondary.opacity(0.3), lineWidth: 0.5)
+                                                    )
+                                                    .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
                                             }
+                                            .buttonStyle(.plain)
                                         }
                                     }
-                            }
+                                }
                         }
+                    }
                     Stepper(value: attemptsIntBinding, in: 1...9999) {
                         Text("Attempts: \(attemptsIntBinding.wrappedValue)")
                     }
@@ -714,7 +723,7 @@ struct EditClimbView: View {
                     }
                     TextField("Notes", text: $notes)
                 }
-            
+                
                 // Hold color picker
                 Section("Hold Color") {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
@@ -738,7 +747,7 @@ struct EditClimbView: View {
                                                 .foregroundColor(.secondary)
                                             : nil
                                         )
-
+                                    
                                 }
                             }
                             .buttonStyle(.plain)
@@ -746,22 +755,123 @@ struct EditClimbView: View {
                     }
                     .padding(.vertical, 8)
                 }
-                
+                Section {
+                    PhotosPicker(
+                        selection: $mediaPickerItems,
+                        maxSelectionCount: 10,
+                        matching: .any(of: [.images, .videos])
+                    ) {
+                        HStack {
+                            Image(systemName: "photo.on.rectangle.angled")
+                            Text("Add media")
+                            Spacer()
+                        }
+                    }
+
+                    if climb.media.isEmpty {
+                        Text("No media attached")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        let items = climb.media.sorted { $0.createdAt < $1.createdAt }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(items) { media in
+                                    ZStack(alignment: .topTrailing) {
+                                        MediaThumbnailView(media: media)
+                                            .onTapGesture {
+                                                if isDeletingMedia {
+                                                    deleteMedia(media)
+                                                } else {
+                                                    mediaToViewFullScreen = media
+                                                }
+                                            }
+                                        if isDeletingMedia {
+                                            Button {
+                                                deleteMedia(media)
+                                            } label: {
+                                                Image(systemName: "minus.circle.fill")
+                                                    .font(.system(size: 18, weight: .bold))
+                                                    .symbolRenderingMode(.palette)
+                                                    .foregroundStyle(.white, .red)
+                                                    .shadow(radius: 2)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .offset(x: 4, y: -4)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Media")
+                        Spacer()
+                        if !climb.media.isEmpty {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    isDeletingMedia.toggle()
+                                }
+                            } label: {
+                                Label(
+                                    isDeletingMedia ? "Done" : "Delete",
+                                    systemImage: isDeletingMedia ? "checkmark.circle" : "trash"
+                                )
+                                .labelStyle(.iconOnly)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(isDeletingMedia ? .green : .red)
+                        }
+                    }
+                }
             }
+            if isSaving || isLoadingMedia {
+                                ZStack {
+                                    Color.black.opacity(0.25)
+                                        .ignoresSafeArea()
+
+                                    VStack(spacing: 8) {
+                                        ProgressView()
+                                        Text(isSaving ? "Saving climb…" : "Uploading…")
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(16)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .shadow(radius: 10)
+                                }
+                                .transition(.opacity)
+                            }
+                        }
+            .onChange(of: mediaPickerItems) { _, newItems in
+                            Task {
+                                await handlePickedMedia(items: newItems)
+                            }
+                        }
+            .fullScreenCover(item: $mediaToViewFullScreen) { media in
+                        MediaFullScreenView(media: media)
+                    }
             .navigationTitle("Edit Climb")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
+                                Button("Cancel") {
+                                    dismiss()
+                                }
+                                .disabled(isSaving || isLoadingMedia)
+                            }
                 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        saveChanges()
-                    }
-                }
+                                Button("Save") {
+                                    Task {
+                                        await saveChanges()
+                                    }
+                                }
+                                .disabled(isSaving || isLoadingMedia)
+                            }
             }
             .onAppear {
                 initializeFields()
@@ -796,7 +906,6 @@ struct EditClimbView: View {
             }
         }
     }
-    
     private func initializeFields() {
         grade = climb.grade
         angleDegrees = climb.angleDegrees?.description ?? ""
@@ -810,7 +919,12 @@ struct EditClimbView: View {
         selectedRopeClimbType = climb.ropeClimbType ?? .lead
     }
     
-    private func saveChanges() {
+    @MainActor
+    private func saveChanges() async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+
         climb.grade = grade.isEmpty ? "Unknown" : grade
         climb.angleDegrees = angleDegrees.isEmpty ? nil : Int(angleDegrees)
         climb.style = selectedStyle.isEmpty ? "Unknown" : selectedStyle
@@ -821,7 +935,7 @@ struct EditClimbView: View {
         climb.isPreviouslyClimbed = isPreviouslyClimbed
         climb.holdColor = selectedHoldColor
         climb.ropeClimbType = (climb.climbType == .sport) ? selectedRopeClimbType : nil
-        
+
         do {
             try modelContext.save()
             dismiss()
@@ -829,7 +943,125 @@ struct EditClimbView: View {
             print("Save in EditClimbView failed: \(error)")
         }
     }
+
     
+    //Persist picked media to disk + SwiftData
+    @MainActor
+    private func handlePickedMedia(items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else {
+            return
+        }
+
+        isLoadingMedia = true
+        defer {
+            isLoadingMedia = false
+            mediaPickerItems.removeAll()
+        }
+
+        let fm = FileManager.default
+        guard let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        for (index, item) in items.enumerated() {
+            do {
+                if let data = try await item.loadTransferable(type: Data.self) {
+                    if let _ = UIImage(data: data) {
+                        // Image → save as JPG
+                        let filename = "climb-\(climb.id)-\(UUID().uuidString).jpg"
+                        let url = dir.appendingPathComponent(filename)
+                        do {
+                            try data.write(to: url)
+                            let media = ClimbMedia(
+                                fileName: filename,
+                                type: .photo,
+                                createdAt: .now,
+                                climb: climb
+                            )
+                            modelContext.insert(media)
+                        } catch {
+                            print("Failed to write photo data for item \(index + 1): \(error)")
+                        }
+                    } else {
+                        // Video
+                        let filename = "climb-\(climb.id)-\(UUID().uuidString).mov"
+                        let url = dir.appendingPathComponent(filename)
+                        do {
+                            try data.write(to: url)
+                            var thumbFileName: String? = nil
+                            if let thumbnail = generateVideoThumbnail(for: url),
+                               let thumbData = thumbnail.jpegData(compressionQuality: 0.8) {
+                                let thumbName = filename.replacingOccurrences(of: ".mov", with: "-thumb.jpg")
+                                let thumbURL = dir.appendingPathComponent(thumbName)
+                                do {
+                                    try thumbData.write(to: thumbURL)
+                                    thumbFileName = thumbName
+                                } catch {
+                                    print("Failed to write video thumbnail: \(error)")
+                                }
+                            } else {
+                                print("Could not generate thumbnail for video \(url.lastPathComponent)")
+                            }
+                            let media = ClimbMedia(
+                                fileName: filename,
+                                thumbnailFileName: thumbFileName,
+                                type: .video,
+                                createdAt: .now,
+                                climb: climb
+                            )
+                            modelContext.insert(media)
+                        } catch {
+                            print("Failed to write video data for item \(index + 1): \(error)")
+                        }
+                    }
+                } else {
+                    print("loadTransferable(type: Data.self) returned nil for item \(index + 1)")
+                }
+            } catch {
+                print("Error loading Data for item \(index + 1): \(error)")
+            }
+        }
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to save context after adding media: \(error)")
+        }
+    }
+
+
+
+
+    private func deleteMedia(_ media: ClimbMedia) {
+            let fm = FileManager.default
+            if let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let url = dir.appendingPathComponent(media.fileName)
+                try? fm.removeItem(at: url)
+            }
+            modelContext.delete(media)
+            do {
+                try modelContext.save()
+            } catch {
+                print("Failed to delete media: \(error)")
+            }
+        }
+    // Generate a thumbnail UIImage for a video URL
+        private func generateVideoThumbnail(for url: URL) -> UIImage? {
+            let asset = AVAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 400, height: 400)
+
+            let time = CMTime(seconds: 0.1, preferredTimescale: 600)
+
+            do {
+                let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
+                return UIImage(cgImage: cgImage)
+            } catch {
+                print("⚠️ Failed to generate video thumbnail: \(error)")
+                return nil
+            }
+        }
+
     private func addNewStyle(_ styleName: String) {
         let newStyle = ClimbStyle(name: styleName, isDefault: false)
         modelContext.insert(newStyle)
@@ -845,6 +1077,119 @@ struct EditClimbView: View {
     }
 }
 
+// Thumbnail used in EditClimb + MediaManager (small preview)
+struct MediaThumbnailView: View {
+    let media: ClimbMedia
+
+    private let size: CGFloat = 80
+    private let cornerRadius: CGFloat = 10
+
+    var body: some View {
+        ZStack {
+            // Background content
+            if let image = loadThumbnailImage() {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill() // fill the square, crop excess
+            } else {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                    .background(
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(Color.secondary.opacity(0.05))
+                    )
+                    .overlay(
+                        Image(systemName: media.type == .video ? "video.fill" : "photo")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    )
+            }
+
+            // Play watermark for videos
+            if media.type == .video {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(.white)
+                    .shadow(radius: 3)
+            }
+        }
+        .frame(width: size, height: size) // ⬅️ hard, uniform size
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
+    // For photos → load main file, for videos → prefer thumbnailFileName if present
+    private func loadThumbnailImage() -> UIImage? {
+        let fm = FileManager.default
+        guard let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+
+        let nameToLoad: String
+        if media.type == .video, let thumb = media.thumbnailFileName {
+            nameToLoad = thumb
+        } else {
+            nameToLoad = media.fileName
+        }
+
+        let url = dir.appendingPathComponent(nameToLoad)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+}
+
+
+
+
+// Full-screen media viewer used by EditClimbView
+struct MediaFullScreenView: View {
+    let media: ClimbMedia
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            .padding()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if media.type == .photo, let image = loadImage() {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+        } else if let url = mediaURL() {
+            VideoPlayer(player: AVPlayer(url: url))
+                .ignoresSafeArea()
+        } else {
+            Text("Unable to load media")
+                .foregroundStyle(.white)
+        }
+    }
+
+    private func loadImage() -> UIImage? {
+        guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        let url = dir.appendingPathComponent(media.fileName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private func mediaURL() -> URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(media.fileName)
+    }
+}
 
 // MARK: - Hold Shapes
 /// Rounded hexagon (bolt-on vibe)
