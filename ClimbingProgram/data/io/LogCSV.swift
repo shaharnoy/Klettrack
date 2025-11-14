@@ -9,6 +9,8 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import CryptoKit
+import Photos
+import UIKit
 
 // MARK: - CSV FileDocument for export/share
 
@@ -57,7 +59,7 @@ enum LogCSV {
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
         // Header extended with climb_id and tb2_uuid at the end (backward compatible)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs"]
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -113,7 +115,8 @@ enum LogCSV {
                     csvEscape(dayType),
                     csvEscape(i.notes ?? ""),
                     "", // climb_id (exercises don't use this)
-                    ""  // tb2_uuid (exercises don't use this)
+                    "",  // tb2_uuid (exercises don't use this)
+                    ""  // media_ref (exercises don't use this)
                 ].joined(separator: ","))
             }
         }
@@ -121,7 +124,14 @@ enum LogCSV {
         // Export climb entries
         for climb in climbEntries {
             let d = df.string(from: climb.dateLogged)
-            
+
+            // Encode all media refs as: assetId|type|createdAtISO;assetId2|type2|createdAt2;...
+            let iso = ISO8601DateFormatter()
+            let mediaRefs = climb.media.map { m in
+                let created = iso.string(from: m.createdAt)
+                return "\(m.assetLocalIdentifier)|\(m.type.rawValue)|\(created)"
+            }.joined(separator: ";")
+
             rows.append([
                 d,
                 "climb",
@@ -144,8 +154,9 @@ enum LogCSV {
                 "", // plan_name
                 "", // day_type
                 csvEscape(climb.notes ?? ""),
-                climb.id.uuidString,                  // climb_id
-                csvEscape(climb.tb2ClimbUUID ?? "")   // tb2_uuid
+                climb.id.uuidString,                   // climb_id
+                csvEscape(climb.tb2ClimbUUID ?? ""),   // tb2_uuid
+                csvEscape(mediaRefs)                   // media_refs
             ].joined(separator: ","))
         }
         
@@ -288,6 +299,7 @@ extension LogCSV {
         let notes: String?
         let climbId: UUID?
         let tb2UUID: String?
+        let mediaRefs: String?
     }
     
     @MainActor
@@ -358,6 +370,7 @@ extension LogCSV {
                 static let notes      = ["notes", "note", "comment", "comments"]
                 static let climbId    = ["climb_id", "climbid"]
                 static let tb2UUID    = ["tb2_uuid", "tb2"]
+                static let mediaRefs  = ["media_refs", "media"]
             }
             
             let hasHeader = (idx(Cols.date) != nil && idx(Cols.type) != nil)
@@ -389,7 +402,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -415,6 +428,7 @@ extension LogCSV {
                     notesRaw     = val(parts, Cols.notes)
                     climbIdStr   = val(parts, Cols.climbId)
                     tb2UUIDStr   = val(parts, Cols.tb2UUID)
+                    mediaRefsStr = val(parts, Cols.mediaRefs)
                 } else {
                     // Legacy positional fallback (will be removed in future)
                     func p(_ i: Int) -> String { parts.indices.contains(i) ? parts[i] : "" }
@@ -441,6 +455,7 @@ extension LogCSV {
                     notesRaw     = p(20)
                     climbIdStr   = p(21)
                     tb2UUIDStr   = p(22)
+                    mediaRefsStr = ""   // no media column in legacy CSV
                 }
                 
                 // Minimal validity check
@@ -477,6 +492,8 @@ extension LogCSV {
                 let climbId = UUID(uuidString: climbIdStr)
                 let tb2uuid = tb2UUIDStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let tb2uuidOpt = tb2uuid.isEmpty ? nil : tb2uuid
+                let mediaRefsValue = mediaRefsStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let mediaRefsOpt = mediaRefsValue.isEmpty ? nil : mediaRefsValue
                 
                 out.append(Entry(
                     date: dayDate,
@@ -501,7 +518,8 @@ extension LogCSV {
                     dayTypeKey: dayTypeKey,
                     notes: notesOpt,
                     climbId: climbId,
-                    tb2UUID: tb2uuidOpt
+                    tb2UUID: tb2uuidOpt,
+                    mediaRefs: mediaRefsOpt
                 ))
             }
             
@@ -688,6 +706,7 @@ extension LogCSV {
                             tb2ClimbUUID: e.tb2UUID
                         )
                         context.insert(climbEntry)
+                        attachMedia(from: e.mediaRefs, to: climbEntry, in: context)
                         inserted += 1
                     }
                     continue
@@ -735,9 +754,11 @@ extension LogCSV {
                             tb2ClimbUUID: tb2
                         )
                         context.insert(climbEntry)
+                        attachMedia(from: e.mediaRefs, to: climbEntry, in: context)
                         inserted += 1
                     }
                     continue
+
                 }
                 
                 //Fallback: DEDUPE by content signature (legacy CSVs)
@@ -797,7 +818,9 @@ extension LogCSV {
                     dateLogged: e.date
                 )
                 context.insert(climbEntry)
+                attachMedia(from: e.mediaRefs, to: climbEntry, in: context)
                 inserted += 1
+
             }
         }
         
@@ -840,6 +863,74 @@ extension LogCSV {
         return inserted
     }
 }
+
+//recreate ClimbMedia
+private func parseMediaRefs(_ raw: String?) -> [(assetLocalIdentifier: String, type: ClimbMediaType, createdAt: Date?)] {
+    guard let raw, !raw.isEmpty else { return [] }
+
+    let iso = ISO8601DateFormatter()
+    return raw
+        .split(separator: ";")
+        .compactMap { part in
+            let comps = part.split(separator: "|")
+            guard comps.count >= 2 else { return nil }
+            let id = String(comps[0])
+            let typeRaw = String(comps[1])
+            let type = ClimbMediaType(rawValue: typeRaw) ?? .photo
+            let created: Date? = (comps.count >= 3) ? iso.date(from: String(comps[2])) : nil
+            return (assetLocalIdentifier: id, type: type, createdAt: created)
+        }
+}
+
+@MainActor
+private func attachMedia(from raw: String?, to climb: ClimbEntry, in context: ModelContext) {
+    let refs = parseMediaRefs(raw)
+    
+    let imageManager = PHCachingImageManager.default()
+    let options = PHImageRequestOptions()
+    options.deliveryMode = .opportunistic
+    options.resizeMode = .fast
+    options.isSynchronous = true
+    options.isNetworkAccessAllowed = true
+    
+    let targetSize = CGSize(width: 200, height: 200)
+    
+    for ref in refs {
+        var thumbData: Data? = nil
+        
+        let fetchResult = PHAsset.fetchAssets(
+            withLocalIdentifiers: [ref.assetLocalIdentifier],
+            options: nil
+        )
+        
+        if let asset = fetchResult.firstObject {
+            var thumbImage: UIImage?
+            imageManager.requestImage(
+                for: asset,
+                targetSize: targetSize,
+                contentMode: .aspectFill,
+                options: options
+            ) { image, _ in
+                thumbImage = image
+            }
+            
+            if let img = thumbImage {
+                thumbData = img.jpegData(compressionQuality: 0.7)
+            }
+        }
+        
+        let media = ClimbMedia(
+            assetLocalIdentifier: ref.assetLocalIdentifier,
+            thumbnailData: thumbData,
+            type: ref.type,
+            createdAt: ref.createdAt ?? climb.dateLogged,
+            climb: climb
+        )
+        context.insert(media)
+    }
+}
+
+
 // MARK: - Deterministic ID helpers (TB2 parity)
 private func stableID(climbUUID: String, day: Date, angle: Int?, isMirror: Bool?, isAscent: Bool) -> UUID {
     let dayEpoch = Int((day.timeIntervalSince1970 / 86400.0).rounded(.down))

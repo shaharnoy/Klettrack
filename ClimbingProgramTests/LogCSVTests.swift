@@ -71,7 +71,7 @@ final class LogCSVTests: BaseSwiftDataTestCase {
     
     func testClimbImportUpsert_ByExplicitIdAndTB2StableId() async throws {
         // Build CSV rows manually
-        let day = "2025-08-28"
+        let day = "2025-08-28 11:22:11"
         let header = "date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,gym,reps,sets,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid"
         
         // 1) With explicit climb_id
