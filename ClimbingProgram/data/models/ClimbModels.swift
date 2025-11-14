@@ -7,6 +7,8 @@
 import Foundation
 import SwiftData
 import SwiftUI
+import Photos
+
 
 // MARK: - Climb Data Models
 @Model
@@ -224,8 +226,8 @@ enum ClimbMediaType: String, Codable {
 @Model
 final class ClimbMedia {
     @Attribute(.unique) var id: UUID
-    var fileName: String
-    var thumbnailFileName: String?
+    var assetLocalIdentifier: String
+    var thumbnailData: Data?
     var typeRaw: String
     var createdAt: Date
 
@@ -238,26 +240,23 @@ final class ClimbMedia {
 
     init(
         id: UUID = UUID(),
-        fileName: String,
-        thumbnailFileName: String? = nil,
+        assetLocalIdentifier: String,
+        thumbnailData: Data? = nil,
         type: ClimbMediaType,
         createdAt: Date = .now,
         climb: ClimbEntry
     ) {
         self.id = id
-        self.fileName = fileName
-        self.thumbnailFileName = thumbnailFileName
+        self.assetLocalIdentifier = assetLocalIdentifier
+        self.thumbnailData = thumbnailData
         self.typeRaw = type.rawValue
         self.createdAt = createdAt
         self.climb = climb
     }
 }
-//helper to detect missing files
 extension ClimbMedia {
-    var hasFileOnDisk: Bool {
-        guard let url = try? MediaStorage.url(forFileName: fileName) else {
-            return false
-        }
-        return FileManager.default.fileExists(atPath: url.path)
+    var isMissingAsset: Bool {
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: [assetLocalIdentifier], options: nil)
+        return result.firstObject == nil
     }
 }

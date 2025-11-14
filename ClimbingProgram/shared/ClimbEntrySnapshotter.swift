@@ -16,12 +16,13 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
         let mediaSnapshots: [Snapshot.MediaSnapshot] = (c.media).map { m in
             Snapshot.MediaSnapshot(
                 id: m.id,
-                fileName: m.fileName,
-                thumbnailFileName: m.thumbnailFileName,
+                assetLocalIdentifier: m.assetLocalIdentifier,
+                thumbnailData: m.thumbnailData,
                 typeRaw: m.type.rawValue,
                 createdAt: m.createdAt
             )
         }
+
 
         return Snapshot(
             id: c.id,
@@ -70,8 +71,8 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             let mediaType = ClimbMediaType(rawValue: m.typeRaw) ?? .photo
             let media = ClimbMedia(
                 id: m.id,
-                fileName: m.fileName,
-                thumbnailFileName: m.thumbnailFileName,
+                assetLocalIdentifier: m.assetLocalIdentifier,
+                thumbnailData: m.thumbnailData,
                 type: mediaType,
                 createdAt: m.createdAt,
                 climb: restored
@@ -107,8 +108,8 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
 
         struct MediaSnapshot {
             let id: UUID
-            let fileName: String
-            let thumbnailFileName: String?
+            let assetLocalIdentifier: String
+            let thumbnailData: Data?
             /// Raw string for the media type ("photo" / "video") to avoid protocol issues
             let typeRaw: String
             let createdAt: Date

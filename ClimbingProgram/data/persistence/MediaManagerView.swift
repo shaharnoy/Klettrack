@@ -2,7 +2,7 @@
 //  MediaManagerView.swift
 //  ClimbingProgram
 //
-//  Created by Shahar Private on 13.11.25.
+//  Created by Shahar Noy on 13.11.25.
 //
 import SwiftUI
 import SwiftData
@@ -71,33 +71,8 @@ struct MediaManagerView: View {
     }
 
     private func delete(_ media: ClimbMedia) {
-        let fm = FileManager.default
-        if let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
-            let url = dir.appendingPathComponent(media.fileName)
-            try? fm.removeItem(at: url)
-        }
         context.delete(media)
         try? context.save()
-    }
-}
-enum MediaStorage {
-    static func mediaDirectory() throws -> URL {
-        try FileManager.default.url(
-            for: .documentDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-    }
-
-    static func url(forFileName fileName: String) throws -> URL {
-        //fileName is an absolute path (e.g. "/var/mobile/Containers/...")
-        if fileName.hasPrefix("/") {
-            return URL(fileURLWithPath: fileName)
-        }
-        //fileName is just "abc123.jpg"
-        let docs = try mediaDirectory()
-        return docs.appendingPathComponent(fileName, isDirectory: false)
     }
 }
 

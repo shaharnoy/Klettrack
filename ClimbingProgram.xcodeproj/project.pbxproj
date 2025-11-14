@@ -53,6 +53,7 @@
 				docs/media/Stats.gif,
 				docs/media/synctb2.gif,
 				docs/media/Timer_repeater.gif,
+				Info.plist,
 			);
 			target = 53229DCD2E573C2200D1A229 /* ClimbingProgram */;
 		};
@@ -269,8 +270,10 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClimbingProgram/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = klettrack;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "klettrack ask access to your photo library to attach photos and videos to your climbs";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -309,8 +312,10 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClimbingProgram/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = klettrack;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "klettrack ask access to your photo library to attach photos and videos to your climbs";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

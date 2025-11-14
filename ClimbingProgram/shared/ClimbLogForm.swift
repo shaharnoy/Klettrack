@@ -7,6 +7,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import Photos
 import AVKit
 import AVFoundation
 import UIKit
@@ -259,7 +260,8 @@ struct ClimbLogForm: View {
                     PhotosPicker(
                         selection: $mediaPickerItems,
                         maxSelectionCount: 10,
-                        matching: .any(of: [.images, .videos])
+                        matching: .any(of: [.images, .videos]),
+                        photoLibrary: .shared()
                     ) {
                         HStack {
                             Image(systemName: "photo.on.rectangle.angled")
@@ -267,6 +269,7 @@ struct ClimbLogForm: View {
                             Spacer()
                         }
                     }
+
                     
                     if mediaPreviews.isEmpty {
                         Text("No media attached")
@@ -438,64 +441,32 @@ struct ClimbLogForm: View {
 
         modelContext.insert(climb)
 
-        // Persist media previews as ClimbMedia linked to this climb
+        // Handle media persistence – store only Photos asset IDs + optional thumbnail data
         if !mediaPreviews.isEmpty {
-            let fm = FileManager.default
-            if let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
-                for preview in mediaPreviews {
-                    switch preview.kind {
-                    case .photo(let data):
-                        let filename = "climb-\(climb.id)-\(UUID().uuidString).jpg"
-                        let url = dir.appendingPathComponent(filename)
-                        do {
-                            try data.write(to: url)
-                            let media = ClimbMedia(
-                                fileName: filename,
-                                thumbnailFileName: nil,
-                                type: .photo,
-                                createdAt: .now,
-                                climb: climb
-                            )
-                            modelContext.insert(media)
-                        } catch {
-                            print("Error writing photo media: \(error)")
-                        }
+            for preview in mediaPreviews {
+                switch preview.kind {
+                case .photo(let assetId, let thumbnail):
+                    let media = ClimbMedia(
+                        assetLocalIdentifier: assetId,
+                        thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
+                        type: .photo,
+                        createdAt: .now,
+                        climb: climb
+                    )
+                    modelContext.insert(media)
 
-                    case .video(let data, _):
-                        let filename = "climb-\(climb.id)-\(UUID().uuidString).mov"
-                        let url = dir.appendingPathComponent(filename)
-                        do {
-                            try data.write(to: url)
-                            var thumbName: String? = nil
-
-                            if let thumbnail = generateVideoThumbnail(for: url),
-                               let thumbData = thumbnail.jpegData(compressionQuality: 0.8) {
-                                let tn = filename.replacingOccurrences(of: ".mov", with: "-thumb.jpg")
-                                let thumbURL = dir.appendingPathComponent(tn)
-                                do {
-                                    try thumbData.write(to: thumbURL)
-                                    thumbName = tn
-                                } catch {
-                                    print("Error writing video thumbnail: \(error)")
-                                }
-                            }
-
-                            let media = ClimbMedia(
-                                fileName: filename,
-                                thumbnailFileName: thumbName,
-                                type: .video,
-                                createdAt: .now,
-                                climb: climb
-                            )
-                            modelContext.insert(media)
-                        } catch {
-                            print("Error writing video media: \(error)")
-                        }
-                    }
+                case .video(let assetId, let thumbnail):
+                    let media = ClimbMedia(
+                        assetLocalIdentifier: assetId,
+                        thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
+                        type: .video,
+                        createdAt: .now,
+                        climb: climb
+                    )
+                    modelContext.insert(media)
                 }
             }
         }
-
         do {
             try modelContext.save()
             onSave?(climb)
@@ -547,15 +518,35 @@ struct ClimbLogForm: View {
 // MARK: - Media for ClimbLogForm
 struct ClimbLogMediaPreview: Identifiable {
     enum Kind {
-        case photo(Data)
-        case video(data: Data, thumbnail: UIImage?)
+        case photo(assetLocalIdentifier: String, thumbnail: UIImage?)
+        case video(assetLocalIdentifier: String, thumbnail: UIImage?)
     }
 
     let id = UUID()
     var kind: Kind
+
+    var assetLocalIdentifier: String {
+        switch kind {
+        case .photo(let id, _), .video(let id, _):
+            return id
+        }
+    }
+
+    var thumbnail: UIImage? {
+        switch kind {
+        case .photo(_, let image), .video(_, let image):
+            return image
+        }
+    }
+
+    var isVideo: Bool {
+        if case .video = kind { return true }
+        return false
+    }
 }
 
-// MARK: - Thumbnail view for previews
+
+// MARK: - Thumbnail view for previews (no need for warning like in the edit climb since it's only happen on new climb)
 struct ClimbLogMediaThumbnailView: View {
     let preview: ClimbLogMediaPreview
 
@@ -565,26 +556,23 @@ struct ClimbLogMediaThumbnailView: View {
     var body: some View {
         ZStack {
             // Background image or placeholder
-            if let image = loadImage() {
+            if let image = preview.thumbnail {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()  // fill square, crop excess
             } else {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                    .background(
-                        RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(Color.secondary.opacity(0.05))
-                    )
+                    .foregroundStyle(.secondary.opacity(0.5))
                     .overlay(
-                        Image(systemName: isVideo ? "video.fill" : "photo")
-                            .font(.caption)
+                        Image(systemName: preview.isVideo ? "video" : "photo")
+                            .font(.title3)
                             .foregroundStyle(.secondary)
                     )
             }
 
             // Play icon for videos
-            if isVideo {
+            if preview.isVideo {
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(.white)
@@ -595,35 +583,71 @@ struct ClimbLogMediaThumbnailView: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
-
-    private var isVideo: Bool {
-        if case .video = preview.kind { return true }
-        return false
-    }
-
-    private func loadImage() -> UIImage? {
-        switch preview.kind {
-        case .photo(let data):
-            return UIImage(data: data)
-        case .video(_, let thumbnail):
-            return thumbnail
-        }
-    }
 }
-
 
 // MARK: - Full-screen viewer for previews
 struct ClimbLogMediaFullScreenView: View {
     let preview: ClimbLogMediaPreview
     @Environment(\.dismiss) private var dismiss
 
+    @State private var loadedImage: UIImage?
+    @State private var player: AVPlayer?
+    @State private var isMissing: Bool = false
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
 
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
+            Group {
+                if isMissing {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.yellow)
+                            .shadow(radius: 4)
+
+                        Text("Media Unavailable")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+
+                        Text("""
+                    klettrack doesn’t store your media. It only references photos and videos on your device.
+                    If the original file was deleted or moved, it can’t be displayed here.
+                    """)
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.white.opacity(0.8))
+                            .padding(.horizontal, 24)
+                    }
+                    .padding()
+                } else {
+                    switch preview.kind {
+                    case .photo:
+                        if let image = loadedImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                        } else {
+                            ProgressView()
+                                .tint(.white)
+                        }
+
+                    case .video:
+                        if let player {
+                            VideoPlayer(player: player)
+                                .ignoresSafeArea()
+                        } else {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
+            .task {
+                loadContent()
+            }
 
             Button {
                 dismiss()
@@ -636,39 +660,73 @@ struct ClimbLogMediaFullScreenView: View {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
+    private func loadContent() {
         switch preview.kind {
-        case .photo(let data):
-            if let image = UIImage(data: data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Text("Unable to load image")
-                    .foregroundStyle(.white)
-            }
+        case .photo(let id, _):
+            loadPhoto(id: id)
+        case .video(let id, _):
+            loadVideo(id: id)
+        }
+    }
 
-        case .video(let data, _):
-            if let url = makeTempURL(for: data) {
-                VideoPlayer(player: AVPlayer(url: url))
-                    .ignoresSafeArea()
-            } else {
-                Text("Unable to load video")
-                    .foregroundStyle(.white)
+    private func fetchAsset(with id: String) -> PHAsset? {
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+        return result.firstObject
+    }
+
+    private func loadPhoto(id: String) {
+        guard let asset = fetchAsset(with: id) else {
+            isMissing = true
+            return
+        }
+
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+
+        let bounds = UIScreen.main.bounds
+        let targetSize = CGSize(
+            width: bounds.width * UIScreen.main.scale,
+            height: bounds.height * UIScreen.main.scale
+        )
+
+        PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { image, _ in
+            DispatchQueue.main.async {
+                if let image {
+                    self.loadedImage = image
+                } else {
+                    self.isMissing = true
+                }
             }
         }
     }
 
-    private func makeTempURL(for data: Data) -> URL? {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("climblog-preview-\(preview.id).mov")
-        do {
-            try data.write(to: url, options: .atomic)
-            return url
-        } catch {
-            print("Failed to write temp video file: \(error)")
-            return nil
+    private func loadVideo(id: String) {
+        guard let asset = fetchAsset(with: id) else {
+            isMissing = true
+            return
+        }
+
+        let options = PHVideoRequestOptions()
+        options.deliveryMode = .automatic
+        options.isNetworkAccessAllowed = true
+
+        PHImageManager.default().requestPlayerItem(
+            forVideo: asset,
+            options: options
+        ) { playerItem, _ in
+            DispatchQueue.main.async {
+                if let playerItem {
+                    self.player = AVPlayer(playerItem: playerItem)
+                } else {
+                    self.isMissing = true
+                }
+            }
         }
     }
 }
@@ -679,7 +737,6 @@ extension ClimbLogForm {
     fileprivate func deletePreview(_ preview: ClimbLogMediaPreview) {
         mediaPreviews.removeAll { $0.id == preview.id }
     }
-
     @MainActor
     fileprivate func loadMediaPreviews(from items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
@@ -690,59 +747,47 @@ extension ClimbLogForm {
             mediaPickerItems.removeAll()
         }
 
-        let fm = FileManager.default
-        let tempDir = fm.temporaryDirectory
+        let imageManager = PHCachingImageManager.default()
+        let requestOptions = PHImageRequestOptions()
+        requestOptions.deliveryMode = .opportunistic
+        requestOptions.resizeMode = .fast
+        requestOptions.isSynchronous = true
+        requestOptions.isNetworkAccessAllowed = true
+
+        let targetSize = CGSize(width: 200, height: 200)
 
         for (index, item) in items.enumerated() {
-            do {
-                if let data = try await item.loadTransferable(type: Data.self) {
-                    if UIImage(data: data) != nil {
-                        // Photo
-                        mediaPreviews.append(
-                            ClimbLogMediaPreview(kind: .photo(data))
-                        )
-                    } else {
-                        // Video – generate a temporary thumbnail
-                        var thumbnail: UIImage? = nil
-                        let tempURL = tempDir.appendingPathComponent("climblog-preview-\(UUID().uuidString).mov")
-                        do {
-                            try data.write(to: tempURL, options: .atomic)
-                            thumbnail = generateVideoThumbnail(for: tempURL)
-                            try? fm.removeItem(at: tempURL)
-                        } catch {
-                            print("Error writing temp video file for preview \(index + 1): \(error)")
-                        }
-
-                        mediaPreviews.append(
-                            ClimbLogMediaPreview(kind: .video(data: data, thumbnail: thumbnail))
-                        )
-                    }
-                } else {
-                    print("loadTransferable returned nil for item \(index + 1)")
-                }
-            } catch {
-                print("Error loading media data for item \(index + 1): \(error)")
+            guard let id = item.itemIdentifier else {
+                print("PhotosPickerItem \(index + 1) has no itemIdentifier")
+                continue
             }
-        }
-    }
 
+            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+            guard let asset = fetchResult.firstObject else {
+                print("No PHAsset found for identifier \(id)")
+                continue
+            }
 
+            var thumb: UIImage?
+            imageManager.requestImage(
+                for: asset,
+                targetSize: targetSize,
+                contentMode: .aspectFill,
+                options: requestOptions
+            ) { image, _ in
+                thumb = image
+            }
 
-
-    fileprivate func generateVideoThumbnail(for url: URL) -> UIImage? {
-        let asset = AVAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 400, height: 400)
-
-        let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-
-        do {
-            let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-            return UIImage(cgImage: cgImage)
-        } catch {
-            print("Failed to generate video thumbnail: \(error)")
-            return nil
+            switch asset.mediaType {
+            case .video:
+                mediaPreviews.append(
+                    ClimbLogMediaPreview(kind: .video(assetLocalIdentifier: id, thumbnail: thumb))
+                )
+            default:
+                mediaPreviews.append(
+                    ClimbLogMediaPreview(kind: .photo(assetLocalIdentifier: id, thumbnail: thumb))
+                )
+            }
         }
     }
 }

@@ -6,6 +6,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import Photos
 import UIKit
 import AVKit
 import AVFoundation
@@ -390,28 +391,6 @@ struct ClimbView: View {
     
     private func deleteClimb(_ climb: ClimbEntry) {
         withAnimation {
-            // media will be deleted and cannot be undo
-            let climbID = climb.id
-                    //Fetch all media linked to this climb
-                    let mediaToDelete: [ClimbMedia]
-                    do {
-                        let descriptor = FetchDescriptor<ClimbMedia>(
-                            predicate: #Predicate<ClimbMedia> { media in
-                                media.climb.id == climbID
-                            }
-                        )
-                        mediaToDelete = try modelContext.fetch(descriptor)
-                    } catch {
-                        print("Failed to fetch media for climb \(climbID): \(error)")
-                        // Fallback: use the relationship if available
-                        mediaToDelete = climb.media
-                    }
-
-                    //Delete their files from Documents
-                    for media in mediaToDelete {
-                        deleteMediaFile(named: media.fileName)
-                    }
-            //all other data is being "undo"
             dumpUndoContext("deleteClimb.begin")
             // Ensure we have an UndoManager attached and connect handler
             let assigned = undoManager ?? UndoManager()
@@ -419,49 +398,22 @@ struct ClimbView: View {
             deleteHandler.attach(context: modelContext, undoManager: undoManager)
             dumpUndoContext("deleteClimb.afterAssign")
             
-            // Perform delete via shared handler
+            // Perform delete via shared handler (cascade will remove ClimbMedia rows)
             deleteHandler.delete(climb, actionName: "Delete Climb")
             
             // Show Undo snackbar using shared controller + banner
             undoSnackbar.show(message: "Climb deleted") {
-            // On undo, handler will undo and ensure restore
-            deleteHandler.performUndoAndEnsureRestore()
-                
-            //clean up any media rows whose files no longer exist since we don't restore files on undo
-            cleanUpMissingMedia(for: climbID, in: modelContext)
+                // On undo, handler will undo and ensure restore
+                deleteHandler.performUndoAndEnsureRestore()
             }
         }
     }
+
     
     private func handleUndoTap() {
         // If you still call this from anywhere, route through the snackbar controller
         undoSnackbar.performUndo()
     }
-   
-    private func cleanUpMissingMedia(for climbID: UUID, in context: ModelContext) {
-        do {
-            let descriptor = FetchDescriptor<ClimbMedia>(
-                predicate: #Predicate<ClimbMedia> { media in
-                    media.climb.id == climbID
-                }
-            )
-            let medias = try context.fetch(descriptor)
-            var removed = 0
-            for media in medias {
-                if !media.hasFileOnDisk {
-                    context.delete(media)
-                    removed += 1
-                }
-            }
-            if removed > 0 {
-                try context.save()
-                print("Removed \(removed) media entries without files for climb \(climbID)")
-            }
-        } catch {
-            print("Failed to clean up missing media for climb \(climbID): \(error)")
-        }
-    }
-
 }
 
 // MARK: - Snapshot of a climb for robust undo fallback
@@ -809,7 +761,8 @@ struct EditClimbView: View {
                     PhotosPicker(
                         selection: $mediaPickerItems,
                         maxSelectionCount: 10,
-                        matching: .any(of: [.images, .videos])
+                        matching: .any(of: [.images, .videos]),
+                        photoLibrary: .shared()
                     ) {
                         HStack {
                             Image(systemName: "photo.on.rectangle.angled")
@@ -817,6 +770,7 @@ struct EditClimbView: View {
                             Spacer()
                         }
                     }
+
 
                     if climb.media.isEmpty {
                         Text("No media attached")
@@ -995,7 +949,7 @@ struct EditClimbView: View {
     }
 
     
-    //Persist picked media to disk + SwiftData
+    // Persist picked media as Photos asset references + optional thumbnail
     @MainActor
     private func handlePickedMedia(items: [PhotosPickerItem]) async {
         guard !items.isEmpty else {
@@ -1008,79 +962,57 @@ struct EditClimbView: View {
             mediaPickerItems.removeAll()
         }
 
-        let fm = FileManager.default
-        guard let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return
-        }
+        let imageManager = PHCachingImageManager.default()
+        let requestOptions = PHImageRequestOptions()
+        requestOptions.deliveryMode = .opportunistic
+        requestOptions.resizeMode = .fast
+        requestOptions.isSynchronous = true
+        requestOptions.isNetworkAccessAllowed = true
+
+        let targetSize = CGSize(width: 200, height: 200)
 
         for (index, item) in items.enumerated() {
-            do {
-                if let data = try await item.loadTransferable(type: Data.self) {
-                    if let _ = UIImage(data: data) {
-                        // Image → save as JPG
-                        let filename = "climb-\(climb.id)-\(UUID().uuidString).jpg"
-                        let url = dir.appendingPathComponent(filename)
-                        do {
-                            try data.write(to: url)
-                            let media = ClimbMedia(
-                                fileName: filename,
-                                type: .photo,
-                                createdAt: .now,
-                                climb: climb
-                            )
-                            modelContext.insert(media)
-                        } catch {
-                            print("Failed to write photo data for item \(index + 1): \(error)")
-                        }
-                    } else {
-                        // Video
-                        let filename = "climb-\(climb.id)-\(UUID().uuidString).mov"
-                        let url = dir.appendingPathComponent(filename)
-                        do {
-                            try data.write(to: url)
-                            var thumbFileName: String? = nil
-                            if let thumbnail = generateVideoThumbnail(for: url),
-                               let thumbData = thumbnail.jpegData(compressionQuality: 0.8) {
-                                let thumbName = filename.replacingOccurrences(of: ".mov", with: "-thumb.jpg")
-                                let thumbURL = dir.appendingPathComponent(thumbName)
-                                do {
-                                    try thumbData.write(to: thumbURL)
-                                    thumbFileName = thumbName
-                                } catch {
-                                    print("Failed to write video thumbnail: \(error)")
-                                }
-                            } else {
-                                print("Could not generate thumbnail for video \(url.lastPathComponent)")
-                            }
-                            let media = ClimbMedia(
-                                fileName: filename,
-                                thumbnailFileName: thumbFileName,
-                                type: .video,
-                                createdAt: .now,
-                                climb: climb
-                            )
-                            modelContext.insert(media)
-                        } catch {
-                            print("Failed to write video data for item \(index + 1): \(error)")
-                        }
-                    }
-                } else {
-                    print("loadTransferable(type: Data.self) returned nil for item \(index + 1)")
-                }
-            } catch {
-                print("Error loading Data for item \(index + 1): \(error)")
+            guard let id = item.itemIdentifier else {
+                print("PhotosPickerItem \(index + 1) has no itemIdentifier")
+                continue
             }
+
+            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+            guard let asset = fetchResult.firstObject else {
+                print("No PHAsset found for identifier \(id)")
+                continue
+            }
+
+            var thumb: UIImage?
+            imageManager.requestImage(
+                for: asset,
+                targetSize: targetSize,
+                contentMode: .aspectFill,
+                options: requestOptions
+            ) { image, _ in
+                thumb = image
+            }
+
+            let type: ClimbMediaType = (asset.mediaType == .video) ? .video : .photo
+
+            let media = ClimbMedia(
+                assetLocalIdentifier: id,
+                thumbnailData: thumb?.jpegData(compressionQuality: 0.7),
+                type: type,
+                createdAt: .now,
+                climb: climb
+            )
+            modelContext.insert(media)
         }
+
         do {
             try modelContext.save()
         } catch {
             print("Failed to save context after adding media: \(error)")
         }
     }
-    
-    private func deleteMedia(_ media: ClimbMedia) {
-        deleteMediaFile(named: media.fileName)
 
+    private func deleteMedia(_ media: ClimbMedia) {
         modelContext.delete(media)
         do {
             try modelContext.save()
@@ -1088,25 +1020,6 @@ struct EditClimbView: View {
             print(" Failed to delete media entity: \(error)")
         }
     }
-
-
-    // Generate a thumbnail UIImage for a video URL
-        private func generateVideoThumbnail(for url: URL) -> UIImage? {
-            let asset = AVAsset(url: url)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 400, height: 400)
-
-            let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-
-            do {
-                let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-                return UIImage(cgImage: cgImage)
-            } catch {
-                print("Failed to generate video thumbnail: \(error)")
-                return nil
-            }
-        }
 
     private func addNewStyle(_ styleName: String) {
         let newStyle = ClimbStyle(name: styleName, isDefault: false)
@@ -1131,58 +1044,55 @@ struct MediaThumbnailView: View {
     private let cornerRadius: CGFloat = 10
 
     var body: some View {
-        ZStack {
-            // Background content
-            if let image = loadThumbnailImage() {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill() // fill the square, crop excess
-            } else {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                    .background(
-                        RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(Color.secondary.opacity(0.05))
-                    )
-                    .overlay(
-                        Image(systemName: media.type == .video ? "video.fill" : "photo")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    )
-            }
+        ZStack(alignment: .topTrailing) {
+            // Thumbnail content
+            ZStack {
+                if let image = loadThumbnailImage() {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                        .foregroundStyle(.secondary.opacity(0.5))
+                        .overlay(
+                            Image(systemName: media.type == .video ? "video.fill" : "photo")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        )
+                }
 
-            // Play watermark for videos
-            if media.type == .video {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(.white)
-                    .shadow(radius: 3)
+                // Play overlay for videos
+                if media.type == .video {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white)
+                        .shadow(radius: 3)
+                }
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+
+            // Missing badge (top-right)
+            if media.isMissingAsset {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.yellow)
+                    .padding(4)
+                    .background(.black.opacity(0.65))
+                    .clipShape(Circle())
+                    .offset(x: -4, y: 4)
             }
         }
-        .frame(width: size, height: size) // ⬅️ hard, uniform size
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .frame(width: size, height: size)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
-    // For photos → load main file, for videos → prefer thumbnailFileName if present
     private func loadThumbnailImage() -> UIImage? {
-        let fm = FileManager.default
-        guard let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
-
-        let nameToLoad: String
-        if media.type == .video, let thumb = media.thumbnailFileName {
-            nameToLoad = thumb
-        } else {
-            nameToLoad = media.fileName
-        }
-
-        let url = dir.appendingPathComponent(nameToLoad)
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = media.thumbnailData else { return nil }
         return UIImage(data: data)
     }
 }
-
-
 
 
 // Full-screen media viewer used by EditClimbView
@@ -1190,13 +1100,62 @@ struct MediaFullScreenView: View {
     let media: ClimbMedia
     @Environment(\.dismiss) private var dismiss
 
+    @State private var loadedImage: UIImage?
+    @State private var player: AVPlayer?
+    @State private var isMissing: Bool = false
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
 
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
+            Group {
+                if isMissing {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.yellow)
+                            .shadow(radius: 4)
+
+                        Text("Media Unavailable")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+
+                        Text("""
+                    klettrack doesn’t store your media. It only references photos and videos on your device.
+                    If the original file was deleted or moved, it can’t be displayed here.
+                    """)
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.white.opacity(0.8))
+                            .padding(.horizontal, 24)
+                    }
+                    .padding()
+                } else {
+                    if media.type == .photo {
+                        if let image = loadedImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                        } else {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                    } else {
+                        if let player {
+                            VideoPlayer(player: player)
+                                .ignoresSafeArea()
+                        } else {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
+            .task {
+                loadContent()
+            }
 
             Button {
                 dismiss()
@@ -1209,33 +1168,77 @@ struct MediaFullScreenView: View {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if media.type == .photo, let image = loadImage() {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-        } else if let url = mediaURL() {
-            VideoPlayer(player: AVPlayer(url: url))
-                .ignoresSafeArea()
-        } else {
-            Text("Unable to load media")
-                .foregroundStyle(.white)
+    private func loadContent() {
+        switch media.type {
+        case .photo:
+            loadPhoto(id: media.assetLocalIdentifier)
+        case .video:
+            loadVideo(id: media.assetLocalIdentifier)
         }
     }
 
-    private func loadImage() -> UIImage? {
-        guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
-        let url = dir.appendingPathComponent(media.fileName)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
+    private func fetchAsset(with id: String) -> PHAsset? {
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+        return result.firstObject
     }
 
-    private func mediaURL() -> URL? {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
-            .appendingPathComponent(media.fileName)
+    private func loadPhoto(id: String) {
+        guard let asset = fetchAsset(with: id) else {
+            isMissing = true
+            return
+        }
+
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+
+        let bounds = UIScreen.main.bounds
+        let targetSize = CGSize(
+            width: bounds.width * UIScreen.main.scale,
+            height: bounds.height * UIScreen.main.scale
+        )
+
+        PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { image, _ in
+            DispatchQueue.main.async {
+                if let image {
+                    self.loadedImage = image
+                } else {
+                    self.isMissing = true
+                }
+            }
+        }
+    }
+
+    private func loadVideo(id: String) {
+        guard let asset = fetchAsset(with: id) else {
+            isMissing = true
+            return
+        }
+
+        let options = PHVideoRequestOptions()
+        options.deliveryMode = .automatic
+        options.isNetworkAccessAllowed = true
+
+        PHImageManager.default().requestPlayerItem(
+            forVideo: asset,
+            options: options
+        ) { playerItem, _ in
+            DispatchQueue.main.async {
+                if let playerItem {
+                    self.player = AVPlayer(playerItem: playerItem)
+                } else {
+                    self.isMissing = true
+                }
+            }
+        }
     }
 }
+
 
 // MARK: - Hold Shapes
 /// Rounded hexagon (bolt-on vibe)
@@ -1304,57 +1307,6 @@ struct EdgeHoldShape: Shape {
         return p
     }
 }
-
-func deleteMediaFile(named fileName: String) {
-    let fm = FileManager.default
-    
-    func deleteSingle(_ name: String, label: String) {
-            do {
-                let url = try MediaStorage.url(forFileName: name)
-                let path = url.path
-                
-                print("Trying to delete \(label) at: \(path)")
-                
-                if fm.fileExists(atPath: path) {
-                    try fm.removeItem(at: url)
-                    print("Deleted \(label): \(path)")
-                } else {
-                    print("\(label.capitalized) does not exist (nothing to delete): \(path)")
-                }
-            } catch {
-                print("Error deleting \(label) '\(name)': \(error)")
-            }
-        }
-        
-        deleteSingle(fileName, label: "media file")
-
-        // Delete thumbnail(s)
-        do {
-            // base without extension, e.g. "climb-...0071" from "climb-...0071.mov"
-            let originalURL = URL(fileURLWithPath: fileName)
-            let base = originalURL.deletingPathExtension().lastPathComponent
-
-            let docs = try MediaStorage.mediaDirectory()
-            let allFiles = try fm.contentsOfDirectory(
-                at: docs,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            )
-
-            // Match anything that starts with "<base>-thumb"
-            let thumbPrefix = base + "-thumb"
-
-            for url in allFiles {
-                let name = url.lastPathComponent
-                if name.hasPrefix(thumbPrefix) {
-                    deleteSingle(name, label: "thumbnail")
-                }
-            }
-        } catch {
-            print("Error while scanning for thumbnails of '\(fileName)': \(error)")
-        }
-    }
-
 // MARK: - Utilities
 
 private extension Path {
