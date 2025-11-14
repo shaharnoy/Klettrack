@@ -68,7 +68,7 @@ struct SettingsSheet: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "photo.stack")
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Media Manager")
+                                Text("Gallery")
                                     .font(.body)
                                 Text("Browse all climbs photos and videos")
                                     .font(.footnote)
@@ -136,7 +136,7 @@ struct SettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Export Logs")
                                     .font(.body)
-                                Text("Save your climbs and sessions as a CSV file")
+                                Text("Export your climbs and sessions")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
