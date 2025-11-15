@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>klettrack — Train smarter. Climb stronger.</title>
+  <meta name="description" content="klettrack is a free, open-source climbing & training log. Track boulder, hangboard, and board sessions — private by design." />
+  <meta name="theme-color" content="#F0C000" />
+  <meta property="og:title" content="klettrack — Train smarter. Climb stronger." />
+  <meta property="og:description" content="Free, open-source climbing & training log. Boulder, hangboard, Tension Board & Kilter sync. Private by design." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://klettrack.app" />
+  <meta property="og:image" content="https://klettrack.app/og-image.png" />
+  <link rel="icon" href="/favicon.ico" />
+  <style>
+    :root{
+      --bg: #000000;
+      --panel: #050508;
+      --card: #101010;
+      --text: #f5f5f5;
+      --muted: #a3a3a3;
+      --brand: #F0C000; /* klettrack yellow */
+      --brand-2: #F5A623; /* warm accent */
+      --border: #1f2632;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 16px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root{ --bg:#fdfbf5; --panel:#ffffff; --card:#ffffff; --text:#111827; --muted:#6b7280; --border:#e5e7eb; }
+    }
+
+    *{box-sizing:border-box}
+    html,body{
+      margin:0;
+      padding:0;
+      font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+    a{color:var(--brand);text-decoration:none}
+    a:hover{text-decoration:underline}
+
+    .container{max-width:1100px;margin:0 auto;padding:0 20px}
+
+    header{
+      position:sticky;
+      top:0;
+      background:linear-gradient(180deg, rgba(11,12,16,.9), rgba(11,12,16,0));
+      backdrop-filter:saturate(160%) blur(10px);
+      border-bottom:1px solid var(--border);
+      z-index:10;
+    }
+    .nav{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:12px 0;
+      gap:12px;
+    }
+    .nav a.logo{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-weight:700;
+      color:var(--text);
+      letter-spacing:.2px;
+      white-space:nowrap;
+    }
+    .logo-icon{
+      width:26px;
+      height:26px;
+      border-radius:7px;
+      display:block;
+      box-shadow:0 0 0 1px rgba(0,0,0,.8), 0 0 0 2px rgba(240,192,0,.4);
+      background:#000;
+    }
+
+    .badge{
+      display:inline-flex;
+      gap:6px;
+      align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      background:var(--card);
+      border:1px solid var(--border);
+      color:var(--muted);
+      font-size:12px;
+      margin-bottom:14px;
+    }
+
+    .btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .btn{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 14px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background:var(--panel);
+      color:var(--text);
+      text-decoration:none;
+      box-shadow:var(--shadow);
+      transition:transform .05s ease, box-shadow .1s ease;
+      font-size:14px;
+    }
+    .btn:hover{
+      transform:translateY(-1px);
+      box-shadow:0 14px 40px rgba(0,0,0,.45);
+    }
+    .btn.primary{background:linear-gradient(135deg,var(--brand),#facc15);border-color:transparent}
+    .btn.ghost{background:transparent;box-shadow:none}
+
+    .hero{padding:64px 0 24px}
+    .hero h1{font-size:44px;line-height:1.1;margin:0 0 10px}
+    .hero p{color:var(--muted);max-width:740px;margin:0 0 20px}
+
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:20px}
+    .card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      padding:18px;
+      box-shadow:var(--shadow);
+    }
+    .section{padding:40px 0}
+    h2{font-size:28px;margin:0 0 8px}
+    h3{margin:0 0 6px}
+    .feature{grid-column:span 4}
+    .feature p{color:var(--muted)}
+
+    .screen{
+      grid-column:span 6;
+      aspect-ratio:9/19;
+      border-radius:28px;
+      border:1px solid var(--border);
+      background:radial-gradient(1200px 600px at 50% 0%, rgba(240,192,0,.16), rgba(245,166,35,.10) 40%, transparent 60%), #000;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:10px;
+      overflow:hidden;
+    }
+    .screen img{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      border-radius:22px;
+      display:block;
+      box-shadow:0 10px 25px rgba(0,0,0,.5);
+    }
+
+    .kicker{
+      color:var(--brand);
+      font-weight:600;
+      letter-spacing:.3px;
+      text-transform:uppercase;
+      font-size:12px;
+    }
+    .muted{color:var(--muted)}
+
+    .cols-2{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+
+    .list{margin:0;padding:0;list-style:none;display:grid;gap:12px}
+    .list li{display:flex;gap:10px}
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:var(--panel);
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    .shots{
+      margin-top:14px;
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:12px;
+    }
+    .shots img{
+      width:100%;
+      display:block;
+      border-radius:16px;
+      border:1px solid var(--border);
+      background:#000;
+      box-shadow:var(--shadow);
+    }
+
+    footer{
+      padding:40px 0;
+      border-top:1px solid var(--border);
+      color:var(--muted);
+    }
+    .cta{display:flex;gap:12px;flex-wrap:wrap}
+
+    .sr-only{
+      position:absolute;
+      left:-10000px;
+      top:auto;
+      width:1px;
+      height:1px;
+      overflow:hidden;
+    }
+
+    @media(max-width:900px){
+      .feature{grid-column:span 6}
+      .screen{grid-column:span 12}
+      .cols-2{grid-template-columns:1fr}
+      .hero h1{font-size:36px}
+      .btns{justify-content:flex-start}
+    }
+    @media(max-width:560px){
+      .feature{grid-column:span 12}
+      .shots{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+
+    code.inline{
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      padding:.15em .35em;
+      border-radius:6px;
+      background:var(--panel);
+      border:1px solid var(--border);
+      font-size:.9em;
+    }
+  </style>
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"SoftwareApplication",
+    "name":"klettrack",
+    "applicationCategory":"MobileApplication",
+    "operatingSystem":"iOS",
+    "offers": {"@type":"Offer","price":"0","priceCurrency":"USD"},
+    "description":"Free, open-source climbing & training log for boulder, hangboard, and board sessions. Private by design.",
+    "url":"https://klettrack.app",
+    "downloadUrl":"https://apps.apple.com/app/idYOUR_APP_ID",
+    "softwareVersion":"1.0.0",
+    "publisher":{"@type":"Organization","name":"klettrack"}
+  }
+  </script>
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="logo" href="#top" aria-label="klettrack home">
+        <img src="img/icon_1024x1024.png" alt="" class="logo-icon">
+        <span>klettrack</span>
+      </a>
+      <nav class="btns" aria-label="primary">
+        <a class="btn ghost" href="#features">Features</a>
+        <a class="btn ghost" href="#screens">Screenshots</a>
+        <a class="btn ghost" href="#contribute">Contribute</a>
+        <a class="btn ghost" href="#privacy">Privacy</a>
+        <a class="btn" href="https://github.com/klettrack/klettrack" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero container">
+      <span class="badge">100% free • Open-source • Private</span>
+      <h1>Train smarter. Climb stronger.</h1>
+      <p>klettrack is a free, open-source app to log <strong>boulder</strong> and <strong>rock</strong> sessions, plan training, and sync your boards (Tension Board, Kilter). Your data stays on your device — no accounts, no tracking.</p>
+      <div class="cta" style="margin:18px 0 8px">
+        <a class="btn primary" href="https://apps.apple.com/app/idYOUR_APP_ID">Download on the App Store</a>
+        <a class="btn" href="https://github.com/klettrack/klettrack" target="_blank" rel="noopener">Star on GitHub</a>
+      </div>
+      <p class="muted">Open-source project by climbers, for climbers.</p>
+    </section>
+
+    <section id="features" class="section">
+      <div class="container">
+        <div class="grid">
+          <div class="feature card">
+            <h3>Climb Log & Journal</h3>
+            <p>Quickly record sends, attempts, grades, gyms, and notes. A clean <em>log book</em> that stays yours.</p>
+          </div>
+          <div class="feature card">
+            <h3>Training Plans</h3>
+            <p>Template-based sessions with a catalog of 100+ drills — hangboard, <em>crimp</em> progressions, intervals, and more.</p>
+          </div>
+          <div class="feature card">
+            <h3>Board Sync</h3>
+            <p>Integrates with <strong>Tension Board</strong> & <strong>Kilter</strong> to pull climbs into your history.</p>
+          </div>
+          <div class="feature card">
+            <h3>Analytics</h3>
+            <p>See sends vs. attempts, send ratio, and seasonality heatmaps over time.</p>
+          </div>
+          <div class="feature card">
+            <h3>Timer</h3>
+            <p>Get-ready / work / rest timers with between-sets support and presets for common protocols.</p>
+          </div>
+          <div class="feature card">
+            <h3>Private by Design</h3>
+            <p>All data stays on device. No accounts. No tracking. No ads.</p>
+          </div>
+
+          <!-- Hero screenshots -->
+          <div class="screen">
+            <img src="img/01.png" alt="klettrack logbook screen">
+          </div>
+          <div class="screen">
+            <img src="img/02.png" alt="klettrack training plan screen">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screens" class="section">
+      <div class="container cols-2">
+        <div class="card">
+          <h2>Have a great idea or found a bug?</h2>
+          <p class="muted" style="margin-bottom:10px">
+            Request a feature, vote on ideas from other climbers, and follow the roadmap.
+          </p>
+          <a href="https://klettrack.featurebase.app/" target="_blank" rel="noopener">
+            Request a feature and follow the klettrack roadmap
+          </a>
+        </div>
+
+        <div class="card">
+          <h2>Screenshots</h2>
+          <p class="muted">A quick look at klettrack:</p>
+          <div class="shots">
+            <img src="img/01.png"   alt="klettrack logbook">
+            <img src="img/02.png"   alt="klettrack training plans">
+            <img src="img/03.png"   alt="klettrack analytics">
+            <img src="img/04_1.png" alt="klettrack timer get-ready">
+            <img src="img/04_2.png" alt="klettrack timer work">
+            <img src="img/04_3.png" alt="klettrack timer rest">
+            <img src="img/05.png"   alt="klettrack board sync">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="contribute" class="section">
+      <div class="container cols-2">
+        <div class="card">
+          <h2>Contribute</h2>
+          <p>Issues, feature requests, and pull requests are welcome. Android devs, we’d love to hear from you!</p>
+          <div class="btns" style="margin-top:8px">
+            <a class="btn" href="https://github.com/klettrack/klettrack" target="_blank" rel="noopener">GitHub Repo</a>
+            <a class="btn" href="https://github.com/klettrack/klettrack/issues" target="_blank" rel="noopener">Issue Tracker</a>
+          </div>
+        </div>
+        <div class="card" id="privacy">
+          <h2>Privacy</h2>
+          <p>klettrack stores all data on your device. The app does not collect analytics, does not require an account, and does not track you.</p>
+          <p><a href="https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy">Privacy policy</a>.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container cols-2">
+      <div>
+        <strong>klettrack</strong> — Train smarter. Climb stronger.<br />
+        <span class="muted">© <span id="y"></span> klettrack. MIT License.</span>
+      </div>
+      <div style="text-align:right">
+        <a class="pill" href="#top" aria-label="Back to top">↑ Back to top</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Year in footer
+    document.getElementById('y').textContent = new Date().getFullYear();
+
+    // Smooth scroll for internal links
+    document.querySelectorAll('a[href^="#"]').forEach(a=>{
+      a.addEventListener('click',e=>{
+        const id=a.getAttribute('href').slice(1);
+        const el=document.getElementById(id);
+        if(el){e.preventDefault();el.scrollIntoView({behavior:'smooth',block:'start'});}
+      });
+    });
+  </script>
+</body>
+</html>
