@@ -224,6 +224,50 @@
   .cols-2 .card{height:100%; display:flex; flex-direction:column;}
 .cols-2{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;align-items:stretch;}
 .cols-2 .card{height:100%;display:flex;flex-direction:column;}
+.btn.warm{
+  background:linear-gradient(135deg,var(--brand-2),#ffb84a);
+  border:1px solid var(--brand-2);
+  padding:6px 10px;
+  font-size:13px;
+  border-radius:999px;
+  box-shadow:none;
+  width:auto;
+  align-self:flex-start;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  text-align:left;
+}
+.btn.warm svg{
+  width:14px;
+  height:14px;
+  opacity:1;
+  fill:var(--brand);
+}
+.featurebase-btn{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 14px;
+  background:var(--card);
+  border:1px solid var(--brand-2);
+  border-radius:14px;
+  font-size:14px;
+  color:var(--text);
+  text-decoration:none;
+  transition:all .15s ease;
+  width:fit-content;
+}
+.featurebase-btn:hover{
+  background:linear-gradient(135deg,var(--brand-2),#ffb84a);
+  color:#000;
+}
+.featurebase-icon{
+  width:18px;
+  height:18px;
+  border-radius:4px;
+  object-fit:cover;
+}
 </style>
   <script type="application/ld+json">
   {
@@ -294,13 +338,13 @@
 
           <!-- Hero screenshots -->
           <div class="shots">
-            <img src="img/01.png"   alt="klettrack logbook">
-            <img src="img/02.png"   alt="klettrack training plans">
-            <img src="img/03.png"   alt="klettrack analytics">
-            <img src="img/04_1.png" alt="klettrack timer get-ready">
-            <img src="img/04_2.png" alt="klettrack timer work">
-            <img src="img/04_3.png" alt="klettrack timer rest">
-            <img src="img/05.png"   alt="klettrack board sync">
+            <img src="img/01.png"   alt="CLIMB">
+            <img src="img/02.png"   alt="SYNC">
+            <img src="img/03.png"   alt="PLAN">
+            <img src="img/05.png"   alt="TIMER">
+            <img src="img/04_1.png" alt="ANALYTICS">
+            <img src="img/04_2.png" alt="ANALYTICS">
+            <img src="img/04_3.png" alt="ANALYTICS">
           </div>
         </div>
       </div>
@@ -309,13 +353,21 @@
     <section id="screens" class="section">
       <div class="container cols-2">
         <div class="card">
-          <h2>Have a great idea or found a bug?</h2>
-          <a href="https://klettrack.featurebase.app/" target="_blank" rel="noopener">Request a feature and follow klettrack roadmap</a>
-        </div>
-        <div class="card">
           <h2>Why klettrack?</h2>
           <p>We built the app we wanted: open, private, and focused on the essentials. No clutter. No gimmicks. Just a reliable way to track your climbing and training, whether you’re on a board, in the gym, or outside on rock.</p>
-          
+        </div>
+        <div class="card">
+          <h2>Have a great idea or found a bug?</h2>
+          <div style="display:flex; flex-direction:row; gap:12px; margin-top:10px; justify-content:center;">
+  <a class="featurebase-btn" href="https://klettrack.featurebase.app/" target="_blank" rel="noopener">
+    <img src="https://asset.brandfetch.io/ide7Ro-M4y/id63_tssIk.png" class="featurebase-icon" />
+    <span>Request a feature</span>
+  </a>
+  <a class="featurebase-btn" href="https://klettrack.featurebase.app/roadmap" target="_blank" rel="noopener">
+    <img src="https://asset.brandfetch.io/ide7Ro-M4y/id63_tssIk.png" class="featurebase-icon" />
+    <span>Follow roadmap</span>
+  </a>
+</div>
         </div>
       </div>
     </section>
@@ -344,7 +396,7 @@
         <div class="card" id="privacy">
           <h2>Privacy</h2>
           <p>klettrack stores all data on your device. The app does not collect analytics, does not require an account, and does not track you.</p>
-          <p><a href="https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy">Privacy policy</a>.</p>
+          <p><a href="https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy">Privacy policy</a></p>
         </div>
       </div>
     </section>
