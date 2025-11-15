@@ -88,7 +88,7 @@
       margin-bottom:14px;
     }
 
-    .btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-start}
     .btn{
       display:inline-flex;
       align-items:center;
@@ -110,7 +110,7 @@
     .btn.primary{background:linear-gradient(135deg,var(--brand),#facc15);border-color:transparent}
     .btn.ghost{background:transparent;box-shadow:none}
 
-    .hero{padding:64px 0 24px}
+    .hero{padding:64px 0 10px}
     .hero h1{font-size:44px;line-height:1.1;margin:0 0 10px}
     .hero p{color:var(--muted);max-width:740px;margin:0 0 20px}
 
@@ -175,7 +175,7 @@
       color:var(--muted);
     }
 
-    .shots{
+    .shots{ grid-column:1 / -1;
       margin-top:14px;
       display:grid;
       grid-template-columns:repeat(3,minmax(0,1fr));
@@ -226,7 +226,10 @@
       border:1px solid var(--border);
       font-size:.9em;
     }
-  </style>
+  .cols-2 .card{height:100%; display:flex; flex-direction:column;}
+.cols-2{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;align-items:stretch;}
+.cols-2 .card{height:100%;display:flex;flex-direction:column;}
+</style>
   <script type="application/ld+json">
   {
     "@context":"https://schema.org",
@@ -244,32 +247,26 @@
   </script>
 </head>
 <body>
-  <header>
-    <div class="container nav">
-      <a class="logo" href="#top" aria-label="klettrack home">
-        <img src="img/icon_1024x1024.png" alt="" class="logo-icon">
-        <span>klettrack</span>
-      </a>
-      <nav class="btns" aria-label="primary">
-        <a class="btn ghost" href="#features">Features</a>
-        <a class="btn ghost" href="#screens">Screenshots</a>
-        <a class="btn ghost" href="#contribute">Contribute</a>
-        <a class="btn ghost" href="#privacy">Privacy</a>
-        <a class="btn" href="https://github.com/klettrack/klettrack" target="_blank" rel="noopener">GitHub</a>
-      </nav>
-    </div>
-  </header>
+  
 
   <main id="top">
     <section class="hero container">
-      <span class="badge">100% free • Open-source • Private</span>
-      <h1>Train smarter. Climb stronger.</h1>
+      
+      <div style="display:flex; align-items:center; gap:14px; margin-bottom:12px;">
+  <a href="https://apps.apple.com/us/app/klettrack/id6754015176?itscg=30200&itsct=apps_box_artwork&mttnsubad=6754015176" style="position: relative; width: 45px; height: 45px; overflow: hidden; display: inline-block; vertical-align: middle; --app-icon-mask: url('data:image/svg+xml,%0A%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 xml:space=%22preserve%22 viewBox=%220 0 230.5 230.5%22%3E%0A  %3Cpath fill-rule=%22evenodd%22 stroke-linejoin=%22round%22 stroke-miterlimit=%221.4%22 clip-rule=%22evenodd%22 d=%22M158.2 230H64.1a320 320 0 0 1-7-.1c-5 0-10-.5-15-1.3a50.8 50.8 0 0 1-14.4-4.8 48.2 48.2 0 0 1-21-21 50.9 50.9 0 0 1-4.8-14.4 100.7 100.7 0 0 1-1.3-15v-7l-.1-8.2V64.1a320 320 0 0 1 .1-7c0-5 .5-10 1.3-15a50.7 50.7 0 0 1 4.8-14.4 48.2 48.2 0 0 1 21-21 51 51 0 0 1 14.4-4.8c5-.8 10-1.2 15-1.3a320 320 0 0 1 7 0l8.2-.1h94.1a320 320 0 0 1 7 .1c5 0 10 .5 15 1.3a52 52 0 0 1 14.4 4.8 48.2 48.2 0 0 1 21 21 50.9 50.9 0 0 1 4.8 14.4c.8 5 1.2 10 1.3 15a320 320 0 0 1 .1 7v102.3l-.1 7c0 5-.5 10-1.3 15a50.7 50.7 0 0 1-4.8 14.4 48.2 48.2 0 0 1-21 21 50.8 50.8 0 0 1-14.4 4.8c-5 .8-10 1.2-15 1.3a320 320 0 0 1-7 0l-8.2.1z%22/%3E%0A%3C/svg%3E%0A');">
+    <img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/9a/e9/08/9ae9085f-64ca-3678-bc84-430c722bb3db/AppIcon-1x_U007emarketing-0-6-0-85-220-0.png/540x540bb.jpg" alt="klettrack" style="width: 100%; height: 100%; object-fit: contain; mask-image: var(--app-icon-mask); -webkit-mask-image: var(--app-icon-mask);" />
+  </a>
+  <h1 style="margin:0;">klettrack</h1>
+</div>
       <p>klettrack is a free, open-source app to log <strong>boulder</strong> and <strong>rock</strong> sessions, plan training, and sync your boards (Tension Board, Kilter). Your data stays on your device — no accounts, no tracking.</p>
-      <div class="cta" style="margin:18px 0 8px">
-        <a class="btn primary" href="https://apps.apple.com/app/idYOUR_APP_ID">Download on the App Store</a>
-        <a class="btn" href="https://github.com/klettrack/klettrack" target="_blank" rel="noopener">Star on GitHub</a>
+      <div class="cta" style="margin:18px 0 8px; display:flex; flex-direction:column; gap:12px; align-items:flex-start;">
+        <a href="https://apps.apple.com/us/app/klettrack/id6754015176?itscg=30200&itsct=apps_box_badge&mttnsubad=6754015176" style="display:inline-block;">
+          <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us?releaseDate=1760572800" alt="Download on the App Store" style="width:246px; height:82px; object-fit:contain;" />
+        </a>
+
+        
       </div>
-      <p class="muted">Open-source project by climbers, for climbers.</p>
+      
     </section>
 
     <section id="features" class="section">
@@ -301,31 +298,6 @@
           </div>
 
           <!-- Hero screenshots -->
-          <div class="screen">
-            <img src="img/01.png" alt="klettrack logbook screen">
-          </div>
-          <div class="screen">
-            <img src="img/02.png" alt="klettrack training plan screen">
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="screens" class="section">
-      <div class="container cols-2">
-        <div class="card">
-          <h2>Have a great idea or found a bug?</h2>
-          <p class="muted" style="margin-bottom:10px">
-            Request a feature, vote on ideas from other climbers, and follow the roadmap.
-          </p>
-          <a href="https://klettrack.featurebase.app/" target="_blank" rel="noopener">
-            Request a feature and follow the klettrack roadmap
-          </a>
-        </div>
-
-        <div class="card">
-          <h2>Screenshots</h2>
-          <p class="muted">A quick look at klettrack:</p>
           <div class="shots">
             <img src="img/01.png"   alt="klettrack logbook">
             <img src="img/02.png"   alt="klettrack training plans">
@@ -339,15 +311,40 @@
       </div>
     </section>
 
+    <section id="screens" class="section">
+      <div class="container cols-2">
+        <div class="card">
+          <h2>Have a great idea or found a bug?</h2>
+          <a href="https://klettrack.featurebase.app/" target="_blank" rel="noopener">Request a feature and follow klettrack roadmap</a>
+        </div>
+        <div class="card">
+          <h2>Why klettrack?</h2>
+          <p>We built the app we wanted: open, private, and focused on the essentials. No clutter. No gimmicks. Just a reliable way to track your climbing and training, whether you’re on a board, in the gym, or outside on rock.</p>
+          
+        </div>
+      </div>
+    </section>
+        
+        
+      </div>
+    </section>
+
     <section id="contribute" class="section">
       <div class="container cols-2">
         <div class="card">
           <h2>Contribute</h2>
           <p>Issues, feature requests, and pull requests are welcome. Android devs, we’d love to hear from you!</p>
-          <div class="btns" style="margin-top:8px">
-            <a class="btn" href="https://github.com/klettrack/klettrack" target="_blank" rel="noopener">GitHub Repo</a>
-            <a class="btn" href="https://github.com/klettrack/klettrack/issues" target="_blank" rel="noopener">Issue Tracker</a>
-          </div>
+          <div class="btns" style="margin-top:8px; display:flex; flex-direction:row; gap:16px; align-items:flex-start; justify-content:flex-start;">
+
+  <!-- Star button -->
+  <a class="github-button" href="https://github.com/shaharnoy/Klettrack" data-color-scheme="no-preference: light; light: light; dark: dark;" data-size="large" data-show-count="true" aria-label="Star shaharnoy/Klettrack on GitHub">Star</a>
+
+  <!-- Issue button -->
+  <a class="github-button" href="https://github.com/shaharnoy/Klettrack/issues" data-color-scheme="no-preference: light; light: light; dark: dark;" data-size="large" data-show-count="true" aria-label="Issue shaharnoy/Klettrack on GitHub">Issue</a>
+
+  
+
+</div>
         </div>
         <div class="card" id="privacy">
           <h2>Privacy</h2>
@@ -362,10 +359,10 @@
     <div class="container cols-2">
       <div>
         <strong>klettrack</strong> — Train smarter. Climb stronger.<br />
-        <span class="muted">© <span id="y"></span> klettrack. MIT License.</span>
+        <span class="muted">© <span id="y"></span> klettrack.</span>
       </div>
       <div style="text-align:right">
-        <a class="pill" href="#top" aria-label="Back to top">↑ Back to top</a>
+        
       </div>
     </div>
   </footer>
@@ -379,9 +376,10 @@
       a.addEventListener('click',e=>{
         const id=a.getAttribute('href').slice(1);
         const el=document.getElementById(id);
-        if(el){e.preventDefault();el.scrollIntoView({behavior:'smooth',block:'start'});}
+        if(el){e.preventDefault();el.scrollIntoView({behavior:'smooth',block:'start'});} 
       });
     });
   </script>
+  <script async defer src="https://buttons.github.io/buttons.js"></script>
 </body>
 </html>
