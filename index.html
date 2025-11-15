@@ -269,6 +269,7 @@
   .container {
     padding: 0 16px;
   }
+
   .have-idea-actions {
     flex-direction: column;
     align-items: stretch;
@@ -282,6 +283,17 @@
   /* Screenshot grid: a bit tighter on very small screens */
   .shots {
     gap: 10px;
+  }
+
+  /* Stack: Why, Feedback, Contribute, Privacy as same-width cards */
+  .cols-2 {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .cols-2 .card {
+    width: 100%;
   }
 }
 </style>
