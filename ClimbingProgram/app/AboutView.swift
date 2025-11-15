@@ -200,7 +200,7 @@ extension AboutView {
             “Kilter Board,” “Tension Board,” , "Aurora Climbing" and other brand names are trademarks of their respective owners.
             Klettrack is an independent open source project and is not affiliated with, endorsed by, or sponsored by those brands.
             """,
-            websiteURL: URL(string: "https://github.com/shaharnoy/Klettrack"),
+            websiteURL: URL(string: "https://www.klettrack.com"),
             issuesURL: URL(string:  "https://klettrack.featurebase.app/"),
             privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
         )
@@ -225,7 +225,7 @@ extension AboutView {
             - Spread the word to other climbers  
 
             """,
-            websiteURL: URL(string: "https://github.com/shaharnoy/Klettrack"),
+            websiteURL: URL(string: "https://www.klettrack.com"),
             issuesURL: URL(string: "https://klettrack.featurebase.app/"),
             privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
         )
