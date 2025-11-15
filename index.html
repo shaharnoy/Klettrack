@@ -244,29 +244,44 @@
   opacity:1;
   fill:var(--brand);
 }
-.featurebase-btn{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:10px 14px;
-  background:var(--card);
-  border:1px solid var(--brand-2);
-  border-radius:14px;
-  font-size:14px;
-  color:var(--text);
-  text-decoration:none;
-  transition:all .15s ease;
-  width:fit-content;
-}
-.featurebase-btn:hover{
-  background:linear-gradient(135deg,var(--brand-2),#ffb84a);
-  color:#000;
-}
-.featurebase-icon{
-  width:18px;
-  height:18px;
-  border-radius:4px;
-  object-fit:cover;
+@media (max-width: 480px) {
+  .hero {
+    padding: 40px 0 8px;
+  }
+
+  .hero h1 {
+    font-size: 28px;
+  }
+
+  .hero p {
+    font-size: 14px;
+  }
+
+  .section {
+    padding: 28px 0;
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .container {
+    padding: 0 16px;
+  }
+  .have-idea-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .have-idea-actions .featurebase-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Screenshot grid: a bit tighter on very small screens */
+  .shots {
+    gap: 10px;
+  }
 }
 </style>
   <script type="application/ld+json">
@@ -300,7 +315,9 @@
       <p>klettrack is a free, open-source app to log <strong>boulder</strong> and <strong>rock climbing</strong> sessions, plan training, and sync your boards (Tension Board, Kilter). Your data stays on your device - no accounts, no tracking.</p>
       <div class="cta" style="margin:18px 0 8px; display:flex; flex-direction:column; gap:12px; align-items:flex-start;">
         <a href="https://apps.apple.com/us/app/klettrack/id6754015176?itscg=30200&itsct=apps_box_badge&mttnsubad=6754015176" style="display:inline-block;">
-          <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us?releaseDate=1760572800" alt="Download on the App Store" style="width:246px; height:82px; object-fit:contain;" />
+          <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us?releaseDate=1760572800"
+            alt="Download on the App Store"
+            style="width:220px; max-width:100%; height:auto; object-fit:contain;"/>
         </a>
       </div>
       
