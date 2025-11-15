@@ -204,7 +204,8 @@
     @media(max-width:900px){
       .feature{grid-column:span 6}
       .screen{grid-column:span 12}
-      .cols-2{grid-template-columns:1fr}
+      .cols-2{display:block;} /* instead of grid on mobile */
+      .cols-2 .card{width:100%;margin-bottom:16px;}/* consistent spacing between cards */
       .hero h1{font-size:36px}
       .btns{justify-content:flex-start}
     }
