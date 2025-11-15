@@ -52,7 +52,7 @@ struct SeedData {
         let core = CatalogSeeder.ensureActivity("Core", in: ctx) // ensure Activity
         do {
             let anterior = CatalogSeeder.ensureType("Anterior Core", in: core)
-            anterior.typeDescription = "pick 2-3 exercises per sessions"
+            anterior.typeDescription = ""
             ensureEx("Abdominal Crunches", into: anterior, order: 1, reps: "25-100", sets: "2", rest: "3 min")
             ensureEx("Hanging Knee Lifts", into: anterior, order: 2, reps: "15-20", sets: "2-3", rest: "3 min")
             ensureEx("1-Arm 1-Leg Plank", into: anterior, order: 3, duration: "1 min", sets: "2", rest: "3 min")
@@ -60,24 +60,39 @@ struct SeedData {
             ensureEx("Front Lever", into: anterior, order: 5, reps: "2-5", sets: "1-2", rest: "3 min")
 
             let posterior = CatalogSeeder.ensureType("Posterior Core", in: core)
-            posterior.typeDescription = "pick 2-3 exercises per sessions "
+            posterior.typeDescription = ""
             ensureEx("Superman", into: posterior, order: 1, reps: "20", sets: "2", rest: "3 min")
             ensureEx("Reverse Plank", into: posterior, order: 2, duration: "20-60 sec", sets: "1-2", rest: "3 min")
             ensureEx("Back Bridge", into: posterior, order: 3, reps: "15-20", sets: "1-2", rest: "3 min")
             ensureEx("Side Hip Raises", into: posterior, order: 4, reps: "10-20", sets: "2", rest: "1 min")
 
             let chain = CatalogSeeder.ensureType("Total/Posterior Chain", in: core)
-            chain.typeDescription = "pick one of them if you're in the mood"
+            chain.typeDescription = ""
             ensureEx("Sumo Deadlift", into: chain, order: 1, reps: "10-15", sets: "2", rest: "3 min")
             ensureEx("Dumbbell Snatch", into: chain, order: 2, reps: "5-8", sets: "2-3", rest: "3 min")
             ensureEx("Barbell Deadlift", into: chain, order: 3, reps: "3-6", sets: "2-4", rest: "3 min")
         }
 
+        // ===== Mobility =====
+        let mobility = CatalogSeeder.ensureActivity("Mobility", in: ctx) // ensure Activity
+        do {
+            let bottom = CatalogSeeder.ensureType("Lower body", in: mobility)
+            bottom.typeDescription = ""
+            ensureEx("Knee-to-chest", into: bottom, order: 1, reps: "2 each leg", duration: "30 sec")
+            ensureEx("Band Hamstring Stretch", into: bottom, order: 2,reps: "3 each leg", duration: "30 sec")
+            ensureEx("Butterfly Stretch", into: bottom, order: 2,reps: "2", duration: "30-60 sec")
+            ensureEx("Seated Single-Leg Hip Adductor", into: bottom, order: 2,reps: "2 each leg", duration: "30 sec")
+            ensureEx("Lunges", into: bottom, order: 2,reps: "2 each leg", duration: "30 sec")
+            ensureEx("Kneeling Quad and Hip Flexor Stretch", into: bottom, order: 2,reps: "2 each leg", duration: "30 sec")
+            ensureEx("Seated Calf Stretch with Band", into: bottom, order: 2,reps: "2 each leg", duration: "30 sec")
+            ensureEx("Oblique Knees to One Side", into: bottom, order: 2,reps: "1 each side", duration: "30 sec")
+
+        }
         // ===== ANTAGONIST & STABILIZER =====
         let ant = CatalogSeeder.ensureActivity("Antagonist & Stabilizer", in: ctx)
         do {
             let wrist = CatalogSeeder.ensureType("Wrist Stabilizers", in: ant)
-            wrist.typeDescription = "pick 2-3 exercises per sessions"
+            wrist.typeDescription = ""
             ensureEx("Reverse Wrist Curls", into: wrist, order: 1, reps: "15–25", sets: "2–3", rest: "3 min")
             ensureEx("Pronator Isolation", into: wrist, order: 2, reps: "20–25", sets: "2 in each hand", rest: "2 min")
             ensureEx("Wrist Extension Isometric", into: wrist, order: 3, duration: "1 min", sets: "2 each arm", rest: "2 min")
@@ -85,7 +100,7 @@ struct SeedData {
             ensureEx("Wide Pinch Wrist Extention", into: wrist, order: 5, duration: "30 sec", sets: "3–5", rest: "2 min")
 
             let cuff = CatalogSeeder.ensureType("Rotator Cuff & Scap Stabilizers", in: ant)
-            cuff.typeDescription = "pick 2 exercises per sessions"
+            cuff.typeDescription = ""
             ensureEx("DB Internal Rotation", into: cuff, order: 1, reps: "25", sets: "2 each hand")
             ensureEx("DB External Rotation", into: cuff, order: 2, reps: "25", sets: "2 each hand")
             ensureEx("Band T", into: cuff, order: 3, reps: "20", sets: "2", rest: "2 min")
@@ -94,7 +109,7 @@ struct SeedData {
             ensureEx("Scapular Pull-Up", into: cuff, order: 6, reps: "8–12", sets: "1")
 
             let push = CatalogSeeder.ensureType("Antagonist (Push) Muscles", in: ant)
-            push.typeDescription = "pick 1 exercise per session"
+            push.typeDescription = ""
             ensureEx("Shoulder Press", into: push, order: 1, reps: "15–20", sets: "1–2", rest: "3 min")
             ensureEx("Push-Up", into: push, order: 2, reps: "15–25", sets: "1–2", rest: "3 min")
         }

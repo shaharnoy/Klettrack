@@ -59,7 +59,7 @@ struct MediaManagerView: View {
                 }
             }
         }
-        .navigationTitle("Media Manager")
+        .navigationTitle("Climbing Gallery")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $fullScreenMedia) { media in
             MediaFullScreenView(media: media)
