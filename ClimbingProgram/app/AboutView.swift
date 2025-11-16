@@ -115,6 +115,7 @@ struct AboutView: View {
     let websiteURL: URL?
     let issuesURL: URL?
     let privacyURL: URL?
+    let termsURL: URL?
 
     private var appName: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
@@ -149,12 +150,13 @@ struct AboutView: View {
                 SimpleMarkdownView(markdown: aboutText)
 
                 // Links
-                if websiteURL != nil || issuesURL != nil || privacyURL != nil {
+                if websiteURL != nil || issuesURL != nil || privacyURL != nil || termsURL != nil {
                     Divider().padding(.vertical, 4)
                     VStack(alignment: .leading, spacing: 10) {
                         if let u = websiteURL { Link("Website / Support", destination: u) }
                         if let u = issuesURL  { Link("Report an Issue",   destination: u) }
                         if let u = privacyURL { Link("Privacy Policy",    destination: u) }
+                        if let u = termsURL { Link("Terms & Conditions",    destination: u) }
                     }
                 }
             }
@@ -200,9 +202,10 @@ extension AboutView {
             “Kilter Board,” “Tension Board,” , "Aurora Climbing" and other brand names are trademarks of their respective owners.
             Klettrack is an independent open source project and is not affiliated with, endorsed by, or sponsored by those brands.
             """,
-            websiteURL: URL(string: "https://www.klettrack.com"),
-            issuesURL: URL(string:  "https://klettrack.featurebase.app/"),
-            privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
+            websiteURL: URL(string: "https://klettrack.com"),
+            issuesURL: URL(string: "https://klettrack.featurebase.app/"),
+            privacyURL: URL(string: "https://klettrack.com/privacy.html"),
+            termsURL: URL(string: "https://klettrack.com/terms.html")
         )
     }
 
@@ -225,9 +228,10 @@ extension AboutView {
             - Spread the word to other climbers  
 
             """,
-            websiteURL: URL(string: "https://www.klettrack.com"),
+            websiteURL: URL(string: "https://klettrack.com"),
             issuesURL: URL(string: "https://klettrack.featurebase.app/"),
-            privacyURL: URL(string: "https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy")
+            privacyURL: URL(string: "https://klettrack.com/privacy.html"),
+            termsURL: URL(string: "https://klettrack.com/terms.html")
         )
     }
 }
