@@ -14,35 +14,43 @@ public struct ProgressViewScreen: View {
     @Query(sort: \Session.date) private var allSessions: [Session]
     @Query(sort: \ClimbEntry.dateLogged) private var allClimbEntries: [ClimbEntry]
     @Query(sort: \Plan.startDate) private var allPlans: [Plan]
-
+    
     @State private var tab: Tab = .climb
     @StateObject private var climbVM  = ClimbStatsVM(input: .init(sessions: [], climbs: [], plans: []))
     @StateObject private var exerciseVM = ExerciseStatsVM(input: .init(sessions: [], climbs: [], plans: []))
     public init() {}
-
+    
     public var body: some View {
-        ScrollView{
-            VStack(spacing: 0) {
-                // Segmented tab selector
-                Picker("", selection: $tab) {
-                    ForEach(Tab.allCases, id: \.self) { tabCase in
-                        Text(tabCase.rawValue).tag(tabCase)
-                    }
+        VStack(spacing: 0) {
+            // Segmented tab selector
+            Picker("", selection: $tab) {
+                ForEach(Tab.allCases, id: \.self) { tabCase in
+                    Text(tabCase.rawValue).tag(tabCase)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 8)
-                
-                Divider().padding(.top, 8)
-                Group {
-                    if tab == .climb {
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.top, 8)
+            
+            Divider().padding(.top, 8)
+            
+            // Each tab has its own ScrollView → no shared scroll layout that can shrink
+            Group {
+                if tab == .climb {
+                    ScrollView {
                         ClimbStatsView(vm: climbVM)
-                    } else {
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                } else {
+                    ScrollView {
                         ExerciseStatsView(vm: exerciseVM)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                 }
             }
         }
+        .navigationTitle("PROGRESS")
+        .navigationBarTitleDisplayMode(.large)
         .onAppear {
             let data = StatsInputData(
                 sessions: allSessions,
@@ -52,7 +60,6 @@ public struct ProgressViewScreen: View {
             climbVM.updateInput(data)
             exerciseVM.updateInput(data)
         }
-        // separate onChange calls; avoid chaining heavy multi-line closures
         .onChange(of: allSessions) { _, _ in
             let data = StatsInputData(sessions: allSessions, climbs: allClimbEntries, plans: allPlans)
             climbVM.updateInput(data)
@@ -68,8 +75,6 @@ public struct ProgressViewScreen: View {
             climbVM.updateInput(data)
             exerciseVM.updateInput(data)
         }
-        .navigationTitle("PROGRESS")
-        .navigationBarTitleDisplayMode(.large)
     }
 }
 
@@ -923,10 +928,7 @@ fileprivate struct ExerciseStatsView: View {
     @State private var didInit = false
     fileprivate enum ExerciseDist { case weight, reps, sets,duration}
 
-    //init(data: StatsInputData) { _vm = StateObject(wrappedValue: .init(input: data)) }
-
     var body: some View {
-        ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 SectionDivider(label: "Filters")
                 FilterCard {
@@ -979,11 +981,10 @@ fileprivate struct ExerciseStatsView: View {
 
             }
             .padding(.bottom, 24)
-        }
-        .scrollDisabled(true)
-        .onChange(of: vm.dateRange) {
-            vm.recomputeAll()
-        }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .onChange(of: vm.dateRange) {
+                vm.recomputeAll()
+            }
     }
 
     private func summary(_ set: Set<String>) -> String { set.isEmpty ? "All" : "\(set.count) selected" }
@@ -997,7 +998,6 @@ fileprivate struct ClimbStatsView: View {
     @State private var showGradePicker = false
 
     var body: some View {
-        ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 SectionDivider(label: "Filters")
                 FilterCard {
@@ -1112,23 +1112,23 @@ fileprivate struct ClimbStatsView: View {
                 SeasonalitySection(slices: vm.seasonality)
             }
             .padding(.bottom, 24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .onChange(of: vm.dateRange) {
+                vm.recomputeAll()
+            }
+            .onChange(of: vm.climbType) {
+                vm.recomputeAll()
+            }
+            .onChange(of: vm.sportType) {
+                vm.recomputeAll()
+            }
+            .onChange(of: vm.workInProgress) {
+                vm.recomputeAll()
+            }
+            .onChange(of: vm.preferFeelsLikeGrade) {
+                vm.recomputeAll()
+            }
         }
-        .onChange(of: vm.dateRange) {
-            vm.recomputeAll()
-        }
-        .onChange(of: vm.climbType) {
-            vm.recomputeAll()
-        }
-        .onChange(of: vm.sportType) {
-            vm.recomputeAll()
-        }
-        .onChange(of: vm.workInProgress) {
-            vm.recomputeAll()
-        }
-        .onChange(of: vm.preferFeelsLikeGrade) {
-            vm.recomputeAll()
-        }
-    }
 
     private func summary(_ set: Set<String>) -> String { set.isEmpty ? "All" : "\(set.count) selected" }
 }
