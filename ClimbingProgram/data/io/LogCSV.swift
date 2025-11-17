@@ -59,7 +59,7 @@ enum LogCSV {
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
         // Header extended with climb_id and tb2_uuid at the end (backward compatible)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs"]
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -98,6 +98,7 @@ enum LogCSV {
                     csvEscape(i.exerciseName), // exercise_name
                     "", // climb_type
                     csvEscape(i.grade ?? ""), // grade
+                    "", //feels like grade
                     "", // angle
                     "", // holdColor
                     "", // rope_type
@@ -138,6 +139,7 @@ enum LogCSV {
                 "", // exercise_name
                 csvEscape(climb.climbType.rawValue),
                 csvEscape(climb.grade),
+                csvEscape(climb.feelsLikeGrade ?? ""),
                 climb.angleDegrees.map { String($0) } ?? "",
                 csvEscape(climb.holdColor?.rawValue ?? ""),
                 csvEscape(climb.ropeClimbType?.rawValue ?? ""),
@@ -235,16 +237,17 @@ private func itemSignature(date: Date,
 
 /// Build a dedupe signature for a climb entry
 private func climbSignature(date: Date,
-                           climbType: ClimbType,
-                           grade: String,
-                           angle: Int?,
+                            climbType: ClimbType,
+                            grade: String,
+                            feelsLikeGrade: String,
+                            angle: Int?,
                             holdColor: String?,
-                           style: String,
-                           attempts: String?,
-                           isWIP: Bool,
-                           ispreviouslyClimbed: Bool,
-                           gym: String,
-                           notes: String?) -> String {
+                            style: String,
+                            attempts: String?,
+                            isWIP: Bool,
+                            ispreviouslyClimbed: Bool,
+                            gym: String,
+                            notes: String?) -> String {
     func norm(_ s: String?) -> String {
         (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -255,6 +258,7 @@ private func climbSignature(date: Date,
         df.string(from: date),
         climbType.rawValue,
         norm(grade),
+        norm(feelsLikeGrade),
         angle?.description ?? "",
         norm(holdColor),
         norm(style),
@@ -281,6 +285,7 @@ extension LogCSV {
         let name: String
         let climbType: String?
         let grade: String?
+        let feelsLikeGrade: String?
         let angle: Int?
         let holdColor: String?
         let ropeType: String?
@@ -352,6 +357,7 @@ extension LogCSV {
                 static let exercise   = ["exercise_name"]
                 static let climbType  = ["climb_type"]
                 static let grade      = ["grade"]
+                static let feelsLikeGrade = ["feelsLikeGrade", "feelslikegrade"]
                 static let angle      = ["angle"]
                 static let holdColor  = ["hold_color", "holdcolor"]
                 static let ropeType   = ["rope_type"]
@@ -402,7 +408,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -410,6 +416,7 @@ extension LogCSV {
                     exerciseName = val(parts, Cols.exercise)
                     climbTypeStr = val(parts, Cols.climbType)
                     gradeStr     = val(parts, Cols.grade)
+                    feelsLikeGradeStr = val(parts, Cols.feelsLikeGrade)
                     angleStr     = val(parts, Cols.angle)
                     holdColorStr = val(parts, Cols.holdColor)
                     ropeTypeStr  = val(parts, Cols.ropeType)
@@ -456,6 +463,8 @@ extension LogCSV {
                     climbIdStr   = p(21)
                     tb2UUIDStr   = p(22)
                     mediaRefsStr = ""   // no media column in legacy CSV
+                    feelsLikeGradeStr = "" //no alternative grade in legacy CSV
+
                 }
                 
                 // Minimal validity check
@@ -467,6 +476,7 @@ extension LogCSV {
                 // Normalize/convert
                 let type = typeStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let grade = gradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
+                let feelsLikeGrade = feelsLikeGradeStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let angle = angleStr.isEmpty ? nil : Int(angleStr)
                 let holdColor = holdColorStr.isEmpty ? nil : holdColorStr
                 let ropeType = ropeTypeStr.isEmpty ? nil : ropeTypeStr
@@ -501,6 +511,7 @@ extension LogCSV {
                     name: name,
                     climbType: climbTypeStr.isEmpty ? nil : climbTypeStr,
                     grade: grade.isEmpty ? nil : grade,
+                    feelsLikeGrade: feelsLikeGrade.isEmpty ? nil : feelsLikeGrade,
                     angle: angle,
                     holdColor: holdColor,
                     ropeType: ropeType,
@@ -677,6 +688,7 @@ extension LogCSV {
                     if let existing = (try? context.fetch(fetch))?.first {
                         existing.climbType = climbType
                         existing.grade = grade
+                        existing.feelsLikeGrade = e.feelsLikeGrade
                         existing.angleDegrees = e.angle
                         existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
                         existing.attempts = e.attempts
@@ -694,6 +706,7 @@ extension LogCSV {
                             climbType: climbType,
                             ropeClimbType: ropeClimbType,
                             grade: grade,
+                            feelsLikeGrade: e.feelsLikeGrade,
                             angleDegrees: e.angle,
                             style: e.style?.isEmpty == false ? e.style! : "Unknown",
                             attempts: e.attempts,
@@ -725,6 +738,7 @@ extension LogCSV {
                     if let existing = (try? context.fetch(fetch))?.first {
                         existing.climbType = climbType
                         existing.grade = grade
+                        existing.feelsLikeGrade = e.feelsLikeGrade
                         existing.angleDegrees = e.angle
                         existing.style = e.style?.isEmpty == false ? e.style! : "Unknown"
                         existing.attempts = e.attempts
@@ -742,6 +756,7 @@ extension LogCSV {
                             climbType: climbType,
                             ropeClimbType: ropeClimbType,
                             grade: grade,
+                            feelsLikeGrade: e.feelsLikeGrade,
                             angleDegrees: e.angle,
                             style: e.style?.isEmpty == false ? e.style! : "Unknown",
                             attempts: e.attempts,
@@ -767,6 +782,7 @@ extension LogCSV {
                         date: startOfDay,
                         climbType: climbType,
                         grade: grade,
+                        feelsLikeGrade: e.feelsLikeGrade ?? "",
                         angle: e.angle,
                         holdColor: e.holdColor,
                         style: e.style ?? "",
@@ -788,6 +804,7 @@ extension LogCSV {
                             date: Calendar.current.startOfDay(for: climb.dateLogged),
                             climbType: climb.climbType,
                             grade: climb.grade,
+                            feelsLikeGrade: climb.feelsLikeGrade ?? "",
                             angle: climb.angleDegrees,
                             holdColor: climb.holdColor?.rawValue,
                             style: climb.style,
@@ -807,6 +824,7 @@ extension LogCSV {
                 let climbEntry = ClimbEntry(
                     climbType: climbType,
                     grade: grade,
+                    feelsLikeGrade: e.feelsLikeGrade,
                     angleDegrees: e.angle,
                     style: e.style?.isEmpty == false ? e.style! : "Unknown",
                     attempts: e.attempts,

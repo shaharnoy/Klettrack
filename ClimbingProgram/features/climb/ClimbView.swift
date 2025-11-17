@@ -121,11 +121,21 @@ struct ClimbView: View {
         .sheet(isPresented: $showingAddClimb) {
             AddClimbView()
         }
+        .sheet(isPresented: $showingAddClimb) {
+            AddClimbView()
+        }
         .sheet(item: $editingClimb) { climb in
-            EditClimbView(climb: climb)
+            // Edit the climb directly inside ClimbLogForm
+            ClimbLogForm(
+                title: "Edit Climb",
+                initialDate: climb.dateLogged,
+                existingClimb: climb,
+                onSave: nil    // no temp copy; changes are already applied
+            )
         }
         // Credentials prompt sheet
         .sheet(isPresented: $showingCredentialsSheet) {
+
             TB2CredentialsSheet(
                 header: (pendingBoard == .kilter) ? "Kilter login details" : "TB2 login details",
                 username: $credsUsername,
@@ -218,8 +228,8 @@ struct ClimbView: View {
     private var filterSection: some View {
         Section {
             HStack(spacing: 8) {
-                filterToggle(isOn: $showOnlyWIP, label: "WIP Only", onSymbol: "flame.fill", offSymbol: "flame")
-                filterToggle(isOn: $hidePreviouslyClimbed, label: "Hide Previously climbed", onSymbol: "eye.slash.fill", offSymbol: "eye.slash")
+                filterToggle(isOn: $showOnlyWIP, label: "WIP Only", onSymbol: "wrench.and.screwdriver.fill", offSymbol: "wrench.and.screwdriver")
+                filterToggle(isOn: $hidePreviouslyClimbed, label: "Hide Resends", onSymbol: "eye.slash.fill", offSymbol: "eye.slash")
                 Spacer(minLength: 0)
             }
             .font(.caption)
@@ -447,9 +457,22 @@ struct ClimbRowCard: View {
                     .foregroundColor(climbTypeColor)
                     .cornerRadius(3)
                 
-                // Grade - only show if not "Unknown"
-                if climb.grade != "Unknown" && !climb.grade.isEmpty {
-                    Text(climb.grade)
+                // show grade only if filled, show alternative grade if grade isn't there,
+                // show grade& alterntive grade if both exist
+                let hasGrade = climb.grade != "Unknown" && !climb.grade.isEmpty
+                let hasFeels = (climb.feelsLikeGrade ?? "").isEmpty == false
+
+                if hasGrade || hasFeels {
+                    let display: String = {
+                        switch (hasGrade, hasFeels) {
+                        case (true, true):  return "\(climb.grade) (\(climb.feelsLikeGrade!))"
+                        case (true, false): return climb.grade
+                        case (false, true): return climb.feelsLikeGrade!   // only feels-like
+                        default:            return ""
+                        }
+                    }()
+
+                    Text(display)
                         .font(.body)
                         .foregroundColor(.primary)
                 }
@@ -544,495 +567,6 @@ struct ClimbRowCard: View {
         .onTapGesture {
             onEdit()
         }
-    }
-}
-
-// MARK: - Edit Climb View
-
-struct EditClimbView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
-    @Query private var climbStyles: [ClimbStyle]
-    @Query private var climbGyms: [ClimbGym]
-    
-    @Bindable var climb: ClimbEntry
-    
-    @State private var showingStyleAlert = false
-    @State private var showingGymAlert = false
-    @State private var newStyleName = ""
-    @State private var newGymName = ""
-    
-    // Local state for editing
-    @State private var grade: String = ""
-    @State private var angleDegrees: String = ""
-    @State private var selectedStyle: String = ""
-    @State private var attempts: String = ""
-    @State private var selectedGym: String = ""
-    @State private var notes: String = ""
-    @State private var selectedDate: Date = Date()
-    @State private var isPreviouslyClimbed: Bool = false
-    @State private var selectedHoldColor: HoldColor = .none
-    @State private var selectedRopeClimbType: RopeClimbType = .lead
-    @State private var mediaPickerItems: [PhotosPickerItem] = []
-    @State private var mediaToViewFullScreen: ClimbMedia?
-    @State private var isDeletingMedia: Bool = false
-    @State private var isSaving: Bool = false
-    @State private var isLoadingMedia: Bool = false
-    
-    // Focus management
-        enum Field: Hashable {
-            case grade, angle
-        }
-        @FocusState private var focusedField: Field?
-    
-    
-    // Computed properties to get available options
-    private var availableStyles: [String] {
-        let live = climbStyles.map { $0.name }
-        if !live.isEmpty { return Array(Set(live)).sorted() }
-        return Array(Set(ClimbingDefaults.defaultStyles)).sorted()
-    }
-    
-    private var availableGyms: [String] {
-        let live = climbGyms.map { $0.name }
-        if !live.isEmpty { return Array(Set(live)).sorted() }
-        return Array(Set(ClimbingDefaults.defaultGyms)).sorted()
-    }
-    
-    private var climbTypeColor: Color {
-        switch climb.climbType {
-        case .boulder:
-            return CatalogHue.bouldering.color
-        case .sport:
-            return CatalogHue.climbing.color
-        }
-    }
-    
-    private var attemptsIntBinding: Binding<Int> {
-        Binding(
-            get: { Int(attempts) ?? 1 },
-            set: { attempts = String(max(0, $0)) }   // never go below 0
-        )
-    }
-    
-    var body: some View {
-        NavigationStack {
-            ZStack {
-            Form {
-                // Climb Type Picker
-                Picker("Type", selection: $climb.climbType) {
-                    ForEach(ClimbType.allCases, id: \.self) { type in
-                        Text(type.displayName).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
-                
-                // Style picker with add button
-                HStack {
-                    Picker("Style", selection: $selectedStyle) {
-                        Text("select").tag("")
-                        ForEach(availableStyles, id: \.self) { style in
-                            Text(style).tag(style)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    Button {
-                        showingStyleAlert = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.accentColor)
-                    }
-                }
-                
-                // Gym picker with add button
-                HStack {
-                    Picker("Gym", selection: $selectedGym) {
-                        Text("select").tag("")
-                        ForEach(availableGyms, id: \.self) { gym in
-                            Text(gym).tag(gym)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    Button {
-                        showingGymAlert = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.accentColor)
-                    }
-                }
-                
-                Section("Details") {
-                    DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
-                    LabeledContent("Grade") {
-                        TextField("e.g. 7a/V6", text: $grade, prompt: nil) //
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
-                            .multilineTextAlignment(.trailing)
-                            .keyboardType(.numbersAndPunctuation)
-                            .focused($focusedField, equals: .grade)
-                            .submitLabel(.done)
-                            .onSubmit {
-                                focusedField = .angle
-                            }
-                    }
-                    LabeledContent("Angle") {
-                        HStack(spacing: 6) {
-                            TextField("0", text: $angleDegrees, prompt: nil)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                                .focused($focusedField, equals: .angle)
-                                .toolbar {
-                                    ToolbarItemGroup(placement: .keyboard) {
-                                        if focusedField == .angle {
-                                            Spacer()
-                                            Button {
-                                                focusedField = nil
-                                            } label: {
-                                                Image(systemName: "checkmark")
-                                                    .font(.system(size: 12, weight: .bold))
-                                                    .foregroundStyle(.primary)
-                                                    .frame(width: 28, height: 28)
-                                                    .background(Color.accentColor.opacity(0.15))
-                                                    .clipShape(Circle())
-                                                    .overlay(
-                                                        Circle()
-                                                            .stroke(.secondary.opacity(0.3), lineWidth: 0.5)
-                                                    )
-                                                    .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
-                                }
-                        }
-                    }
-                    Stepper(value: attemptsIntBinding, in: 1...9999) {
-                        Text("Attempts: \(attemptsIntBinding.wrappedValue)")
-                    }
-                    Toggle("WIP?", isOn: $climb.isWorkInProgress)
-                    Toggle("Previously climbed?", isOn: $isPreviouslyClimbed)
-                    // Rope type picker, shown only for Sport climbs
-                    if climb.climbType == .sport {
-                        Picker("Rope", selection: $selectedRopeClimbType) {
-                            ForEach(RopeClimbType.allCases, id: \.self) { ropeType in
-                                Text(ropeType.displayName).tag(ropeType)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    TextField("Notes", text: $notes)
-                }
-                
-                // Hold color picker
-                Section("Hold Color") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
-                        ForEach(HoldColor.allCases, id: \.self) { color in
-                            Button {
-                                selectedHoldColor = color
-                            } label: {
-                                VStack(spacing: 4) {
-                                    Circle()
-                                        .fill(color == .none ? Color.gray.opacity(0.3) : color.color)
-                                        .frame(width: 24, height: 24)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(selectedHoldColor == color ? Color.primary : Color.clear, lineWidth: 2)
-                                        )
-                                        .overlay(
-                                            // Special handling for "none" option
-                                            color == .none ?
-                                            Image(systemName: "xmark")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                            : nil
-                                        )
-                                    
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
-                Section {
-                    PhotosPicker(
-                        selection: $mediaPickerItems,
-                        maxSelectionCount: 10,
-                        matching: .any(of: [.images, .videos]),
-                        photoLibrary: .shared()
-                    ) {
-                        HStack {
-                            Image(systemName: "photo.on.rectangle.angled")
-                            Text("Add media")
-                            Spacer()
-                        }
-                    }
-
-
-                    if climb.media.isEmpty {
-                        Text("No media attached")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        let items = climb.media.sorted { $0.createdAt < $1.createdAt }
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(items) { media in
-                                    ZStack(alignment: .topTrailing) {
-                                        MediaThumbnailView(media: media)
-                                            .onTapGesture {
-                                                if isDeletingMedia {
-                                                    deleteMedia(media)
-                                                } else {
-                                                    mediaToViewFullScreen = media
-                                                }
-                                            }
-                                        if isDeletingMedia {
-                                            Button {
-                                                deleteMedia(media)
-                                            } label: {
-                                                Image(systemName: "minus.circle.fill")
-                                                    .font(.system(size: 18, weight: .bold))
-                                                    .symbolRenderingMode(.palette)
-                                                    .foregroundStyle(.white, .red)
-                                                    .shadow(radius: 2)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .offset(x: 4, y: -4)
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Text("Media")
-                        Spacer()
-                        if !climb.media.isEmpty {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    isDeletingMedia.toggle()
-                                }
-                            } label: {
-                                Label(
-                                    isDeletingMedia ? "Done" : "Delete",
-                                    systemImage: isDeletingMedia ? "checkmark.circle" : "trash"
-                                )
-                                .labelStyle(.iconOnly)
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(isDeletingMedia ? .green : .red)
-                        }
-                    }
-                }
-            }
-            if isSaving || isLoadingMedia {
-                                ZStack {
-                                    Color.black.opacity(0.25)
-                                        .ignoresSafeArea()
-
-                                    VStack(spacing: 8) {
-                                        ProgressView()
-                                        Text(isSaving ? "Saving climb…" : "Uploading…")
-                                            .font(.footnote)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(16)
-                                    .background(.ultraThinMaterial)
-                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                    .shadow(radius: 10)
-                                }
-                                .transition(.opacity)
-                            }
-                        }
-            .onChange(of: mediaPickerItems) { _, newItems in
-                            Task {
-                                await handlePickedMedia(items: newItems)
-                            }
-                        }
-            .fullScreenCover(item: $mediaToViewFullScreen) { media in
-                        MediaFullScreenView(media: media)
-                    }
-            .navigationTitle("Edit Climb")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                                Button("Cancel") {
-                                    dismiss()
-                                }
-                                .disabled(isSaving || isLoadingMedia)
-                            }
-                
-                ToolbarItem(placement: .confirmationAction) {
-                                Button("Save") {
-                                    Task {
-                                        await saveChanges()
-                                    }
-                                }
-                                .disabled(isSaving || isLoadingMedia)
-                            }
-            }
-            .onAppear {
-                initializeFields()
-            }
-            .alert("Add New Style", isPresented: $showingStyleAlert) {
-                TextField("Style name", text: $newStyleName)
-                Button("Add") {
-                    if !newStyleName.trimmingCharacters(in: .whitespaces).isEmpty {
-                        addNewStyle(newStyleName.trimmingCharacters(in: .whitespaces))
-                        newStyleName = ""
-                    }
-                }
-                Button("Cancel", role: .cancel) {
-                    newStyleName = ""
-                }
-            } message: {
-                Text("Enter a name for the new climbing style")
-            }
-            .alert("Add New Gym", isPresented: $showingGymAlert) {
-                TextField("Gym name", text: $newGymName)
-                Button("Add") {
-                    if !newGymName.trimmingCharacters(in: .whitespaces).isEmpty {
-                        addNewGym(newGymName.trimmingCharacters(in: .whitespaces))
-                        newGymName = ""
-                    }
-                }
-                Button("Cancel", role: .cancel) {
-                    newGymName = ""
-                }
-            } message: {
-                Text("Enter a name for the new gym")
-            }
-        }
-    }
-    private func initializeFields() {
-        grade = climb.grade
-        angleDegrees = climb.angleDegrees?.description ?? ""
-        selectedStyle = climb.style
-        attempts = climb.attempts ?? ""
-        selectedGym = climb.gym
-        notes = climb.notes ?? ""
-        selectedDate = climb.dateLogged
-        isPreviouslyClimbed = climb.isPreviouslyClimbed ?? false
-        selectedHoldColor = climb.holdColor ?? .none
-        selectedRopeClimbType = climb.ropeClimbType ?? .lead
-    }
-    
-    @MainActor
-    private func saveChanges() async {
-        guard !isSaving else { return }
-        isSaving = true
-        defer { isSaving = false }
-
-        climb.grade = grade.isEmpty ? "Unknown" : grade
-        climb.angleDegrees = angleDegrees.isEmpty ? nil : Int(angleDegrees)
-        climb.style = selectedStyle.isEmpty ? "Unknown" : selectedStyle
-        climb.attempts = attempts.isEmpty ? nil : attempts
-        climb.gym = selectedGym.isEmpty ? "Unknown" : selectedGym
-        climb.notes = notes.isEmpty ? nil : notes
-        climb.dateLogged = selectedDate
-        climb.isPreviouslyClimbed = isPreviouslyClimbed
-        climb.holdColor = selectedHoldColor
-        climb.ropeClimbType = (climb.climbType == .sport) ? selectedRopeClimbType : nil
-
-        do {
-            try modelContext.save()
-            dismiss()
-        } catch {
-            print("Save in EditClimbView failed: \(error)")
-        }
-    }
-
-    
-    // Persist picked media as Photos asset references + optional thumbnail
-    @MainActor
-    private func handlePickedMedia(items: [PhotosPickerItem]) async {
-        guard !items.isEmpty else {
-            return
-        }
-
-        isLoadingMedia = true
-        defer {
-            isLoadingMedia = false
-            mediaPickerItems.removeAll()
-        }
-
-        let imageManager = PHCachingImageManager.default()
-        let requestOptions = PHImageRequestOptions()
-        requestOptions.deliveryMode = .opportunistic
-        requestOptions.resizeMode = .fast
-        requestOptions.isSynchronous = true
-        requestOptions.isNetworkAccessAllowed = true
-
-        let targetSize = CGSize(width: 200, height: 200)
-
-        for (index, item) in items.enumerated() {
-            guard let id = item.itemIdentifier else {
-                print("PhotosPickerItem \(index + 1) has no itemIdentifier")
-                continue
-            }
-
-            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
-            guard let asset = fetchResult.firstObject else {
-                print("No PHAsset found for identifier \(id)")
-                continue
-            }
-
-            var thumb: UIImage?
-            imageManager.requestImage(
-                for: asset,
-                targetSize: targetSize,
-                contentMode: .aspectFill,
-                options: requestOptions
-            ) { image, _ in
-                thumb = image
-            }
-
-            let type: ClimbMediaType = (asset.mediaType == .video) ? .video : .photo
-
-            let media = ClimbMedia(
-                assetLocalIdentifier: id,
-                thumbnailData: thumb?.jpegData(compressionQuality: 0.7),
-                type: type,
-                createdAt: .now,
-                climb: climb
-            )
-            modelContext.insert(media)
-        }
-
-        do {
-            try modelContext.save()
-        } catch {
-            print("Failed to save context after adding media: \(error)")
-        }
-    }
-
-    private func deleteMedia(_ media: ClimbMedia) {
-        modelContext.delete(media)
-        do {
-            try modelContext.save()
-        } catch {
-            print(" Failed to delete media entity: \(error)")
-        }
-    }
-
-    private func addNewStyle(_ styleName: String) {
-        let newStyle = ClimbStyle(name: styleName, isDefault: false)
-        modelContext.insert(newStyle)
-        try? modelContext.save()
-        selectedStyle = styleName
-    }
-    
-    private func addNewGym(_ gymName: String) {
-        let newGym = ClimbGym(name: gymName, isDefault: false)
-        modelContext.insert(newGym)
-        try? modelContext.save()
-        selectedGym = gymName
     }
 }
 

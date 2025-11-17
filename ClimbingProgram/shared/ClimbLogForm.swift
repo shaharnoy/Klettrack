@@ -23,7 +23,8 @@ struct ClimbLogForm: View {
     let title: String
     let initialDate: Date
     let onSave: ((ClimbEntry) -> Void)?
-    
+    let existingClimb: ClimbEntry?
+
     // Session manager for remembering climb type and gym
     @State private var sessionManager = ClimbSessionManager.shared
     
@@ -38,6 +39,7 @@ struct ClimbLogForm: View {
     @State private var notes: String = ""
     @State private var selectedDate: Date
     @State private var isPreviouslyClimbed: Bool = false
+    @State private var feelsLikeGrade: String = ""
     @State private var selectedHoldColor: HoldColor = .none
     
     @State private var showingStyleAlert = false
@@ -53,9 +55,14 @@ struct ClimbLogForm: View {
     @State private var isLoadingMedia: Bool = false
     @State private var isSaving: Bool = false
     
+    @State private var showAnglePickerSheet = false
+    @State private var showAttemptsPickerSheet = false
+
+
+    
     // Focus management
     enum Field: Hashable {
-        case grade, angle
+        case grade, feelsLikeGrade, angle
     }
     @FocusState private var focusedField: Field?
     
@@ -91,15 +98,55 @@ struct ClimbLogForm: View {
         !attempts.isEmpty ||
         !selectedGym.isEmpty ||
         !notes.isEmpty ||
+        !feelsLikeGrade.isEmpty ||
         isWorkInProgress
     }
     
-    init(title: String = "Add Climb", initialDate: Date = Date(), onSave: ((ClimbEntry) -> Void)? = nil) {
+    init(
+        title: String = "Add Climb",
+        initialDate: Date = Date(),
+        existingClimb: ClimbEntry? = nil,
+        onSave: ((ClimbEntry) -> Void)? = nil
+    ) {
         self.title = title
         self.initialDate = initialDate
+        self.existingClimb = existingClimb
         self.onSave = onSave
-        self._selectedDate = State(initialValue: initialDate)
+
+        if let climb = existingClimb {
+            // Prefill from the existing climb (edit mode)
+            _selectedClimbType = State(initialValue: climb.climbType)
+            _selectedRopeClimbType = State(initialValue: climb.ropeClimbType ?? .lead)
+            _grade = State(initialValue: climb.grade == "Unknown" ? "" : climb.grade)
+            _feelsLikeGrade = State(initialValue: climb.feelsLikeGrade ?? "")
+            _angleDegrees = State(initialValue: climb.angleDegrees.map { String($0) } ?? "")
+            _selectedStyle = State(initialValue: climb.style == "Unknown" ? "" : climb.style)
+            _attempts = State(initialValue: climb.attempts ?? "")
+            _isWorkInProgress = State(initialValue: climb.isWorkInProgress)
+            _isPreviouslyClimbed = State(initialValue: climb.isPreviouslyClimbed ?? false)
+            _selectedHoldColor = State(initialValue: climb.holdColor ?? .none)
+            _selectedGym = State(initialValue: climb.gym == "Unknown" ? "" : climb.gym)
+            _notes = State(initialValue: climb.notes ?? "")
+            _selectedDate = State(initialValue: climb.dateLogged)
+
+            // NEW: show already attached media as previews
+            let previews = climb.media.map { media -> ClimbLogMediaPreview in
+                let thumbImage = media.thumbnailData.flatMap { UIImage(data: $0) }
+                switch media.type {
+                case .photo:
+                    return ClimbLogMediaPreview(kind: .existingPhoto(media: media, thumbnail: thumbImage))
+                case .video:
+                    return ClimbLogMediaPreview(kind: .existingVideo(media: media, thumbnail: thumbImage))
+                }
+            }
+            _mediaPreviews = State(initialValue: previews)
+        } else {
+            // Add mode
+            _selectedDate = State(initialValue: initialDate)
+            _mediaPreviews = State(initialValue: [])
+        }
     }
+
     
     private var attemptsIntBinding: Binding<Int> {
         Binding(
@@ -108,153 +155,264 @@ struct ClimbLogForm: View {
         )
     }
     
+    private var angleIntBinding: Binding<Int> {
+        Binding(
+            get: { Int(angleDegrees) ?? 1 },
+            set: { angleDegrees = String(max(0, $0)) }   // never go below 0
+        )
+    }
+    
     var body: some View {
         NavigationStack {
-         ZStack {
-            Form {
-                // Climb Type Picker - changed to dropdown menu
-                Picker("Type", selection: $selectedClimbType) {
-                    ForEach(ClimbType.allCases, id: \.self) { type in
-                        Text(type.displayName).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
-                
-                
-                // Style picker with add button
-                HStack {
-                    Picker("Style", selection: $selectedStyle) {
-                        Text("select").tag("")
-                        ForEach(availableStyles, id: \.self) { style in
-                            Text(style).tag(style)
+            ZStack {
+                Form {
+                    // Climb Type Picker - changed to dropdown menu
+                    Picker("Type", selection: $selectedClimbType) {
+                        ForEach(ClimbType.allCases, id: \.self) { type in
+                            Text(type.displayName).tag(type)
                         }
                     }
-                    .pickerStyle(.menu)
+                    .pickerStyle(.segmented)
                     
-                    Button {
-                        showingStyleAlert = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.accentColor)
-                    }
-                }
-                
-                // Gym picker with add button
-                HStack {
-                    Picker("Gym", selection: $selectedGym) {
-                        Text("select").tag("")
-                        ForEach(availableGyms, id: \.self) { gym in
-                            Text(gym).tag(gym)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    
-                    Button {
-                        showingGymAlert = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.accentColor)
-                    }
-                }
-                
-                Section("Details") {
-                    DatePicker("Date", selection: $selectedDate, displayedComponents: [.date])
-                    LabeledContent("Grade") {
-                        TextField("e.g. 7a/V6", text: $grade, prompt: nil) //
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
-                            .multilineTextAlignment(.trailing)
-                            .keyboardType(.numbersAndPunctuation)
-                            .focused($focusedField, equals: .grade)
-                            .submitLabel(.done)
-                            .onSubmit {
-                                focusedField = .angle
+                    // Gym picker with add button
+                    HStack {
+                        Picker("Gym", selection: $selectedGym) {
+                            Text("select").tag("")
+                                .font(.subheadline)
+                            ForEach(availableGyms, id: \.self) { gym in
+                                Text(gym).tag(gym)
                             }
+                        }
+                        .pickerStyle(.menu)
+                        
+                        Button {
+                            showingGymAlert = true
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.accentColor)
+                        }
                     }
-                    LabeledContent("Angle") {
-                        HStack(spacing: 6) {
-                            TextField("0", text: $angleDegrees, prompt: nil)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                                .focused($focusedField, equals: .angle)
-                                .toolbar {
-                                    ToolbarItemGroup(placement: .keyboard) {
-                                        if focusedField == .angle {
-                                            Spacer()
-                                            Button {
-                                                focusedField = nil
-                                            } label: {
-                                                Image(systemName: "checkmark")
-                                                    .font(.system(size: 12, weight: .bold))
-                                                    .foregroundStyle(.primary)
-                                                    .frame(width: 28, height: 28)
-                                                    .background(Color.accentColor.opacity(0.15))
-                                                    .clipShape(Circle())
-                                                    .overlay(
-                                                        Circle()
-                                                            .stroke(.secondary.opacity(0.3), lineWidth: 0.5)
-                                                    )
-                                                    .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
-                                            }
-                                            .buttonStyle(.plain)
+                    // Style picker with add button
+                    HStack {
+                        Picker("Style", selection: $selectedStyle) {
+                            Text("select").tag("")
+                                .font(.subheadline)
+                            ForEach(availableStyles, id: \.self) { style in
+                                Text(style).tag(style)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        
+                        Button {
+                            showingStyleAlert = true
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    Section {
+                        // Shared layout constants
+                        let labelWidth: CGFloat = 80
+                        let controlWidth: CGFloat = 70
+                        let labelToControlSpacing: CGFloat = 8
+
+                        // ROW 1 — Grade | My Grade
+                        HStack {
+                            HStack {
+                                Text("Grade")
+                                    .font(.subheadline)
+                                    .lineLimit(1)
+                                    .frame(width: labelWidth, alignment: .leading)
+
+                                Spacer(minLength: labelToControlSpacing)
+
+                                TextField("V5", text: $grade)
+                                    .multilineTextAlignment(.trailing)
+                                    .keyboardType(.numbersAndPunctuation)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                                    .focused($focusedField, equals: .grade)
+                                    .submitLabel(.done)
+                                    //.onSubmit { focusedField = .feelsLikeGrade } //taken away since the overwrite text logic will make in annoying
+                                    .frame(width: controlWidth, alignment: .trailing)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            HStack {
+                                InfoLabel(
+                                    text: "My Grade",
+                                    helpMessage: "Use My Grade when gyms use different grading, when the grade feels sandbagged, or how the climb actually felt to you",
+                                    labelWidth: labelWidth
+                                )
+                                Spacer(minLength: labelToControlSpacing)
+
+                                TextField("7a+", text: $feelsLikeGrade)
+                                    .multilineTextAlignment(.trailing)
+                                    .keyboardType(.numbersAndPunctuation)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                                    .focused($focusedField, equals: .feelsLikeGrade)
+                                    .submitLabel(.done)
+                                    .onSubmit { focusedField = nil }
+                                    .frame(width: controlWidth, alignment: .trailing)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+
+                        }
+                        // ROW 2 — Angle | Attempts
+                        HStack {
+                            HStack {
+                                Text("Angle")
+                                    .font(.subheadline)
+                                    .frame(width: labelWidth, alignment: .leading)
+
+                                Spacer(minLength: labelToControlSpacing)
+
+                                Button {
+                                    showAnglePickerSheet = true
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Text("\(angleIntBinding.wrappedValue)")
+                                            .font(.body)
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: controlWidth, alignment: .trailing)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .sheet(isPresented: $showAnglePickerSheet) {
+                                VStack {
+                                    Text("Angle")
+                                        .font(.headline)
+                                        .padding(.top, 16)
+
+                                    Picker("Angle", selection: angleIntBinding) {
+                                        ForEach(Array(stride(from: 0, through: 70, by: 5)), id: \.self) { n in
+                                            Text("\(n)°").tag(n)
                                         }
                                     }
+                                    .pickerStyle(.wheel)
+                                    .labelsHidden()
+                                    .frame(maxHeight: 250)
+
+                                    Button("Done") {
+                                        showAnglePickerSheet = false
+                                    }
+                                    .padding(.top, 8)
                                 }
+                                .presentationDetents([.fraction(0.4), .medium])
+                            }
+
+                            HStack {
+                                Text("Attempts")
+                                    .font(.subheadline)
+                                    .frame(width: labelWidth, alignment: .leading)
+
+                                Spacer(minLength: labelToControlSpacing)
+
+                                Button {
+                                    showAttemptsPickerSheet = true
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Text("\(attemptsIntBinding.wrappedValue)")
+                                            .font(.body)
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: controlWidth, alignment: .trailing)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .sheet(isPresented: $showAttemptsPickerSheet) {
+                                VStack {
+                                    Text("Attempts")
+                                        .font(.headline)
+                                        .padding(.top, 16)
+
+                                    Picker("Attempts", selection: attemptsIntBinding) {
+                                        ForEach(1..<100, id: \.self) { n in
+                                            Text("\(n)").tag(n)
+                                        }
+                                    }
+                                    .pickerStyle(.wheel)
+                                    .labelsHidden()
+                                    .frame(maxHeight: 250)
+
+                                    Button("Done") {
+                                        showAttemptsPickerSheet = false
+                                    }
+                                    .padding(.top, 8)
+                                }
+                                .presentationDetents([.fraction(0.4), .medium])
+                            }
+
                         }
+
+                        // ROW 3 — WIP | Reclimb
+                        HStack {
+                            HStack {
+                                Text("WIP?")
+                                    .font(.subheadline)
+                                    .frame(width: labelWidth, alignment: .leading)
+
+                                Spacer(minLength: labelToControlSpacing)
+
+                                Toggle("", isOn: $isWorkInProgress)
+                                    .labelsHidden()
+                                    .frame(width: controlWidth, alignment: .center) // same column/right edge
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            HStack {
+                                Text("Resend?")
+                                    .font(.subheadline)
+                                    .frame(width: labelWidth, alignment: .leading)
+
+                                Spacer(minLength: labelToControlSpacing)
+
+                                Toggle("", isOn: $isPreviouslyClimbed)
+                                    .labelsHidden()
+                                    .frame(width: controlWidth, alignment: .center)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        // Rope type (sport only)
+                        if selectedClimbType == .sport {
+                            Picker("Rope", selection: $selectedRopeClimbType) {
+                                ForEach(RopeClimbType.allCases, id: \.self) { ropeType in
+                                    Text(ropeType.displayName).tag(ropeType)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+
+                        // Notes
+                        TextField("Notes", text: $notes)
                     }
-                    Stepper(value: attemptsIntBinding, in: 1...9999) {
-                        Text("Attempts: \(attemptsIntBinding.wrappedValue)")
-                    }
-                    Toggle("WIP?", isOn: $isWorkInProgress)
-                    Toggle("Previously climbed?", isOn: $isPreviouslyClimbed)
-                    //Rope type picker, shown only for Sport climbs
-                    if selectedClimbType == .sport {
-                        Picker("Rope", selection: $selectedRopeClimbType) {
-                            ForEach(RopeClimbType.allCases, id: \.self) { ropeType in
-                                Text(ropeType.displayName).tag(ropeType)
+
+                    // Hold color picker (compact) using JugHoldShape
+                    Section("Hold Color") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            LazyVGrid(
+                                columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7),
+                                spacing: 8
+                            ) {
+                                ForEach(HoldColor.allCases, id: \.self) { color in
+                                    Button {
+                                        selectedHoldColor = color
+                                    } label: {
+                                        HoldColorChip(color: color, isSelected: selectedHoldColor == color)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
-                        .pickerStyle(.segmented)
                     }
-                    TextField("Notes", text: $notes)
-                }
-                // Hold color picker
-                Section("Hold Color") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
-                        ForEach(HoldColor.allCases, id: \.self) { color in
-                            Button {
-                                selectedHoldColor = color
-                            } label: {
-                                VStack(spacing: 4) {
-                                    Circle()
-                                        .fill(color == .none ? Color.gray.opacity(0.3) : color.color)
-                                        .frame(width: 24, height: 24)
-                                    // Always show a thin border (block circle)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.secondary.opacity(0.4), lineWidth: 2)
-                                        )
-                                    // Extra border if selected
-                                        .overlay(
-                                            Circle()
-                                                .stroke(selectedHoldColor == color ? Color.primary : Color.clear, lineWidth: 2)
-                                        )
-                                        .overlay(
-                                            // Special handling for "none" option
-                                            color == .none ?
-                                            Image(systemName: "xmark")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                            : nil
-                                        )
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
                 //Media picker + strip
                 Section {
                     PhotosPicker(
@@ -269,13 +427,7 @@ struct ClimbLogForm: View {
                             Spacer()
                         }
                     }
-
-                    
-                    if mediaPreviews.isEmpty {
-                        Text("No media attached")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
+                    if !mediaPreviews.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(mediaPreviews) { preview in
@@ -310,8 +462,6 @@ struct ClimbLogForm: View {
                     }
                 } header: {
                     HStack {
-                        Text("Media")
-                        Spacer()
                         if !mediaPreviews.isEmpty {
                             Button {
                                 withAnimation(.easeInOut(duration: 0.15)) {
@@ -349,10 +499,23 @@ struct ClimbLogForm: View {
                              .transition(.opacity)
                          }
                      }
-            .navigationTitle(title)
+            .onChange(of: focusedField) { _, newValue in
+                        switch newValue {
+                        case .grade:
+                            grade = ""
+                        case .feelsLikeGrade:
+                            feelsLikeGrade = ""
+                        default:
+                            break
+                        }
+                    }
+            //.navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                loadSessionDefaults()
+                // Only apply session defaults for new climbs, not when editing
+                if existingClimb == nil {
+                    loadSessionDefaults()
+                }
             }
             .onChange(of: mediaPickerItems) { _, newItems in
                 Task {
@@ -377,6 +540,18 @@ struct ClimbLogForm: View {
                     }
                     .disabled(!isFormValid || isSaving || isLoadingMedia)
                 }
+                // Center title + date in the nav bar
+                        ToolbarItem(placement: .title) {
+                            VStack(spacing: 24) {
+                                DatePicker(
+                                    "",
+                                    selection: $selectedDate,
+                                    displayedComponents: [.date]
+                                )
+                                .labelsHidden()
+                                .datePickerStyle(.compact)
+                            }
+                        }
             }
             .alert("Add New Style", isPresented: $showingStyleAlert) {
                 TextField("Style name", text: $newStyleName)
@@ -416,32 +591,59 @@ struct ClimbLogForm: View {
         isSaving = true
         defer { isSaving = false }
 
-        let angleInt = angleDegrees.isEmpty ? nil : Int(angleDegrees)
-        let attemptsText = attempts.isEmpty ? nil : attempts
-        let notesText = notes.isEmpty ? nil : notes
+        let angleInt      = angleDegrees.isEmpty ? nil : Int(angleDegrees)
+        let attemptsText  = attempts.isEmpty ? nil : attempts
+        let notesText     = notes.isEmpty ? nil : notes
         let ropeType: RopeClimbType? = (selectedClimbType == .sport) ? selectedRopeClimbType : nil
 
-        let climb = ClimbEntry(
-            climbType: selectedClimbType,
-            ropeClimbType: ropeType,
-            grade: grade.isEmpty ? "Unknown" : grade,
-            angleDegrees: angleInt,
-            style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
-            attempts: attemptsText,
-            isWorkInProgress: isWorkInProgress,
-            isPreviouslyClimbed: isPreviouslyClimbed ? true : false,
-            holdColor: selectedHoldColor,
-            gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
-            notes: notesText,
-            dateLogged: selectedDate
-        )
+        // Decide whether we’re creating a new climb or updating an existing one
+        let target: ClimbEntry
 
-        // Update session memory with this climb's info
-        sessionManager.updateSession(climbType: selectedClimbType, gym: selectedGym)
+        if let existing = existingClimb {
+            // EDIT MODE – update the existing climb in place
+            existing.climbType           = selectedClimbType
+            existing.ropeClimbType       = ropeType
+            existing.grade               = grade.isEmpty ? "Unknown" : grade
+            existing.feelsLikeGrade      = feelsLikeGrade.isEmpty ? "" : feelsLikeGrade
+            existing.angleDegrees        = angleInt
+            existing.style               = selectedStyle.isEmpty ? "Unknown" : selectedStyle
+            existing.attempts            = attemptsText
+            existing.isWorkInProgress    = isWorkInProgress
+            existing.isPreviouslyClimbed = isPreviouslyClimbed
+            existing.holdColor           = selectedHoldColor
+            existing.gym                 = selectedGym.isEmpty ? "Unknown" : selectedGym
+            existing.notes               = notesText
+            existing.dateLogged          = selectedDate
 
-        modelContext.insert(climb)
+            target = existing
+        } else {
+            // NEW CLIMB – create and insert
+            let climb = ClimbEntry(
+                climbType: selectedClimbType,
+                ropeClimbType: ropeType,
+                grade: grade.isEmpty ? "Unknown" : grade,
+                feelsLikeGrade: feelsLikeGrade.isEmpty ? "" : feelsLikeGrade,
+                angleDegrees: angleInt,
+                style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
+                attempts: attemptsText,
+                isWorkInProgress: isWorkInProgress,
+                isPreviouslyClimbed: isPreviouslyClimbed ? true : false,
+                holdColor: selectedHoldColor,
+                gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
+                notes: notesText,
+                dateLogged: selectedDate
+            )
 
-        // Handle media persistence – store only Photos asset IDs + optional thumbnail data
+            // Update session memory with this climb's info
+            sessionManager.updateSession(climbType: selectedClimbType, gym: selectedGym)
+
+            modelContext.insert(climb)
+            target = climb
+        }
+
+        // Handle media persistence
+        // - existingPhoto / existingVideo: already stored on `target` (we only delete them via deletePreview)
+        // - photo / video: new picks, insert as new ClimbMedia rows
         if !mediaPreviews.isEmpty {
             for preview in mediaPreviews {
                 switch preview.kind {
@@ -451,7 +653,7 @@ struct ClimbLogForm: View {
                         thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
                         type: .photo,
                         createdAt: .now,
-                        climb: climb
+                        climb: target
                     )
                     modelContext.insert(media)
 
@@ -461,15 +663,20 @@ struct ClimbLogForm: View {
                         thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
                         type: .video,
                         createdAt: .now,
-                        climb: climb
+                        climb: target
                     )
                     modelContext.insert(media)
+
+                case .existingPhoto, .existingVideo:
+                    // Already stored and linked to `target`; no extra insert
+                    break
                 }
             }
         }
+
         do {
             try modelContext.save()
-            onSave?(climb)
+            onSave?(target)
             dismiss()
         } catch {
             print("Error saving climb: \(error)")
@@ -477,6 +684,45 @@ struct ClimbLogForm: View {
     }
 
     
+    struct HoldColorChip: View {
+        let color: HoldColor
+        let isSelected: Bool
+
+        var body: some View {
+            JugHoldShape()
+                .fill(color == .none ? Color.gray.opacity(0.3) : color.color)
+                .frame(width: 24, height: 24)
+                .overlay(
+                    JugHoldShape()
+                        .stroke(
+                            color == .none
+                                ? Color.black.opacity(0.8)
+                                : Color.white.opacity(0.4),
+                            lineWidth: 1.5
+                        )
+                )
+                .overlay(
+                    JugHoldShape()
+                        .stroke(
+                            // ← Key logic
+                            isSelected
+                                ? (color == .none ? Color.gray : Color.primary)
+                                : Color.clear,
+                            lineWidth: 2.2
+                        )
+                )
+
+                // X for "none"
+                .overlay(
+                    color == .none ?
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundColor(.black)
+                    : nil
+                )
+        }
+    }
+
     
     private func addNewStyle(_ styleName: String) {
         let newStyle = ClimbStyle(name: styleName, isDefault: false)
@@ -518,6 +764,11 @@ struct ClimbLogForm: View {
 // MARK: - Media for ClimbLogForm
 struct ClimbLogMediaPreview: Identifiable {
     enum Kind {
+        // New: cases for media already stored on a climb
+        case existingPhoto(media: ClimbMedia, thumbnail: UIImage?)
+        case existingVideo(media: ClimbMedia, thumbnail: UIImage?)
+
+        // Existing: new media picked in this form
         case photo(assetLocalIdentifier: String, thumbnail: UIImage?)
         case video(assetLocalIdentifier: String, thumbnail: UIImage?)
     }
@@ -529,21 +780,41 @@ struct ClimbLogMediaPreview: Identifiable {
         switch kind {
         case .photo(let id, _), .video(let id, _):
             return id
+        case .existingPhoto(let media, _), .existingVideo(let media, _):
+            return media.assetLocalIdentifier
         }
     }
 
     var thumbnail: UIImage? {
         switch kind {
-        case .photo(_, let image), .video(_, let image):
+        case .photo(_, let image),
+             .video(_, let image),
+             .existingPhoto(_, let image),
+             .existingVideo(_, let image):
             return image
         }
     }
 
     var isVideo: Bool {
-        if case .video = kind { return true }
-        return false
+        switch kind {
+        case .video, .existingVideo:
+            return true
+        default:
+            return false
+        }
+    }
+
+    // Helper: underlying existing media (if any)
+    var existingMedia: ClimbMedia? {
+        switch kind {
+        case .existingPhoto(let media, _), .existingVideo(let media, _):
+            return media
+        default:
+            return nil
+        }
     }
 }
+
 
 
 // MARK: - Thumbnail view for previews (no need for warning like in the edit climb since it's only happen on new climb)
@@ -597,7 +868,7 @@ struct ClimbLogMediaFullScreenView: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
-
+            
             Group {
                 if isMissing {
                     VStack(spacing: 12) {
@@ -605,24 +876,24 @@ struct ClimbLogMediaFullScreenView: View {
                             .font(.system(size: 40))
                             .foregroundStyle(.yellow)
                             .shadow(radius: 4)
-
+                        
                         Text("Media Unavailable")
                             .font(.headline)
                             .foregroundStyle(.white)
-
+                        
                         Text("""
-                    klettrack doesn’t store your media. It only references photos and videos on your device.
-                    If the original file was deleted or moved, it can’t be displayed here.
-                    """)
-                            .font(.subheadline)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.white.opacity(0.8))
-                            .padding(.horizontal, 24)
+                            klettrack doesn’t store your media. It only references photos and videos on your device.
+                            If the original file was deleted or moved, it can’t be displayed here.
+                            """)
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .padding(.horizontal, 24)
                     }
                     .padding()
                 } else {
                     switch preview.kind {
-                    case .photo:
+                    case .photo(_, _), .existingPhoto(_, _):
                         if let image = loadedImage {
                             Image(uiImage: image)
                                 .resizable()
@@ -631,8 +902,8 @@ struct ClimbLogMediaFullScreenView: View {
                             ProgressView()
                                 .tint(.white)
                         }
-
-                    case .video:
+                        
+                    case .video(_, _), .existingVideo(_, _):
                         if let player {
                             VideoPlayer(player: player)
                                 .ignoresSafeArea()
@@ -662,10 +933,10 @@ struct ClimbLogMediaFullScreenView: View {
 
     private func loadContent() {
         switch preview.kind {
-        case .photo(let id, _):
-            loadPhoto(id: id)
-        case .video(let id, _):
-            loadVideo(id: id)
+        case .photo(_, _), .existingPhoto(_, _):
+            loadPhoto(id: preview.assetLocalIdentifier)
+        case .video(_, _), .existingVideo(_, _):
+            loadVideo(id: preview.assetLocalIdentifier)
         }
     }
 
@@ -735,8 +1006,13 @@ struct ClimbLogMediaFullScreenView: View {
 
 extension ClimbLogForm {
     fileprivate func deletePreview(_ preview: ClimbLogMediaPreview) {
+        // If this preview represents an existing ClimbMedia, delete it from the store
+        if let existing = preview.existingMedia {
+            modelContext.delete(existing)
+        }
         mediaPreviews.removeAll { $0.id == preview.id }
     }
+
     @MainActor
     fileprivate func loadMediaPreviews(from items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }

@@ -425,6 +425,9 @@ fileprivate final class ClimbStatsVM: ObservableObject {
     @Published var sendRatioByGradeStyle: [(grade: String, style: String, ratio: Double)] = []
     @Published var sendRatioByGrade: [(grade: String, ratio: Double)] = []
     @Published var sendRatioByStyle: [(style: String, ratio: Double)] = []
+    
+    @Published var gradeFeelCells: [GradeFeelCell] = []
+    @Published var preferFeelsLikeGrade: Bool = false
 
 
 
@@ -494,7 +497,29 @@ fileprivate final class ClimbStatsVM: ObservableObject {
             return e.gym
         })
         availableGyms = gymsSet.sorted().map { .init(id: $0, label: $0) }
-        availableGrades = Set(climbs.map { $0.grade }).sorted().map { .init(id: $0, label: $0) }
+        
+        let gradeOptions: Set<String> = Set(
+            climbs.flatMap { e -> [String] in
+                var options: [String] = []
+
+                // Normal grade
+                let g = e.grade.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !g.isEmpty && g.lowercased() != "unknown" {
+                    options.append(g)
+                }
+
+                // Feels-like grade
+                if let feels = e.feelsLikeGrade?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                    if !feels.isEmpty && feels.lowercased() != "unknown" {
+                        options.append(feels)
+                    }
+                }
+
+                return options
+            }
+        )
+        availableGrades = gradeOptions.sorted().map { .init(id: $0, label: $0) }
+
         availableStyles = Set(climbs.map { $0.style }).sorted().map { .init(id: $0, label: $0) }
     }
 
@@ -523,7 +548,8 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         }
         let c5: [ClimbEntry] = styles.isEmpty ? c4 : c4.filter { styles.contains($0.style) }
 
-        var filtered = grades.isEmpty ? c5 : c5.filter { grades.contains($0.grade) }
+        var filtered = grades.isEmpty ? c5 : c5.filter { grades.contains(resolvedGrade($0)) }
+
         switch workInProgress {
         case .all:
             break
@@ -546,16 +572,20 @@ fileprivate final class ClimbStatsVM: ObservableObject {
 
         // Distributions
         let sendsBase = filtered.filter { !$0.isWorkInProgress }   // non-WIP “sends”
+        
+        gradeFeelCells = buildGradeFeelHeatmap(entries: filtered)  //grade vs feels-like matrix
+
         var style: [String:Int] = [:], grade: [String:Int] = [:], angle: [String:Int] = [:]
 
         for e in filtered {
             style[e.style, default: 0] += 1
             let a = e.angleDegrees.map { "\($0)°" } ?? "No Angle"; angle[a, default: 0] += 1
         }
-        for e in sendsBase {                                       // <- only non-WIP contribute to grade “sends”
-            grade[e.grade, default: 0] += 1
+        for e in sendsBase {
+            let g = resolvedGrade(e)
+            grade[g, default: 0] += 1
         }
-
+        
         func sortPairs(_ d: [String:Int]) -> [(String,Int)] { d.map{($0.key,$0.value)}.sorted{ $0.1 > $1.1 } }
         distStyle = sortPairs(style); distGrade = sortPairs(grade); distAngle = sortPairs(angle)
         gradeByPrevStacks = buildGradeByPrevStacks(sends: sendsBase)
@@ -615,11 +645,14 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         var attemptSum:[String:Int] = [:]
 
         // denominator: climbed (non-WIP)
-        for e in sends { sendCount[e.grade, default: 0] += 1 }
-
-        // numerator: total attempts (all filtered)
-        for e in attemptsFrom { attemptSum[e.grade, default: 0] += parseAttempts(e.attempts) }
-
+        for e in sends {
+            let g = resolvedGrade(e)
+            sendCount[g, default: 0] += 1
+        }
+        for e in attemptsFrom {
+            let g = resolvedGrade(e)
+            attemptSum[g, default: 0] += parseAttempts(e.attempts)
+        }
         func gkey(_ g:String)->Double { Double(g.replacingOccurrences(of:",", with:".")) ?? .infinity }
         return Set(sendCount.keys).union(attemptSum.keys).map { g in
             let sends = sendCount[g, default: 0]
@@ -678,68 +711,94 @@ fileprivate final class ClimbStatsVM: ObservableObject {
 
     private func buildStacks(styles: Dictionary<String,Int>.Keys, entries: [ClimbEntry]) -> [StackedBar<String,String>] {
         var out: [StackedBar<String,String>] = []
-        let gradeSet = Set(entries.map { $0.grade })
+
+        let gradeSet = Set(entries.map { resolvedGrade($0) })
+
         for s in styles {
             var map: [String:Int] = [:]
             for g in gradeSet { map[g] = 0 }
-            for e in entries where e.style == s { map[e.grade, default: 0] += 1 }
+            for e in entries {
+                let g = resolvedGrade(e)
+                if gradeSet.contains(g) && e.style == s {
+                    map[g, default: 0] += 1
+                }
+            }
             out.append(.init(x: s, stacks: map))
         }
-        // sort by total desc
         out.sort { a,b in (a.stacks.values.reduce(0,+)) > (b.stacks.values.reduce(0,+)) }
         return out
     }
+
+
 
 
     private func buildGradeCentricStacks(entries: [ClimbEntry]) -> [StackedBar<String,String>] {
         var out: [StackedBar<String,String>] = []
-        let grades = Array(Set(entries.map { $0.grade }))
+
+        let grades = Array(Set(entries.map { resolvedGrade($0) }))
         let styles = Array(Set(entries.map { $0.style }))
+
         for g in grades {
             var map: [String:Int] = [:]
             for s in styles { map[s] = 0 }
-            for e in entries where e.grade == g { map[e.style, default: 0] += 1 }
+
+            for e in entries {
+                if resolvedGrade(e) == g {
+                    map[e.style, default: 0] += 1
+                }
+            }
+
             out.append(.init(x: g, stacks: map))
         }
-        out.sort { a,b in (a.stacks.values.reduce(0,+)) > (b.stacks.values.reduce(0,+)) }
+
+        out.sort { a, b in (a.stacks.values.reduce(0,+)) > (b.stacks.values.reduce(0,+)) }
         return out
     }
+
 
     private func buildGradeByAngleStacks(entries: [ClimbEntry]) -> [StackedBar<String,String>] {
         var out: [StackedBar<String,String>] = []
-        let grades = Array(Set(entries.map { $0.grade }))
+
+        let grades = Array(Set(entries.map { resolvedGrade($0) }))
         let angles = Array(Set(entries.map { $0.angleDegrees.map { "\($0)°" } ?? "No Angle" }))
+
         for g in grades {
             var map: [String:Int] = [:]
             for a in angles { map[a] = 0 }
-            for e in entries where e.grade == g {
+
+            for e in entries {
+                guard resolvedGrade(e) == g else { continue }
+
                 let a = e.angleDegrees.map { "\($0)°" } ?? "No Angle"
                 map[a, default: 0] += 1
             }
-            out.append(.init(x: g, stacks: map))      // <- x is grade (correct)
+
+            out.append(.init(x: g, stacks: map))
         }
+
         out.sort { a,b in (a.stacks.values.reduce(0,+)) > (b.stacks.values.reduce(0,+)) }
         return out
     }
 
+
     private func buildGradeByPrevStacks(sends: [ClimbEntry]) -> [StackedBar<String,String>] {
-        // keys for stacks
         let prevKey = "Yes"
         let newKey  = "No"
 
-        // set of grades to keep consistent columns
-        let grades = Array(Set(sends.map { $0.grade }))
+        // consistent set of resolved grades
+        let grades = Array(Set(sends.map { resolvedGrade($0) }))
 
-        // initialize rows per grade
+        // initialize rows
         var mapByGrade: [String: [String:Int]] = [:]
         for g in grades {
             mapByGrade[g] = [prevKey: 0, newKey: 0]
         }
 
-        // count sends per boolean
+        // count sends per previous/new
         for e in sends {
-            let g = e.grade
+            let g = resolvedGrade(e)
             let wasPrev = (e.isPreviouslyClimbed ?? false)
+
             if wasPrev {
                 mapByGrade[g, default: [prevKey:0, newKey:0]][prevKey, default: 0] += 1
             } else {
@@ -752,10 +811,12 @@ fileprivate final class ClimbStatsVM: ObservableObject {
             .init(x: g, stacks: mapByGrade[g] ?? [prevKey:0, newKey:0])
         }
 
-        // order by total desc like other stacks
+        // order by total desc
         out.sort { a, b in (a.stacks.values.reduce(0,+)) > (b.stacks.values.reduce(0,+)) }
         return out
     }
+
+    
     private func buildSeasonality(entries: [ClimbEntry]) -> [SeasonalitySlice] {
         guard !entries.isEmpty else { return [] }
         var dict: [String: [Int: Double]] = [:] // style -> month -> value
@@ -787,6 +848,7 @@ fileprivate final class ClimbStatsVM: ObservableObject {
                   to: cal.date(byAdding: .day, value: 1, to: latestSOD)!)!
         return (start, end)
     }
+    
 
     private func isDateFiltered() -> Bool {
         let (s, e) = fullDateRange()
@@ -801,6 +863,33 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         || !styles.isEmpty
         || workInProgress != .all
     }
+    
+    private func resolvedGrade(_ e: ClimbEntry) -> String {
+        let logged = e.grade.trimmingCharacters(in: .whitespacesAndNewlines)
+        let feels  = e.feelsLikeGrade?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        func isValid(_ s: String?) -> Bool {
+            guard let s = s else { return false }
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !t.isEmpty && t.lowercased() != "unknown"
+        }
+
+        if preferFeelsLikeGrade {
+            // “Prefer my grade” toggle  = ON → prefer feels-like
+            if isValid(feels)  { return feels! }
+            if isValid(logged) { return logged }
+        } else {
+            // “Prefer my grade” toggle = OFF → prefer logged grade
+            if isValid(logged) { return logged }
+            if isValid(feels)  { return feels! }
+        }
+
+        // Fallbacks
+        if !logged.isEmpty { return logged }
+        if let f = feels, !f.isEmpty { return f }
+        return "Unknown"
+    }
+
 
 }
 
@@ -973,6 +1062,19 @@ fileprivate struct ClimbStatsView: View {
                             MultiSelectSheet(title: "Grade", options: vm.availableGrades, selected: $vm.grades)
                                 .onDisappear { vm.recomputeAll() }
                         }
+                        HStack(spacing: 4) {
+                            Toggle(isOn: $vm.preferFeelsLikeGrade) {
+                                InfoLabel(
+                                    text: "Prefer My Grade",
+                                    helpMessage: """
+                                    When enabled, analytics prefer “My Grade”:
+                                    If both grades exist → “My Grade” is used
+                                    If only one exists → that grade is used
+                                    """
+                                )
+                            }
+                            .tint(.accentColor)
+                    }
                     HStack {
                         Text("WIP?")
                             .font(.callout)
@@ -1000,8 +1102,9 @@ fileprivate struct ClimbStatsView: View {
                 .padding(.horizontal)
 
                 DistributionCards(title: "Sends by Grade", rows: vm.distGrade, interactionsEnabled: false, vertical: true)
-                StackedByIsPreviouslyClimbedSection(title: "Sends by Grade (climbed before?)",stacks: vm.gradeByPrevStacks)
+                StackedByIsPreviouslyClimbedSection(title: "Sends by Grade (Resends)",stacks: vm.gradeByPrevStacks)
                 SendRatioSwitcherSection(gradeRows: vm.sendRatioByGrade, styleRows: vm.sendRatioByStyle)
+                GradeVsFeelsLikeHeatmapSection(cells: vm.gradeFeelCells)
                 StackedByGradeSection(title: "Grade by Angle", stacks: vm.angleByGradeStacks)
                 ClimbTimeSeriesSection(title: "Climbs over time", sends: vm.timeSeries, attempts: vm.attemptsSeries, ratio: vm.ratioSeries)
                 DistributionCards(title: "Sends by Style", rows: vm.distStyle, interactionsEnabled: false, vertical: false)
@@ -1020,6 +1123,9 @@ fileprivate struct ClimbStatsView: View {
             vm.recomputeAll()
         }
         .onChange(of: vm.workInProgress) {
+            vm.recomputeAll()
+        }
+        .onChange(of: vm.preferFeelsLikeGrade) {
             vm.recomputeAll()
         }
     }
@@ -1128,7 +1234,116 @@ private extension View {
         if condition { transform(self) } else { self }
     }
 }
+fileprivate struct GradeFeelCell: Identifiable, Hashable {
+    let id = UUID()
+    let grade: String          // logged grade (X)
+    let feelsLike: String      // feelsLikeGrade (Y)
+    let count: Int
+}
 
+private func buildGradeFeelHeatmap(entries: [ClimbEntry]) -> [GradeFeelCell] {
+    // Only keep climbs where both grade & feelsLike are non-empty and not "Unknown"
+    var counts: [String: [String: Int]] = [:]
+
+    for e in entries {
+        let logged = e.grade.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !logged.isEmpty, logged.lowercased() != "unknown" else { continue }
+
+        guard let feelsRaw = e.feelsLikeGrade?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !feelsRaw.isEmpty,
+              feelsRaw.lowercased() != "unknown"
+        else {
+            continue
+        }
+
+        counts[logged, default: [:]][feelsRaw, default: 0] += 1
+    }
+
+    var cells: [GradeFeelCell] = []
+    for (g, inner) in counts {
+        for (f, c) in inner {
+            cells.append(.init(grade: g, feelsLike: f, count: c))
+        }
+    }
+
+    return cells
+}
+fileprivate struct GradeVsFeelsLikeHeatmapSection: View {
+    let cells: [GradeFeelCell]
+
+    // Distinct ordered axes
+    private var xGrades: [String] {
+        Array(Set(cells.map { $0.grade }))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var yFeels: [String] {
+        Array(Set(cells.map { $0.feelsLike }))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var maxCount: Double {
+        Double(cells.map(\.count).max() ?? 1)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Grade vs My Grade")
+                .font(.headline)
+
+            if cells.isEmpty {
+                EmptyStateCard()
+            } else {
+                Chart(cells) { cell in
+                    let intensity = Double(cell.count) / max(1, maxCount)
+
+                    RectangleMark(
+                        x: .value("Grade", cell.grade),
+                        y: .value("My Grade", cell.feelsLike)
+                    )
+                    .foregroundStyle(Color.blue.opacity(0.15 + 0.85 * intensity))
+                    .cornerRadius(4)
+                    .annotation {
+                        Text("\(cell.count)")
+                            .font(.caption2)
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .chartXScale(domain: xGrades)
+                .chartYScale(domain: yFeels.reversed())
+                .chartXAxisLabel("Grade", alignment: .center)
+                .chartYAxisLabel("My Grade")
+                .chartXAxis { AxisMarks(position: .bottom) }
+                .chartYAxis { AxisMarks(position: .leading) }
+                .frame(height: CGFloat(yFeels.count) * 32 + 60)
+
+
+
+                .chartXScale(domain: xGrades)
+                .chartYScale(domain: yFeels.reversed())
+                .chartXAxis {
+                    AxisMarks(position: .bottom) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel()
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel().font(.caption2)
+                    }
+                }
+
+                .frame(height: CGFloat(yFeels.count) * 32 + 60)
+            }
+        }
+        .padding(16)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal)
+    }
+}
 
 fileprivate struct SendRatioSwitcherSection: View {
     enum Mode: String, CaseIterable { case grade = "Grade", style = "Style" }

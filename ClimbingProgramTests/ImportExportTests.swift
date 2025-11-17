@@ -78,7 +78,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         // Verify header
         let header = lines.first!
         let expectedFields = [
-            "date","type","exercise_name","climb_type","grade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs"
+            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs"
         ]
         let headerFields = header.components(separatedBy: ",")
         XCTAssertEqual(headerFields.count, expectedFields.count, "Header should have correct number of fields")
@@ -123,13 +123,13 @@ class ImportExportTests: ClimbingProgramTestSuite {
     
     // Centralized header to avoid duplication & indentation issues
     private let testCSVHeader =
-    "date,type,exercise_name,climb_type,grade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs"
+    "date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs"
     
     func testCSVImportBasic() async throws {
         let csvContent = """
         \(testCSVHeader)
-        2025-08-23 11:22:11,exercise,Push-ups,,,,,,,,,,,15,3,0.000,,,,,Felt good,,,
-        2025-08-23 11:23:11,exercise,Pull-ups,,,,,,,,,,,10,3,5.000,,,,,Challenging,,,
+        2025-08-23 11:22:11,exercise,Push-ups,,,,,,,,,,,,15,3,0.000,,,,,Felt good,,,
+        2025-08-23 11:23:11,exercise,Pull-ups,,,,,,,,,,,,10,3,5.000,,,,,Challenging,,,
         """
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_import.csv")
         try csvContent.write(to: tempURL, atomically: true, encoding: .utf8)
@@ -149,7 +149,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         try? context.save()
         let csvContent = """
     \(testCSVHeader)
-    2025-08-23 11:30:00,exercise,Squats,,,,,,,,,,,20,4,0.000,,\(plan.id.uuidString),\(plan.name),,Leg day,,,
+    2025-08-23 11:30:00,exercise,Squats,,,,,,,,,,,,20,4,0.000,,\(plan.id.uuidString),\(plan.name),,Leg day,,,
     """
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_plan_import.csv")
         try csvContent.write(to: tempURL, atomically: true, encoding: .utf8)
@@ -162,9 +162,9 @@ class ImportExportTests: ClimbingProgramTestSuite {
     func testCSVImportDeduplication() async throws {
         let csvContent = """
     \(testCSVHeader)
-    2025-08-23 11:22:11,exercise,Deadlifts,,,,,,,,,,5,3,50.000,,,,,"Felt strong",,,
-    2025-08-23 11:22:11,exercise,Deadlifts,,,,,,,,,,5,3,50.000,,,,,"Felt strong",,,
-    2025-08-23 11:22:11,exercise,Deadlifts,,,,,,,,,,5,3,50.000,,,,,"Felt strong",,,
+    2025-08-23 11:22:11,exercise,Deadlifts,,,,,,,,,,,5,3,50.000,,,,,"Felt strong",,,
+    2025-08-23 11:22:11,exercise,Deadlifts,,,,,,,,,,,5,3,50.000,,,,,"Felt strong",,,
+    2025-08-23 11:22:11,exercise,Deadlifts,,,,,,,,,,,5,3,50.000,,,,,"Felt strong",,,
     """
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_dedupe.csv")
         try csvContent.write(to: tempURL, atomically: true, encoding: .utf8)
@@ -308,6 +308,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
                 id: climbId,
                 climbType: .boulder,
                 grade: "V4",
+                feelsLikeGrade: "V5",
                 angleDegrees: 25,
                 style: "Old",
                 attempts: "2",
@@ -323,7 +324,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
 
             let csv = """
             \(testCSVHeader)
-            2025-09-01 11:22:11,climb,,boulder,V6,25,red,,Comp,3,false,GymA,,,,,,,,,Updated \(Date()),\(climbId.uuidString),\(tb2),
+            2025-09-01 11:22:11,climb,,boulder,V6,V5,25,red,,Comp,3,false,GymA,,,,,,,,,Updated \(Date()),\(climbId.uuidString),\(tb2),
             """
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("upsert_tb2.csv")
             try csv.write(to: url, atomically: true, encoding: .utf8)
@@ -341,7 +342,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
             let tb2 = "tb2-alpha-999"
             let csv = """
             \(testCSVHeader)
-            2025-09-02 11:22:11,climb,,boulder,V5,30,blue,,Style,4,false,GymB,,,,,,,,,First import,,\(tb2),
+            2025-09-02 11:22:11,climb,,boulder,V5,V5,30,blue,,Style,4,false,GymB,,,,,,,,,First import,,\(tb2),
             """
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("stable_tb2.csv")
             try csv.write(to: url, atomically: true, encoding: .utf8)
@@ -361,11 +362,11 @@ class ImportExportTests: ClimbingProgramTestSuite {
         let tb2 = "tb2-beta-111"
         let first = """
         \(testCSVHeader)
-        2025-09-03 11:22:11,climb,,boulder,V3,15,,,Sesh,1,false,GymC,,,,,,,,,Initial,,\(tb2),
+        2025-09-03 11:22:11,climb,,boulder,V3,V5,15,,,Sesh,1,false,GymC,,,,,,,,,Initial,,\(tb2),
         """
         let second = """
         \(testCSVHeader)
-        2025-09-03 11:22:11,climb,,boulder,V3,15,,,Sesh,2,false,GymC,,,,,,,,,Updated notes,,\(tb2),
+        2025-09-03 11:22:11,climb,,boulder,V3,V5,15,,,Sesh,2,false,GymC,,,,,,,,,Updated notes,,\(tb2),
         """
         let u1 = FileManager.default.temporaryDirectory.appendingPathComponent("tb2_first.csv")
         let u2 = FileManager.default.temporaryDirectory.appendingPathComponent("tb2_second.csv")
@@ -393,8 +394,8 @@ class ImportExportTests: ClimbingProgramTestSuite {
             let tb2 = "tb2-gamma-222"
             let csv = """
                 \(testCSVHeader)
-                2025-09-01 11:22:11,climb,,boulder,V2,10,,,x,1,false,GymD,,,,,,,,A,,\(tb2),
-                2025-09-01 11:22:11,climb,,boulder,V2,20,,,x,1,false,GymD,,,,,,,,B,,\(tb2),
+                2025-09-01 11:22:11,climb,,boulder,V2,V5,10,,,x,1,false,GymD,,,,,,,,A,,\(tb2),
+                2025-09-01 11:22:11,climb,,boulder,V2,V5,20,,,x,1,false,GymD,,,,,,,,B,,\(tb2),
                 """
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("tb2_angle.csv")
             try csv.write(to: url, atomically: true, encoding: .utf8)

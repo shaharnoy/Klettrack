@@ -14,6 +14,7 @@ struct MediaManagerView: View {
     private var mediaItems: [ClimbMedia]
 
     @State private var fullScreenMedia: ClimbMedia?
+    @State private var editingClimb: ClimbEntry?
 
     private var groupedByMonth: [(month: Date, items: [ClimbMedia])] {
         let calendar = Calendar.current
@@ -33,19 +34,19 @@ struct MediaManagerView: View {
                 Section(header: Text(group.month, format: .dateTime.year().month())) {
                     ForEach(group.items) { media in
                         HStack(alignment: .top, spacing: 12) {
-                            // 1) Thumbnail – tap to open full-screen media viewer
+                            //Thumbnail – tap to open full-screen media viewer
                             MediaThumbnailView(media: media)
                                 .onTapGesture {
                                     fullScreenMedia = media
                                 }
-
-                            // 2) Climb card – tap/arrow to jump into climb editor
-                            NavigationLink {
-                                EditClimbView(climb: media.climb)
+                            //Climb card – tap/arrow to jump into climb editor
+                            Button {
+                                editingClimb = media.climb
                             } label: {
                                 ClimbRowCardSummary(climb: media.climb)
                             }
                             .buttonStyle(.plain)
+
                         }
                         .frame(minHeight: 80)
                         .swipeActions {
@@ -63,6 +64,15 @@ struct MediaManagerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $fullScreenMedia) { media in
             MediaFullScreenView(media: media)
+        }
+        .sheet(item: $editingClimb) { climb in
+            // Edit the climb directly using the shared form
+            ClimbLogForm(
+                title: "Edit Climb",
+                initialDate: climb.dateLogged,
+                existingClimb: climb,
+                onSave: nil
+            )
         }
     }
 
@@ -97,16 +107,28 @@ struct MediaManagerView: View {
                                     .stroke(Color.primary.opacity(0.3), lineWidth: 1)
                             )
                     }
-                    // Grade
-                    if climb.grade != "Unknown" && !climb.grade.isEmpty {
-                        Text(climb.grade)
+                    // show grade only if filled, show alternative grade if grade isn't there,
+                    // show grade& alterntive grade if both exist
+                    let hasGrade = climb.grade != "Unknown" && !climb.grade.isEmpty
+                    let hasFeels = (climb.feelsLikeGrade ?? "").isEmpty == false
+
+                    if hasGrade || hasFeels {
+                        let display: String = {
+                            switch (hasGrade, hasFeels) {
+                            case (true, true):  return "\(climb.grade) (\(climb.feelsLikeGrade!))"
+                            case (true, false): return climb.grade
+                            case (false, true): return climb.feelsLikeGrade!   // only feels-like
+                            default:            return ""
+                            }
+                        }()
+
+                        Text(display)
                             .font(.body)
                             .foregroundColor(.primary)
                     }
-                    
                     // Angle
                     if let angle = climb.angleDegrees {
-                        if climb.grade != "Unknown" && !climb.grade.isEmpty {
+                        if climb.grade != "Unknown" && !climb.grade.isEmpty && (climb.feelsLikeGrade ?? "").isEmpty == false {
                             Text("•")
                                 .font(.body)
                                 .foregroundColor(.secondary)

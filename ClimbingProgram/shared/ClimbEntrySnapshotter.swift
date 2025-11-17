@@ -29,6 +29,7 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             climbType: c.climbType,
             ropeClimbType: c.ropeClimbType,
             grade: c.grade,
+            feelsLikeGrade: c.feelsLikeGrade,
             angleDegrees: c.angleDegrees,
             style: c.style,
             attempts: c.attempts,
@@ -53,6 +54,7 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             climbType: s.climbType,
             ropeClimbType: s.ropeClimbType,
             grade: s.grade,
+            feelsLikeGrade: s.feelsLikeGrade,
             angleDegrees: s.angleDegrees,
             style: s.style,
             attempts: s.attempts,
@@ -92,6 +94,7 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
         let climbType: ClimbType
         let ropeClimbType: RopeClimbType?
         let grade: String
+        let feelsLikeGrade: String?
         let angleDegrees: Int?
         let style: String
         let attempts: String?

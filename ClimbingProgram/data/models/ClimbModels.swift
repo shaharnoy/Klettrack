@@ -16,6 +16,7 @@ final class ClimbEntry {
     @Attribute(.unique) var id: UUID
     var climbType: ClimbType
     var grade: String
+    var feelsLikeGrade: String?
     var angleDegrees: Int?
     var style: String
     var attempts: String?
@@ -37,6 +38,7 @@ final class ClimbEntry {
         climbType: ClimbType,
         ropeClimbType: RopeClimbType? = nil,
         grade: String,
+        feelsLikeGrade: String? = nil,
         angleDegrees: Int? = nil,
         style: String,
         attempts: String? = nil,
@@ -52,6 +54,7 @@ final class ClimbEntry {
         self.climbType = climbType
         self.ropeClimbType = ropeClimbType
         self.grade = grade
+        self.feelsLikeGrade = feelsLikeGrade
         self.angleDegrees = angleDegrees
         self.style = style
         self.attempts = attempts
@@ -64,6 +67,7 @@ final class ClimbEntry {
         self.tb2ClimbUUID = tb2ClimbUUID
     }
 }
+
 
 // MARK: - Enums
 

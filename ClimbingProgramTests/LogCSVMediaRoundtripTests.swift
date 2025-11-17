@@ -31,6 +31,7 @@ final class LogCSVMediaRoundtripTests: XCTestCase {
         let climb = ClimbEntry(
             climbType: .boulder,
             grade: "6A",
+            feelsLikeGrade: "6A",
             angleDegrees: 30,
             style: "Overhang",
             attempts: "1",
