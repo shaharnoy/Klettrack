@@ -149,6 +149,20 @@ struct SettingsSheet: View {
                 
                 // About section (subtle separation)
                 Section {
+                    //rate the app
+                    Button {
+                        ReviewRequester.requestReview()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "star.fill")
+                                .imageScale(.medium)
+
+                            Text("Rate klettrack")
+                                .font(.body)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.vertical, 6)
+                    }
                     //Feature request / feedback button opens link to roadmap
                     Button {
                         if let url = URL(string: "https://klettrack.featurebase.app/") {

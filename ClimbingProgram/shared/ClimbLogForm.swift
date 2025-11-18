@@ -233,8 +233,11 @@ struct ClimbLogForm: View {
                                     .autocorrectionDisabled(true)
                                     .focused($focusedField, equals: .grade)
                                     .submitLabel(.done)
-                                    //.onSubmit { focusedField = .feelsLikeGrade } //taken away since the overwrite text logic will make in annoying
                                     .frame(width: controlWidth, alignment: .trailing)
+                                    .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            focusedField = .grade
+                                        }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             HStack {

@@ -7,6 +7,8 @@
 import SwiftUI
 import SwiftData
 import Charts
+import StoreKit
+import UIKit
 
 // MARK: - Entry (keeps your existing type name)
 public struct ProgressViewScreen: View {
@@ -18,6 +20,10 @@ public struct ProgressViewScreen: View {
     @State private var tab: Tab = .climb
     @StateObject private var climbVM  = ClimbStatsVM(input: .init(sessions: [], climbs: [], plans: []))
     @StateObject private var exerciseVM = ExerciseStatsVM(input: .init(sessions: [], climbs: [], plans: []))
+    @State private var hasRequestedReviewThisSession = false
+    @AppStorage("filterReviewTriggerCount") private var filterCount = 0
+
+
     public init() {}
     
     public var body: some View {
@@ -944,12 +950,14 @@ fileprivate struct ExerciseStatsView: View {
                     FilterRow(title: "Plans", value: summary(vm.trainingPlanIDs)) { showPlanPicker = true }
                         .sheet(isPresented: $showPlanPicker) {
                             MultiSelectSheet(title: "Plans", options: vm.availableTrainingPlans, selected: $vm.trainingPlanIDs)
-                                .onDisappear { vm.recomputeAll() }
+                                .onDisappear { vm.recomputeAll()
+                                    ReviewTrigger.shared.filtersChanged()}
                         }
                     FilterRow(title: "Exercise", value: summary(vm.exerciseNames)) { showExercisePicker = true }
                         .sheet(isPresented: $showExercisePicker) {
                             MultiSelectSheet(title: "Exercise", options: vm.availableExercises, selected: $vm.exerciseNames)
-                                .onDisappear { vm.recomputeAll() }
+                                .onDisappear { vm.recomputeAll()
+                                    ReviewTrigger.shared.filtersChanged()}
                         }
                 }
 
@@ -984,6 +992,7 @@ fileprivate struct ExerciseStatsView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .onChange(of: vm.dateRange) {
                 vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
             }
     }
 
@@ -1115,18 +1124,23 @@ fileprivate struct ClimbStatsView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .onChange(of: vm.dateRange) {
                 vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
             }
             .onChange(of: vm.climbType) {
                 vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
             }
             .onChange(of: vm.sportType) {
                 vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
             }
             .onChange(of: vm.workInProgress) {
                 vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
             }
             .onChange(of: vm.preferFeelsLikeGrade) {
                 vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
             }
         }
 
@@ -2349,6 +2363,29 @@ private func shortMonth(_ m: Int) -> String {
 
 private func shortDate(_ d: Date) -> String {
     return dayFormatter.string(from: d)
+}
+
+final class ReviewTrigger {
+    static let shared = ReviewTrigger()
+
+    @AppStorage("filterReviewTriggerCount") private var counter = 0
+
+    func filtersChanged() {
+        counter += 1
+
+        // Trigger after 45 filters - decent usage
+        if counter == 45 {
+            requestReviewIfEligible()
+        }
+    }
+
+    private func requestReviewIfEligible() {
+        guard let scene = UIApplication.shared.connectedScenes
+            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+        else { return }
+
+        SKStoreReviewController.requestReview(in: scene)
+    }
 }
 
 fileprivate extension DateFormatter { func then(_ block: (DateFormatter)->Void) -> DateFormatter { block(self); return self } }

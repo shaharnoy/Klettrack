@@ -10,6 +10,7 @@ import Photos
 import UIKit
 import AVKit
 import AVFoundation
+import StoreKit
 
 struct ClimbView: View {
     @Environment(\.isDataReady) private var isDataReady
@@ -18,11 +19,11 @@ struct ClimbView: View {
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
     @State private var showingAddClimb = false
     @State private var editingClimb: ClimbEntry? = nil
-    // NEW: filter state
+    // filter state
     @State private var showOnlyWIP = false
     @State private var hidePreviouslyClimbed = false
     
-    // NEW: credentials + sync state
+    // credentials + sync state
     @State private var showingCredentialsSheet = false
     @State private var credsUsername: String = ""
     @State private var credsPassword: String = ""
@@ -30,16 +31,25 @@ struct ClimbView: View {
     @State private var isSyncing = false
     @State private var syncMessage: String? = nil
     
-    // NEW: board picker + pending sync target
+    // board picker + pending sync target
     @State private var showingBoardPicker = false
     @State private var pendingBoard: TB2Client.Board? = nil
     
-    // NEW: Shared undo components
+    // Shared undo components
     @StateObject private var undoSnackbar = UndoSnackbarController()
     @State private var deleteHandler = UndoableDeleteHandler(snapshotter: ClimbEntrySnapshotter())
     
+    // In-app review guard (only once per session)
+    @State private var hasRequestedReviewThisSession = false
+    
+    // Track successful syncs across launches + pending review trigger
+    @AppStorage("klettrack.successfulSyncCount") private var successfulSyncCount = 0
+    @AppStorage("klettrack.didRequestReviewAfterSync") private var didRequestReviewAfterSync = false
+    @State private var pendingReviewReason: String? = nil
+    
     // Computed filtered climbs
     private var filteredClimbs: [ClimbEntry] {
+
         var result = climbEntries
         if showOnlyWIP {
             result = result.filter { $0.isWorkInProgress }
@@ -165,7 +175,13 @@ struct ClimbView: View {
             )
         }
         .alert(syncMessage ?? "", isPresented: isShowingSyncAlert) {
-            Button("OK", role: .cancel) { }
+            Button("OK", role: .cancel) {
+                if let reason = pendingReviewReason {
+                    requestReviewIfEligible(reason)
+                    pendingReviewReason = nil
+                    didRequestReviewAfterSync = true
+                }
+            }
         }
         .opacity(isDataReady ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isDataReady)
@@ -346,9 +362,28 @@ struct ClimbView: View {
         do {
             try await TB2SyncManager.sync(using: creds, board: board, into: modelContext)
             syncMessage = "Sync completed."
+
+            // Count successful syncs (any board). After 3+, arm a one-time review request.
+            successfulSyncCount += 1
+            if successfulSyncCount >= 3 && !didRequestReviewAfterSync {
+                pendingReviewReason = "board_sync"
+            }
         } catch {
             syncMessage = "Sync failed: \(error.localizedDescription)"
         }
+    }
+
+    private func requestReviewIfEligible(_ reason: String) {
+        guard !hasRequestedReviewThisSession else { return }
+        
+        guard let scene = UIApplication.shared.connectedScenes
+            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+        else {
+            return
+        }
+        
+        SKStoreReviewController.requestReview(in: scene)
+        hasRequestedReviewThisSession = true
     }
     
     // Filter toggle helper
