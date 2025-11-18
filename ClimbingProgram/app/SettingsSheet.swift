@@ -11,11 +11,10 @@ struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var timerAppState: TimerAppState
     @Environment(\.modelContext) private var context
-    @State private var showingCredentialsSheet = false
+    @State private var activeBoard: TB2Client.Board? = nil
     @State private var credsUsername: String = ""
     @State private var credsPassword: String = ""
     @State private var isEditingCredentials = true
-    @State private var pendingBoard: TB2Client.Board? = nil
     @State private var showingAbout = false
     @State private var showingContribute = false
     
@@ -215,35 +214,43 @@ struct SettingsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
         }
         // Credentials prompt sheet (shared view)
-        .sheet(isPresented: $showingCredentialsSheet) {
+        .sheet(item: $activeBoard) { board in
             TB2CredentialsSheet(
-                header: (pendingBoard == .kilter) ? "Kilter login details" : "TB2 login details",
+                header: (board == .kilter) ? "Kilter login details" : "TB2 login details",
                 username: $credsUsername,
                 password: $credsPassword,
                 onSave: {
                     let username = credsUsername.trimmingCharacters(in: .whitespacesAndNewlines)
                     let password = credsPassword
-                    guard !username.isEmpty, !password.isEmpty, let board = pendingBoard else { return }
+                    
                     do {
-                        try CredentialsStore.saveBoardCredentials(for: board, username: username, password: password)
-                        // In Settings, we just save and close (no auto-sync here)
+                        if username.isEmpty && password.isEmpty {
+                            // Both empty → treat as "remove credentials"
+                            try CredentialsStore.deleteBoardCredentials(for: board)
+                        } else {
+                            // Non-empty → save/update credentials
+                            try CredentialsStore.saveBoardCredentials(
+                                for: board,
+                                username: username,
+                                password: password
+                            )
+                        }
+                        
                         isEditingCredentials = false
-                        pendingBoard = nil
-                        showingCredentialsSheet = false
+                        activeBoard = nil
                     } catch {
-                        // Optional: add an alert if needed
                         isEditingCredentials = false
-                        pendingBoard = nil
-                        showingCredentialsSheet = false
+                        activeBoard = nil
                     }
                 },
                 onCancel: {
                     isEditingCredentials = false
-                    pendingBoard = nil
-                    showingCredentialsSheet = false
+                    activeBoard = nil
                 }
             )
         }
+
+
         // Exporter
         .fileExporter(
             isPresented: $showExporter,
@@ -283,7 +290,6 @@ struct SettingsSheet: View {
     }
 
     private func openCredentialsEditor(for board: TB2Client.Board) {
-        // Prefill if saved for that board
         if let creds = CredentialsStore.loadBoardCredentials(for: board) {
             credsUsername = creds.username
             credsPassword = creds.password
@@ -291,8 +297,21 @@ struct SettingsSheet: View {
             credsUsername = ""
             credsPassword = ""
         }
-        pendingBoard = board
         isEditingCredentials = true
-        showingCredentialsSheet = true
+        activeBoard = board
     }
+    
+    private func clearBoardCredentials(for board: TB2Client.Board) {
+        do {
+            try CredentialsStore.deleteBoardCredentials(for: board)
+            
+            if activeBoard == board {
+                credsUsername = ""
+                credsPassword = ""
+            }
+        } catch {
+            print("Failed to delete credentials for \(board): \(error)")
+        }
+    }
+
 }

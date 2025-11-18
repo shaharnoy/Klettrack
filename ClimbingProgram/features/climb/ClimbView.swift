@@ -30,10 +30,9 @@ struct ClimbView: View {
     @State private var isEditingCredentials = false
     @State private var isSyncing = false
     @State private var syncMessage: String? = nil
-    
-    // board picker + pending sync target
     @State private var showingBoardPicker = false
-    @State private var pendingBoard: TB2Client.Board? = nil
+    @State private var activeBoard: TB2Client.Board? = nil
+    @State private var pendingSyncBoard: TB2Client.Board? = nil
     
     // Shared undo components
     @StateObject private var undoSnackbar = UndoSnackbarController()
@@ -108,7 +107,6 @@ struct ClimbView: View {
                 }
                 .disabled(!isDataReady || isSyncing)
             }
-            // OPTIONS MENU ("…")
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
@@ -144,36 +142,43 @@ struct ClimbView: View {
             )
         }
         // Credentials prompt sheet
-        .sheet(isPresented: $showingCredentialsSheet) {
-
+        .sheet(item: $activeBoard) { board in
             TB2CredentialsSheet(
-                header: (pendingBoard == .kilter) ? "Kilter login details" : "TB2 login details",
+                header: (board == .kilter) ? "Kilter login details" : "TB2 login details",
                 username: $credsUsername,
                 password: $credsPassword,
                 onSave: {
                     let username = credsUsername.trimmingCharacters(in: .whitespacesAndNewlines)
                     let password = credsPassword
-                    guard !username.isEmpty, !password.isEmpty, let board = pendingBoard else { return }
+                    
                     do {
-                        try CredentialsStore.saveBoardCredentials(for: board, username: username, password: password)
-                        // If we came here via Sync, optionally kick off sync now for the pending board
-                        if !isEditingCredentials {
-                            Task { await runSyncIfPossible(board: board) }
+                        if username.isEmpty && password.isEmpty {
+                            // Both empty → treat as "remove credentials"
+                            try CredentialsStore.deleteBoardCredentials(for: board)
+                        } else {
+                            // Non-empty → save/update credentials
+                            try CredentialsStore.saveBoardCredentials(
+                                for: board,
+                                username: username,
+                                password: password
+                            )
                         }
+                        
                         isEditingCredentials = false
-                        pendingBoard = nil
-                        showingCredentialsSheet = false
+                        activeBoard = nil
                     } catch {
-                        syncMessage = "Failed to save credentials: \(error.localizedDescription)"
+                        isEditingCredentials = false
+                        activeBoard = nil
                     }
                 },
                 onCancel: {
                     isEditingCredentials = false
-                    pendingBoard = nil
-                    showingCredentialsSheet = false
+                    activeBoard = nil
                 }
             )
         }
+
+
         .alert(syncMessage ?? "", isPresented: isShowingSyncAlert) {
             Button("OK", role: .cancel) {
                 if let reason = pendingReviewReason {
@@ -316,7 +321,6 @@ struct ClimbView: View {
     }
     
     // MARK: - Actions
-    
     private func onSyncTapped() {
         guard isDataReady else {
             print("debug:Sync tapped while isDataReady=false — ignoring")
@@ -326,7 +330,6 @@ struct ClimbView: View {
     }
     
     private func openCredentialsEditor(for board: TB2Client.Board) {
-        // Prefill if saved for that board
         if let creds = CredentialsStore.loadBoardCredentials(for: board) {
             credsUsername = creds.username
             credsPassword = creds.password
@@ -334,23 +337,25 @@ struct ClimbView: View {
             credsUsername = ""
             credsPassword = ""
         }
-        pendingBoard = board
         isEditingCredentials = true
-        showingCredentialsSheet = true
+        pendingSyncBoard = nil      // just editing
+        activeBoard = board         // drives the sheet
     }
-    
+
+
     private func startSync(board: TB2Client.Board) {
         if let _ = CredentialsStore.loadBoardCredentials(for: board) {
             Task { await runSyncIfPossible(board: board) }
         } else {
-            // Prompt for credentials for this board, then run sync after saving
+            // Missing creds → open sheet for this board, then sync after saving
             credsUsername = ""
             credsPassword = ""
             isEditingCredentials = false
-            pendingBoard = board
-            showingCredentialsSheet = true
+            pendingSyncBoard = board
+            activeBoard = board      // drives the same sheet
         }
     }
+
     
     private func runSyncIfPossible(board: TB2Client.Board) async {
         guard let creds = CredentialsStore.loadBoardCredentials(for: board) else {

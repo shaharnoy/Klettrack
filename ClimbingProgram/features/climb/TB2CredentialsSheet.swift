@@ -21,6 +21,13 @@ struct TB2CredentialsSheet: View {
                         .autocorrectionDisabled(true)
                     SecureField("Password", text: $password)
                 }
+                Section {
+                    Button(role: .destructive) {
+                        clearFields()
+                    } label: {
+                        Text("Delete Credentials")
+                    }
+                }
             }
             .navigationTitle("Login")
             .navigationBarTitleDisplayMode(.inline)
@@ -35,9 +42,15 @@ struct TB2CredentialsSheet: View {
                     Button("Save") {
                         onSave()
                     }
-                    .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                    //.disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
                 }
             }
         }
+    }
+    
+    // MARK: - Clear
+    private func clearFields() {
+        username = ""
+        password = ""
     }
 }

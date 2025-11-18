@@ -246,3 +246,6 @@ struct TB2Client {
     }
 }
 
+extension TB2Client.Board: Identifiable {
+    public var id: Self { self }
+}

@@ -139,7 +139,7 @@ class TimerManager: ObservableObject {
         currentInterval = 0
         currentRepetition = 0
         currentSequenceRepeat = 0
-        currentPhase = configuration.hasIntervals ? .work : .work
+        currentPhase = configuration.hasIntervals ? .getReady : .work
         refreshDerivedFlags()
         laps = []
         lastLapTime = 0
