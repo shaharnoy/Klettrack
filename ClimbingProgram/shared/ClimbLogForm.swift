@@ -155,10 +155,18 @@ struct ClimbLogForm: View {
         )
     }
     
-    private var angleIntBinding: Binding<Int> {
-        Binding(
-            get: { Int(angleDegrees) ?? 1 },
-            set: { angleDegrees = String(max(0, $0)) }   // never go below 0
+    private var angleOptionalBinding: Binding<Int?> {
+        Binding<Int?>(
+            get: {
+                Int(angleDegrees)
+            },
+            set: { newValue in
+                if let newValue = newValue {
+                    angleDegrees = String(newValue)
+                } else {
+                    angleDegrees = ""  // user selected None
+                }
+            }
         )
     }
     
@@ -243,7 +251,7 @@ struct ClimbLogForm: View {
                             HStack {
                                 InfoLabel(
                                     text: "My Grade",
-                                    helpMessage: "Use My Grade when gyms use different grading, when the grade feels sandbagged, or how the climb actually felt to you",
+                                    helpMessage: "Use My Grade for mismatched gym grades, sandbagged climbs, or noting how the climb really felt.",
                                     labelWidth: labelWidth
                                 )
                                 Spacer(minLength: labelToControlSpacing)
@@ -275,8 +283,14 @@ struct ClimbLogForm: View {
                                     showAnglePickerSheet = true
                                 } label: {
                                     HStack(spacing: 4) {
-                                        Text("\(angleIntBinding.wrappedValue)")
-                                            .font(.body)
+                                        if angleDegrees.isEmpty {
+                                                Text("")
+                                                    .font(.body)
+                                                    .foregroundStyle(.secondary)
+                                            } else {
+                                                Text("\(angleDegrees)°")
+                                                    .font(.body)
+                                            }
                                         Image(systemName: "chevron.up.chevron.down")
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
@@ -292,9 +306,11 @@ struct ClimbLogForm: View {
                                         .font(.headline)
                                         .padding(.top, 16)
 
-                                    Picker("Angle", selection: angleIntBinding) {
-                                        ForEach(Array(stride(from: 0, through: 70, by: 5)), id: \.self) { n in
-                                            Text("\(n)°").tag(n)
+                                    Picker("Angle", selection: angleOptionalBinding) {
+                                        Text("None").tag(nil as Int?)
+
+                                        ForEach(Array(stride(from: 0, through: 90, by: 5)), id: \.self) { n in
+                                            Text("\(n)°").tag(Optional(n))
                                         }
                                     }
                                     .pickerStyle(.wheel)

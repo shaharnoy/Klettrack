@@ -66,7 +66,7 @@ struct SeedData {
             ensureEx("Back Bridge", into: posterior, order: 3, reps: "15-20", sets: "1-2", rest: "3 min")
             ensureEx("Side Hip Raises", into: posterior, order: 4, reps: "10-20", sets: "2", rest: "1 min")
 
-            let chain = CatalogSeeder.ensureType("Total/Posterior Chain", in: core)
+            let chain = CatalogSeeder.ensureType("Total Posterior Chain", in: core)
             chain.typeDescription = ""
             ensureEx("Sumo Deadlift", into: chain, order: 1, reps: "10-15", sets: "2", rest: "3 min")
             ensureEx("Dumbbell Snatch", into: chain, order: 2, reps: "5-8", sets: "2-3", rest: "3 min")
@@ -80,12 +80,12 @@ struct SeedData {
             bottom.typeDescription = ""
             ensureEx("Knee-to-chest", into: bottom, order: 1, reps: "2 each leg", duration: "30 sec")
             ensureEx("Band Hamstring Stretch", into: bottom, order: 2,reps: "3 each leg", duration: "30 sec")
-            ensureEx("Butterfly Stretch", into: bottom, order: 2,reps: "2", duration: "30-60 sec")
-            ensureEx("Seated Single-Leg Hip Adductor", into: bottom, order: 2,reps: "2 each leg", duration: "30 sec")
-            ensureEx("Lunges", into: bottom, order: 2,reps: "2 each leg", duration: "30 sec")
-            ensureEx("Kneeling Quad and Hip Flexor Stretch", into: bottom, order: 2,reps: "2 each leg", duration: "30 sec")
-            ensureEx("Seated Calf Stretch with Band", into: bottom, order: 2,reps: "2 each leg", duration: "30 sec")
-            ensureEx("Oblique Knees to One Side", into: bottom, order: 2,reps: "1 each side", duration: "30 sec")
+            ensureEx("Butterfly Stretch", into: bottom, order: 3,reps: "2", duration: "30-60 sec")
+            ensureEx("Seated Single-Leg Hip Adductor", into: bottom, order: 4,reps: "2 each leg", duration: "30 sec")
+            ensureEx("Lunges", into: bottom, order: 5,reps: "2 each leg", duration: "30 sec")
+            ensureEx("Kneeling Quad and Hip Flexor Stretch", into: bottom, order: 6,reps: "2 each leg", duration: "30 sec")
+            ensureEx("Seated Calf Stretch with Band", into: bottom, order: 7,reps: "2 each leg", duration: "30 sec")
+            ensureEx("Oblique Knees to One Side", into: bottom, order: 8,reps: "1 each side", duration: "30 sec")
 
         }
         // ===== ANTAGONIST & STABILIZER =====
