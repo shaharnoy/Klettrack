@@ -10,6 +10,18 @@ import Charts
 import StoreKit
 import UIKit
 
+
+// MARK: - Layout Grid
+
+fileprivate enum LayoutGrid {
+    //Distance from screen edges / main content column
+    static let outerHorizontal: CGFloat = 16
+    //Padding inside cards (material backgrounds)
+    static let cardInner: CGFloat = 12
+    // Vertical spacing between major sections within a stats view
+    static let sectionSpacing: CGFloat = 16
+}
+
 // MARK: - Entry (keeps your existing type name)
 public struct ProgressViewScreen: View {
     // Live data via SwiftData
@@ -27,33 +39,34 @@ public struct ProgressViewScreen: View {
     public init() {}
     
     public var body: some View {
-        VStack(spacing: 0) {
-            // Segmented tab selector
-            Picker("", selection: $tab) {
-                ForEach(Tab.allCases, id: \.self) { tabCase in
-                    Text(tabCase.rawValue).tag(tabCase)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.top, 8)
-            
-            Divider().padding(.top, 8)
-            
-            // Each tab has its own ScrollView → no shared scroll layout that can shrink
-            Group {
-                if tab == .climb {
-                    ScrollView {
-                        ClimbStatsView(vm: climbVM)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Segmented tab selector
+                    Picker("", selection: $tab) {
+                        ForEach(Tab.allCases, id: \.self) { tabCase in
+                            Text(tabCase.rawValue).tag(tabCase)
+                        }
                     }
-                } else {
-                    ScrollView {
-                        ExerciseStatsView(vm: exerciseVM)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, LayoutGrid.outerHorizontal)
+                    .padding(.top, 8)
+
+                    Divider()
+                        .padding(.horizontal, LayoutGrid.outerHorizontal)
+                        .padding(.top, 8)
+
+                    Group {
+                        if tab == .climb {
+                            ClimbStatsView(vm: climbVM)
+                        } else {
+                            ExerciseStatsView(vm: exerciseVM)
+                        }
                     }
                 }
+                .frame(width: geo.size.width, alignment: .topLeading)
             }
+            .frame(width: geo.size.width)
         }
         .navigationTitle("PROGRESS")
         .navigationBarTitleDisplayMode(.large)
@@ -935,17 +948,16 @@ fileprivate struct ExerciseStatsView: View {
     fileprivate enum ExerciseDist { case weight, reps, sets,duration}
 
     var body: some View {
-            VStack(alignment: .leading, spacing: 16) {
-                SectionDivider(label: "Filters")
-                FilterCard {
-                    VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: LayoutGrid.sectionSpacing) {
+            SectionDivider(label: "Filters")
+            FilterCard {
+                VStack(spacing: 8) {
+                    HStack {
                         HStack {
-                            HStack {
-                                Text("Time")
-                                DateRangePicker(range: $vm.dateRange)
-                            }
-                            ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
+                            Text("Date Range")
+                            DateRangePicker(range: $vm.dateRange)
                         }
+                        ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
                     }
                     FilterRow(title: "Plans", value: summary(vm.trainingPlanIDs)) { showPlanPicker = true }
                         .sheet(isPresented: $showPlanPicker) {
@@ -960,6 +972,7 @@ fileprivate struct ExerciseStatsView: View {
                                     ReviewTrigger.shared.filtersChanged()}
                         }
                 }
+            }
 
                 KPIRow(left: KPICard(title: "Total sessions", value: vm.totalSessions), right: KPICard(title: "Total exercises", value: vm.totalExercises))
 
@@ -971,7 +984,7 @@ fileprivate struct ExerciseStatsView: View {
                     Text("Duration").tag(ExerciseDist.duration)
                 }
                 .pickerStyle(.segmented)
-                .padding(.horizontal)
+                .padding(.horizontal, LayoutGrid.outerHorizontal)
 
                 switch selectedExerciseDist {
                 case .weight:
@@ -989,7 +1002,7 @@ fileprivate struct ExerciseStatsView: View {
 
             }
             .padding(.bottom, 24)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            //.frame(maxWidth: .infinity, alignment: .topLeading)
             .onChange(of: vm.dateRange) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
@@ -1007,18 +1020,18 @@ fileprivate struct ClimbStatsView: View {
     @State private var showGradePicker = false
 
     var body: some View {
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: LayoutGrid.sectionSpacing) {
                 SectionDivider(label: "Filters")
-                FilterCard {
-                    VStack(spacing: 8) {
+            FilterCard {
+                VStack(spacing: 8) {
+                    HStack {
                         HStack {
-                            HStack {
-                                Text("Time")
-                                DateRangePicker(range: $vm.dateRange)
-                            }
-                            ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
+                            Text("Date Range")
+                            DateRangePicker(range: $vm.dateRange)
                         }
+                        ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
                     }
+                    
                     // Climb type — segmented with “All”
                     VStack(spacing: 8) {
                         // Climb type picker
@@ -1026,19 +1039,19 @@ fileprivate struct ClimbStatsView: View {
                             Text("Type")
                                 .font(.callout)
                                 .foregroundStyle(.primary)
-                        Picker("", selection: Binding<ClimbStatsVM.ClimbType?>(
-                            get: { vm.climbType },
-                            set: { vm.climbType = $0 }
-                        )) {
-                            Text("All").tag(Optional<ClimbStatsVM.ClimbType>.none)
-                            ForEach(ClimbStatsVM.ClimbType.allCases, id: \.self) {
-                                Text($0.rawValue).tag(Optional.some($0))
+                            Picker("", selection: Binding<ClimbStatsVM.ClimbType?>(
+                                get: { vm.climbType },
+                                set: { vm.climbType = $0 }
+                            )) {
+                                Text("All").tag(Optional<ClimbStatsVM.ClimbType>.none)
+                                ForEach(ClimbStatsVM.ClimbType.allCases, id: \.self) {
+                                    Text($0.rawValue).tag(Optional.some($0))
+                                }
                             }
+                            .pickerStyle(.segmented)
                         }
                         .pickerStyle(.segmented)
-                    }
-                        .pickerStyle(.segmented)
-
+                        
                         // Sport type picker (only when Sport selected)
                         if vm.climbType == .sport {
                             Picker("", selection: Binding<ClimbStatsVM.SportType?>(
@@ -1059,8 +1072,8 @@ fileprivate struct ClimbStatsView: View {
                         if newValue != .sport { vm.sportType = nil }
                         vm.recomputeAll()
                     }
-
-
+                    
+                    
                     FilterRow(title: "Gym", value: summary(vm.gyms)) { showGymPicker = true }
                         .sheet(isPresented: $showGymPicker) {
                             MultiSelectSheet(title: "Gym", options: vm.availableGyms, selected: $vm.gyms)
@@ -1071,18 +1084,18 @@ fileprivate struct ClimbStatsView: View {
                             MultiSelectSheet(title: "Grade", options: vm.availableGrades, selected: $vm.grades)
                                 .onDisappear { vm.recomputeAll() }
                         }
-                        HStack(spacing: 4) {
-                            Toggle(isOn: $vm.preferFeelsLikeGrade) {
-                                InfoLabel(
-                                    text: "Prefer My Grade",
-                                    helpMessage: """
+                    HStack(spacing: 4) {
+                        Toggle(isOn: $vm.preferFeelsLikeGrade) {
+                            InfoLabel(
+                                text: "Prefer My Grade",
+                                helpMessage: """
                                     When enabled, analytics prefer “My Grade”:
                                     If both grades exist → “My Grade” is used
                                     If only one exists → that grade is used
                                     """
-                                )
-                            }
-                            .tint(.accentColor)
+                            )
+                        }
+                        .tint(.accentColor)
                     }
                     HStack {
                         Text("WIP?")
@@ -1096,12 +1109,13 @@ fileprivate struct ClimbStatsView: View {
                         .pickerStyle(.segmented)
                     }
                     .pickerStyle(.segmented)
-                    FilterRow(title: "Style", value: summary(vm.styles)) { showStylePicker = true }     // NEW
+                    FilterRow(title: "Style", value: summary(vm.styles)) { showStylePicker = true }
                         .sheet(isPresented: $showStylePicker) {
                             MultiSelectSheet(title: "Style", options: vm.availableStyles, selected: $vm.styles)
                                 .onDisappear { vm.recomputeAll() }
                         }
                 }
+            }
 
                 HStack(spacing: 12) {
                     KPICard(title: "# sends", value: vm.totalClimbs)
@@ -1121,7 +1135,7 @@ fileprivate struct ClimbStatsView: View {
                 SeasonalitySection(slices: vm.seasonality)
             }
             .padding(.bottom, 24)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            //.frame(maxWidth: .infinity, alignment: .topLeading)
             .onChange(of: vm.dateRange) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
@@ -1237,9 +1251,10 @@ fileprivate struct DistributionCards: View {
                 }
             }
         }
-        .padding(16)
+        .padding(LayoutGrid.cardInner)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LayoutGrid.outerHorizontal)
     }
 }
 
@@ -1353,9 +1368,10 @@ fileprivate struct GradeVsFeelsLikeHeatmapSection: View {
                 .frame(height: CGFloat(yFeels.count) * 32 + 60)
             }
         }
-        .padding(16)
+        .padding(LayoutGrid.cardInner)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LayoutGrid.outerHorizontal)
     }
 }
 
@@ -1430,9 +1446,10 @@ fileprivate struct SendRatioSwitcherSection: View {
                     .frame(height: max(200, CGFloat(styleOrder.count) * 24 + 40))
                 }
             }
-            .padding(16)
+            .padding(LayoutGrid.cardInner)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-            .padding(.horizontal)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, LayoutGrid.outerHorizontal)
         }
     }
 }
@@ -1503,9 +1520,10 @@ fileprivate struct ExerciseTimeSeriesSection: View {
                 }
             }
         }
-        .padding(16)
+        .padding(LayoutGrid.cardInner)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LayoutGrid.outerHorizontal)
     }
 
     // quarter aggregation (same approach as climb)
@@ -1600,10 +1618,10 @@ fileprivate struct ClimbTimeSeriesSection: View {
                     }
                 }
             }
-        .padding(16)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
-    }
+            .padding(LayoutGrid.cardInner)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, LayoutGrid.outerHorizontal)    }
 
     // MARK: - Helpers
     private func inferBucket(points: [TimePoint]) -> TimeBucketer {
@@ -1887,9 +1905,10 @@ fileprivate struct StackedByIsPreviouslyClimbedSection: View {
                 }
             }
         }
-        .padding(16)
+        .padding(LayoutGrid.cardInner)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LayoutGrid.outerHorizontal)
     }
 }
 
@@ -1956,9 +1975,10 @@ fileprivate struct StackedByGradeSection: View {
                 }
             }
         }
-        .padding(16)
+        .padding(LayoutGrid.cardInner)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LayoutGrid.outerHorizontal)
     }
     
     fileprivate struct ChartTouchOverlay: View {
@@ -2081,9 +2101,10 @@ fileprivate struct SeasonalitySection: View {
                     .frame(height: 260)
             }
         }
-        .padding(16)
+        .padding(LayoutGrid.cardInner)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LayoutGrid.outerHorizontal)
     }
 }
 
@@ -2122,31 +2143,28 @@ fileprivate struct ClearAllButton: View {
     var isEnabled: Bool = true
 
     var body: some View {
-        HStack {
-            Spacer()
-            Button(action: {
-                if isEnabled { action() }
-            }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(isEnabled ? .primary : .secondary)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        (isEnabled ? Color.accentColor.opacity(0.15) : Color.gray.opacity(0.1))
-                    )
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(.secondary.opacity(0.3), lineWidth: 0.5)
-                    )
-                    .shadow(color: .black.opacity(isEnabled ? 0.1 : 0.0), radius: 1, x: 0, y: 1)
-            }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
+        Button(action: {
+            if isEnabled { action() }
+        }) {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(isEnabled ? .primary : .secondary)
+                .frame(width: 28, height: 28)
+                .background(
+                    (isEnabled ? Color.accentColor.opacity(0.15) : Color.gray.opacity(0.1))
+                )
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(.secondary.opacity(0.3), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(isEnabled ? 0.1 : 0.0), radius: 1, x: 0, y: 1)
         }
-        .padding(.trailing, 8)
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
     }
 }
+
 
 
 
@@ -2157,11 +2175,15 @@ fileprivate struct FilterCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             content
         }
-        .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal)
+        .padding(LayoutGrid.cardInner)  // 12pt inner
+        .background(
+            .ultraThinMaterial,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .padding(.horizontal, LayoutGrid.outerHorizontal) // 16pt from screen edge
     }
 }
+
 
 fileprivate struct SectionDivider: View {
     var label: String
@@ -2177,10 +2199,11 @@ fileprivate struct SectionDivider: View {
                 .foregroundStyle(.secondary)
             Spacer()
         }
-        .padding(.horizontal)
+        .padding(.horizontal, LayoutGrid.outerHorizontal)
         .padding(.top, 8)
     }
 }
+
 
 fileprivate struct FilterRow: View {
     let title: String
@@ -2216,8 +2239,11 @@ fileprivate struct KPICard: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .padding(16)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(LayoutGrid.cardInner)
+        .background(
+            .thinMaterial,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
     }
 }
 
@@ -2234,8 +2260,11 @@ fileprivate struct KPITextCard: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .padding(16)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(LayoutGrid.cardInner)
+        .background(
+            .thinMaterial,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
     }
 }
 
@@ -2253,43 +2282,120 @@ fileprivate struct KPIRow<Left: View, Right: View>: View {
             left
             right
         }
-        .padding(.horizontal)
+        .padding(.horizontal, LayoutGrid.outerHorizontal)
     }
 }
 
+
 fileprivate struct DateRangePicker: View {
     @Binding var range: DateRange
+    @State private var isPresenting = false
+
+    // Shared formatter
+    private static let formatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .none
+        //f.locale = Locale(identifier: "de_DE")
+        return f
+    }()
+
+    private var labelText: String {
+        let f = Self.formatter
+
+        switch (range.customStart, range.customEnd) {
+        case let (start?, end?):
+            return "\(f.string(from: start)) – \(f.string(from: end))"
+        case let (start?, nil):
+            return "\(f.string(from: start)) – …"
+        case (nil, let end?):
+            return "… – \(f.string(from: end))"
+        default:
+            return "Any time"
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                HStack(spacing: 8) {
-                    DatePicker("", selection: Binding(
-                        get: { range.customStart! },
-                        set: { range.customStart = $0 }),
-                        displayedComponents: .date
-                    )
-                    .labelsHidden()
-                    Spacer(minLength: 2)
-                    DatePicker("", selection: Binding(
-                        get: { range.customEnd ?? Date() },
-                        set: { range.customEnd = $0 }),
-                        displayedComponents: .date
-                    )
-                    .labelsHidden()
-                }
-                Text("–")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                    .allowsHitTesting(false)
+        Button {
+            isPresenting = true
+        } label: {
+            HStack(spacing: 4) {
+                Text(labelText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "calendar")
+                    .imageScale(.small)
             }
-            .font(.footnote)
-            .frame(maxWidth: .infinity)
-            .datePickerStyle(.compact)
-            .environment(\.locale, Locale(identifier: "de_DE"))
-            .environment(\.calendar, Calendar(identifier: .gregorian))
+            .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $isPresenting) {
+            DateRangeSheet(range: $range, isPresented: $isPresenting)
+                .presentationDetents([.medium, .large])
         }
     }
 }
+
+fileprivate struct DateRangeSheet: View {
+    @Binding var range: DateRange
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Date range") {
+                    DatePicker(
+                        "Start Date",
+                        selection: Binding(
+                            get: { range.customStart ?? Date() },
+                            set: { newStart in
+                                range.customStart = newStart
+                                if let end = range.customEnd, end < newStart {
+                                    range.customEnd = newStart
+                                }
+                            }
+                        ),
+                        displayedComponents: .date
+                    )
+
+                    DatePicker(
+                        "End Date",
+                        selection: Binding(
+                            get: { range.customEnd ?? (range.customStart ?? Date()) },
+                            set: { newEnd in
+                                if let start = range.customStart, newEnd < start {
+                                    range.customEnd = start
+                                } else {
+                                    range.customEnd = newEnd
+                                }
+                            }
+                        ),
+                        displayedComponents: .date
+                    )
+                }
+            }
+            .navigationTitle("Select dates")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        isPresented = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
 
 
 fileprivate struct MultiSelectSheet: View {
