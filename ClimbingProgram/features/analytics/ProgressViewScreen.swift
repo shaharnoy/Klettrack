@@ -126,7 +126,7 @@ fileprivate struct SeasonalitySlice: Identifiable {
 }
 
 // MARK: - Date Range
-fileprivate struct DateRange: Equatable {
+struct DateRange: Equatable {
     var customStart: Date? = nil
     var customEnd: Date? = nil
 }
@@ -2138,7 +2138,7 @@ fileprivate struct SeasonalityHeatmap: View {
 }
 
 // MARK: - Shared UI
-fileprivate struct ClearAllButton: View {
+struct ClearAllButton: View {
     var action: () -> Void
     var isEnabled: Bool = true
 
@@ -2287,7 +2287,7 @@ fileprivate struct KPIRow<Left: View, Right: View>: View {
 }
 
 
-fileprivate struct DateRangePicker: View {
+struct DateRangePicker: View {
     @Binding var range: DateRange
     @State private var isPresenting = false
 

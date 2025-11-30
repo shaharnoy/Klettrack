@@ -19,9 +19,14 @@ struct ClimbView: View {
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
     @State private var showingAddClimb = false
     @State private var editingClimb: ClimbEntry? = nil
-    // filter state
-    @State private var showOnlyWIP = false
-    @State private var hidePreviouslyClimbed = false
+    
+    // Filters
+        @State private var showFilters = false
+        @State private var dateRange = DateRange()
+        @State private var wipFilter: WipFilter = .all
+        @State private var climbTypeFilter: ClimbTypeFilter = .all
+        @State private var resendFilter: ResendFilter = .all
+        @State private var searchQuery: String = ""
     
     // credentials + sync state
     @State private var showingCredentialsSheet = false
@@ -48,16 +53,61 @@ struct ClimbView: View {
     
     // Computed filtered climbs
     private var filteredClimbs: [ClimbEntry] {
-
         var result = climbEntries
-        if showOnlyWIP {
-            result = result.filter { $0.isWorkInProgress }
+
+        // Date range
+        if !climbEntries.isEmpty {
+            let cal = Calendar.current
+            let today = Date()
+            let rawStart = dateRange.customStart ?? climbEntries.map(\.dateLogged).min() ?? today
+            let rawEnd   = dateRange.customEnd   ?? climbEntries.map(\.dateLogged).max() ?? today
+            let start = cal.startOfDay(for: rawStart)
+            let end   = cal.date(byAdding: .second, value: -1,
+                                 to: cal.date(byAdding: .day, value: 1,
+                                              to: cal.startOfDay(for: rawEnd))!)!
+            result = result.filter { $0.dateLogged >= start && $0.dateLogged <= end }
         }
-        if hidePreviouslyClimbed {
+        
+        // Type: All / Boulder / Sport
+        switch climbTypeFilter {
+        case .all:
+            break
+        case .boulder:
+            result = result.filter { $0.climbType == .boulder }
+        case .sport:
+            result = result.filter { $0.climbType == .sport }
+        }
+
+        // WIP filter
+        switch wipFilter {
+        case .all:
+            break
+        case .yes:
+            result = result.filter { $0.isWorkInProgress }
+        case .no:
+            result = result.filter { !$0.isWorkInProgress }
+        }
+
+        // Resend? filter (based on isPreviouslyClimbed)
+        switch resendFilter {
+        case .all:
+            break
+        case .resend:
+            result = result.filter { ($0.isPreviouslyClimbed ?? false) }
+        case .notResend:
             result = result.filter { !($0.isPreviouslyClimbed ?? false) }
         }
+
+        // Free-text search across main string fields
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let q = trimmed.lowercased()
+            result = result.filter { matchesSearch($0, query: q) }
+        }
+
         return result
     }
+
     
     // Small helper to avoid heavy inline Binding construction in .alert
     private var isShowingSyncAlert: Binding<Bool> {
@@ -226,6 +276,7 @@ struct ClimbView: View {
             modelContext.undoManager = assigned
             deleteHandler.attach(context: modelContext, undoManager: undoManager)
             dumpUndoContext("onAppear.after")
+            ensureDateRangeInitialized()
         }
         // Log when isDataReady flips; re-attach if needed
         .onChange(of: isDataReady) { _, _ in
@@ -240,24 +291,113 @@ struct ClimbView: View {
         // Track list changes for context
         .onChange(of: climbEntries.count) { _, _ in
             dumpUndoContext("entries.count.change")
+            ensureDateRangeInitialized()
         }
     }
     
-    // MARK: - Sections (split to help the type-checker)
-    
+    //Sections
     @ViewBuilder
     private var filterSection: some View {
         Section {
-            HStack(spacing: 8) {
-                filterToggle(isOn: $showOnlyWIP, label: "WIP Only", onSymbol: "wrench.and.screwdriver.fill", offSymbol: "wrench.and.screwdriver")
-                filterToggle(isOn: $hidePreviouslyClimbed, label: "Hide Resends", onSymbol: "eye.slash.fill", offSymbol: "eye.slash")
-                Spacer(minLength: 0)
+            VStack(spacing: 4) {
+                Button {
+                        showFilters.toggle()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Text(showFilters ? "Hide filters" : "Show filters")
+                        Spacer()
+                        if hasActiveFilters {
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 10, height: 10)
+                        }
+                    }
+                    .font(.subheadline)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+
+                if showFilters {
+                    ClimbFilterCard {
+                        VStack(spacing: 10) {
+                            HStack {
+                                HStack {
+                                    Text("Dates")
+                                    DateRangePicker(range: $dateRange)
+                                }
+                                ClearAllButton(
+                                    action: clearAllFilters,
+                                    isEnabled: hasActiveFilters
+                                )
+                            }
+
+                            HStack {
+                                Text("Type")
+                                    .font(.callout)
+                                    .frame(width: ClimbFilterLayout.labelWidth, alignment: .leading)
+                                Picker("", selection: $climbTypeFilter) {
+                                    Text("All").tag(ClimbTypeFilter.all)
+                                    Text("Boulder").tag(ClimbTypeFilter.boulder)
+                                    Text("Sport").tag(ClimbTypeFilter.sport)
+                                }
+                                .pickerStyle(.segmented)
+                            }
+
+                            HStack {
+                                Text("WIP?")
+                                    .font(.callout)
+                                    .frame(width: ClimbFilterLayout.labelWidth, alignment: .leading)
+                                Picker("", selection: $wipFilter) {
+                                    Text("All").tag(WipFilter.all)
+                                    Text("Yes").tag(WipFilter.yes)
+                                    Text("No").tag(WipFilter.no)
+                                }
+                                .pickerStyle(.segmented)
+                            }
+
+                            HStack {
+                                Text("Resend?")
+                                    .font(.callout)
+                                    .frame(width: ClimbFilterLayout.labelWidth, alignment: .leading)
+                                Picker("", selection: $resendFilter) {
+                                    Text("All").tag(ResendFilter.all)
+                                    Text("Yes").tag(ResendFilter.resend)
+                                    Text("No").tag(ResendFilter.notResend)
+                                }
+                                .pickerStyle(.segmented)
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "magnifyingglass")
+                                        .foregroundStyle(.secondary)
+                                    TextField("Search anything...", text: $searchQuery)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled(true)
+                                        .font(.subheadline)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(.regularMaterial)
+                                )
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                }
             }
-            .font(.caption)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0)) // match ClimbRowCard
         }
     }
+
+
+
+
     
     @ViewBuilder
     private var addClimbSection: some View {
@@ -329,6 +469,19 @@ struct ClimbView: View {
         showingBoardPicker = true
     }
     
+    private func ensureDateRangeInitialized() {
+        guard dateRange.customStart == nil,
+              dateRange.customEnd == nil,
+              !climbEntries.isEmpty else { return }
+
+        if let minDate = climbEntries.map(\.dateLogged).min(),
+           let maxDate = climbEntries.map(\.dateLogged).max() {
+            dateRange.customStart = minDate
+            dateRange.customEnd = maxDate
+        }
+    }
+
+    
     private func openCredentialsEditor(for board: TB2Client.Board) {
         if let creds = CredentialsStore.loadBoardCredentials(for: board) {
             credsUsername = creds.username
@@ -391,6 +544,85 @@ struct ClimbView: View {
         hasRequestedReviewThisSession = true
     }
     
+    // MARK: - Climb list filter helpers
+    private enum WipFilter: String, CaseIterable {
+        case all = "All"
+        case yes = "Yes"
+        case no  = "No"
+    }
+
+    private enum ResendFilter: String, CaseIterable {
+        case all      = "All"
+        case resend   = "Resend"
+        case notResend = "Not resend"
+    }
+    
+    private enum ClimbTypeFilter: String, CaseIterable {
+        case all = "All"
+        case boulder = "Boulder"
+        case sport = "Sport"
+    }
+
+    private enum ClimbFilterLayout {
+        static let labelWidth: CGFloat = 64
+    }
+    // Is any filter active?
+    private var hasActiveFilters: Bool {
+        dateFilterIsActive
+        || climbTypeFilter != .all
+        || wipFilter != .all
+        || resendFilter != .all
+        || !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+
+
+    private func clearAllFilters() {
+        dateRange = DateRange()
+        climbTypeFilter = .all
+        wipFilter = .all
+        resendFilter = .all
+        searchQuery = ""
+        ensureDateRangeInitialized()
+    }
+
+    private var dateFilterIsActive: Bool {
+        // No climbs → no date filter
+        guard !climbEntries.isEmpty,
+              let customStart = dateRange.customStart,
+              let customEnd = dateRange.customEnd,
+              let minDate = climbEntries.map(\.dateLogged).min(),
+              let maxDate = climbEntries.map(\.dateLogged).max()
+        else {
+            return false
+        }
+
+        let cal = Calendar.current
+
+        // Consider the date filter "inactive" if it's exactly min → max (by day)
+        let sameStartDay = cal.isDate(customStart, inSameDayAs: minDate)
+        let sameEndDay   = cal.isDate(customEnd, inSameDayAs: maxDate)
+
+        return !(sameStartDay && sameEndDay)
+    }
+
+
+    // Free-text search across key string fields
+    private func matchesSearch(_ climb: ClimbEntry, query: String) -> Bool {
+        // `query` is already lowercased
+        func contains(_ value: String?) -> Bool {
+            guard let value = value, !value.isEmpty else { return false }
+            return value.lowercased().contains(query)
+        }
+
+        // Add any other string fields you care about here
+        return contains(climb.grade)
+            || contains(climb.feelsLikeGrade)
+            || contains(climb.style)
+            || contains(climb.gym)
+            || contains(climb.notes)
+    }
+
     // Filter toggle helper
     @ViewBuilder
     private func filterToggle(isOn: Binding<Bool>, label: String, onSymbol: String, offSymbol: String) -> some View {
@@ -466,9 +698,23 @@ struct ClimbView: View {
     }
 }
 
+fileprivate struct ClimbFilterCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content
+        }
+        .padding(12) // inner padding like other cards
+        .background(
+            .ultraThinMaterial,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+    }
+}
+
 // MARK: - Snapshot of a climb for robust undo fallback
 // Local snapshot struct no longer needed; handled by ClimbEntrySnapshotter in Shared
-
 struct ClimbRowCard: View {
     let climb: ClimbEntry
     let onDelete: () -> Void
