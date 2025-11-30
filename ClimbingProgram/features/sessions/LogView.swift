@@ -275,6 +275,107 @@ struct SessionItemRow: View {
     }
 }
 
+// MARK: - Climb row styled like SessionItemRow
+struct LogClimbRow: View {
+    let climb: ClimbEntry
+    
+    private var gradeDisplay: String {
+        let hasGrade = climb.grade != "Unknown" && !climb.grade.isEmpty
+        let feels = climb.feelsLikeGrade ?? ""
+        let hasFeels = !feels.isEmpty
+        
+        switch (hasGrade, hasFeels) {
+        case (true, true):  return "\(climb.grade) (\(feels))"
+        case (true, false): return climb.grade
+        case (false, true): return feels
+        default:            return ""
+        }
+    }
+    
+    private var secondaryLineText: String? {
+        var parts: [String] = []
+        
+        if !climb.style.isEmpty {
+            parts.append(climb.style)
+        }
+        if let angle = climb.angleDegrees {
+            parts.append("\(angle)°")
+        }
+        if !climb.gym.isEmpty {
+            parts.append(climb.gym)
+        }
+        
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
+    }
+
+    private var climbTypeLabel: String {
+        if let rope = climb.ropeClimbType?.displayName, !rope.isEmpty {
+            return climb.climbType.displayName + " (\(rope))"
+        } else {
+            return climb.climbType.displayName
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Top row: type / WIP / grade
+            HStack(alignment: .firstTextBaseline) {
+                Text(climbTypeLabel)
+                    .font(.callout)
+                
+                if climb.isWorkInProgress {
+                    Text("WIP")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.yellow.opacity(0.3))
+                        .cornerRadius(4)
+                }
+                if climb.isPreviouslyClimbed == true {
+                        Image(systemName: "arrow.uturn.backward.circle")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                    }
+                
+                Spacer()
+                
+                if !gradeDisplay.isEmpty {
+                    Text(gradeDisplay)
+                        .font(.headline.monospacedDigit())
+                }
+            }
+            
+            // MARK: Secondary line with • separators
+            HStack(spacing: 6) {
+                if let text = secondaryLineText {
+                    Text(text)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                
+                if let holdColor = climb.holdColor, holdColor != .none {
+                    JugHoldShape()
+                        .fill(holdColor.color)
+                        .frame(width: 12, height: 12)
+                        .overlay(
+                            JugHoldShape()
+                                .stroke(Color.primary.opacity(0.3), lineWidth: 1)
+                        )
+                        .padding(.leading, 4)
+                }
+            }
+            // Notes (if any)
+            if let notes = climb.notes, !notes.isEmpty {
+                Text(notes)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+
 // MARK: - Add item to a session
 struct AddSessionItemSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -429,6 +530,10 @@ struct SessionDetailView: View {
             Section("Exercises") {
                 ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
                     SessionItemRow(item: item)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            editingItem = item
+                        }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 guard isDataReady else { return }
@@ -482,6 +587,9 @@ struct SessionDetailView: View {
         }
         .sheet(isPresented: $showingAddItem) {
             AddSessionItemSheet(session: session)
+        }
+        .sheet(item: $editingItem) { item in
+            EditSessionItemView(item: item)
         }
         // Commit once when leaving edit mode, but only if a reorder occurred
         .onChange(of: editMode?.wrappedValue) { _, newValue in
@@ -748,6 +856,11 @@ private struct CombinedLogList: View {
     @MainActor
     private func delete(_ offsets: IndexSet) {
         withAnimation {
+            //disable undo snapphots for log view deletions
+            let previousUndoManager = context.undoManager
+            context.undoManager = nil
+            defer { context.undoManager = previousUndoManager }
+            
             for index in offsets {
                 let date = sortedDates[index]
                 guard let dayData = groupedData[date] else { continue }
@@ -839,6 +952,8 @@ private struct CombinedDayDetailView: View {
     @State private var showingAddItem = false
     @State private var showingAddClimb = false
     @State private var didReorder = false
+    @State private var editingClimb: ClimbEntry? = nil
+    @State private var editingItem: SessionItem? = nil
     
     // Pre-sorted climbs so we don't re-sort inside the body repeatedly
     private var sortedClimbs: [ClimbEntry] {
@@ -852,6 +967,10 @@ private struct CombinedDayDetailView: View {
                 Section("Exercises") {
                     ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
                         SessionItemRow(item: item)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                editingItem = item
+                            }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
                                     guard isDataReady else { return }
@@ -876,17 +995,21 @@ private struct CombinedDayDetailView: View {
                     }
                 }
             }
+
             
             // Climbs section
             if !sortedClimbs.isEmpty {
                 Section("Climbs") {
                     ForEach(sortedClimbs) { climb in
-                        ClimbEntryRow(climb: climb)
+                        LogClimbRow(climb: climb)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                editingClimb = climb
+                            }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
                                     guard isDataReady else { return }
-                                    context.delete(climb)
-                                    try? context.save()
+                                    deleteClimbSafely(climb)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -894,6 +1017,9 @@ private struct CombinedDayDetailView: View {
                     }
                 }
             }
+
+
+
             
             // Empty state
             if (session?.items.isEmpty ?? true) && sortedClimbs.isEmpty {
@@ -950,6 +1076,17 @@ private struct CombinedDayDetailView: View {
         .sheet(isPresented: $showingAddClimb) {
             AddClimbView()
         }
+        .sheet(item: $editingClimb) { climb in
+            ClimbLogForm(
+                title: "Edit Climb",
+                initialDate: climb.dateLogged,
+                existingClimb: climb,
+                onSave: nil
+            )
+        }
+        .sheet(item: $editingItem) { item in
+                EditSessionItemView(item: item)
+            }
         // Commit once when leaving edit mode, but only if a reorder occurred
         .onChange(of: editMode?.wrappedValue) { _, newValue in
             if newValue == .inactive, didReorder {
@@ -964,6 +1101,7 @@ private struct CombinedDayDetailView: View {
             }
         }
     }
+
     
     private func addExercise() {
         guard isDataReady else { return }
@@ -991,79 +1129,14 @@ private struct CombinedDayDetailView: View {
         session.items = working
         didReorder = true
     }
-}
-
-// MARK: - Climb Entry Row
-
-private struct ClimbEntryRow: View {
-    let climb: ClimbEntry
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                // Climb type indicator
-                Text(climb.climbType.displayName)
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(climb.climbType == .boulder ? Color.orange : Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(4)
-                
-                // Grade
-                Text(climb.grade)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                // WIP indicator
-                if climb.isWorkInProgress {
-                    Text("WIP")
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.yellow)
-                        .foregroundColor(.black)
-                        .cornerRadius(4)
-                }
-            }
-            
-            HStack {
-                // Style
-                Text(climb.style)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                if let angle = climb.angleDegrees {
-                    Text("• \(angle)°")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                if let attempts = climb.attempts, !attempts.isEmpty {
-                    Text("• \(attempts) attempts")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            HStack {
-                // Gym
-                Text(climb.gym)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-            }
-            
-            if let notes = climb.notes, !notes.isEmpty {
-                Text(notes)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(.vertical, 2)
+    private func deleteClimbSafely(_ climb: ClimbEntry) {
+        let previousUndoManager = context.undoManager
+        context.undoManager = nil
+        defer { context.undoManager = previousUndoManager }
+
+        context.delete(climb)
+        try? context.save()
     }
 }
+
