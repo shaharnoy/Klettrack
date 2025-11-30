@@ -384,17 +384,26 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
     private func fullDateRange() -> (start: Date, end: Date) {
         let cal = Calendar.current
         let todaySOD = cal.startOfDay(for: Date())
-        let start = input.climbs.map { cal.startOfDay(for: $0.dateLogged) }.min() ?? todaySOD
-        let latestSOD = input.climbs.map { cal.startOfDay(for: $0.dateLogged) }.max() ?? todaySOD
-        let end = cal.date(byAdding: .second, value: -1,
-                  to: cal.date(byAdding: .day, value: 1, to: latestSOD)!)!
+        let start = input.sessions
+            .map { cal.startOfDay(for: $0.date) }
+            .min() ?? todaySOD
+        let latestSOD = input.sessions
+            .map { cal.startOfDay(for: $0.date) }
+            .max() ?? todaySOD
+        let end = cal.date(
+            byAdding: .second,
+            value: -1,
+            to: cal.date(byAdding: .day, value: 1, to: latestSOD)!
+        )!
         return (start, end)
     }
+
 
     private func isDateFiltered() -> Bool {
         let (s, e) = fullDateRange()
         return (dateRange.customStart != s) || (dateRange.customEnd != e)
     }
+
     var hasActiveFilters: Bool {
         isDateFiltered()
         || !trainingPlanIDs.isEmpty
