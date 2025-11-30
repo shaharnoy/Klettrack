@@ -452,7 +452,7 @@ fileprivate final class ClimbStatsVM: ObservableObject {
     
     @Published var gradeFeelCells: [GradeFeelCell] = []
     @Published var preferFeelsLikeGrade: Bool = false
-
+    @Published var searchQuery: String = ""
 
 
 
@@ -479,6 +479,7 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         workInProgress = .all
         resetDateRangeToData()
         recomputeAll()
+        searchQuery = ""
     }
     private func resetDateRangeToData() {
         let cal = Calendar.current
@@ -582,7 +583,12 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         case .no:
             filtered = filtered.filter { !$0.isWorkInProgress }
         }
-
+        
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let q = trimmed.lowercased()
+            filtered = filtered.filter { matchesSearch($0, query: q) }
+        }
         // KPIs
         let nonWip = filtered.filter { !$0.isWorkInProgress }
         totalClimbs = nonWip.count
@@ -638,6 +644,18 @@ fileprivate final class ClimbStatsVM: ObservableObject {
 
     }
 
+    private func matchesSearch(_ climb: ClimbEntry, query: String) -> Bool {
+        func contains(_ value: String?) -> Bool {
+            guard let value = value, !value.isEmpty else { return false }
+            return value.lowercased().contains(query)
+        }
+        // same fields as in ClimbView search
+        return contains(climb.grade)
+            || contains(climb.feelsLikeGrade)
+            || contains(climb.style)
+            || contains(climb.gym)
+            || contains(climb.notes)
+    }
 
     private func aggregateTimeSeries(_ climbs: [ClimbEntry]) -> [TimePoint] {
         guard !climbs.isEmpty else { return [] }
@@ -886,6 +904,7 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         || !grades.isEmpty
         || !styles.isEmpty
         || workInProgress != .all
+        || !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     
     private func resolvedGrade(_ e: ClimbEntry) -> String {
@@ -943,34 +962,56 @@ fileprivate struct ExerciseStatsView: View {
     @ObservedObject var vm: ExerciseStatsVM
     @State private var showPlanPicker = false
     @State private var showExercisePicker = false
+    @State private var showFilters = false
     @State private var selectedExerciseDist: ExerciseDist = .weight
     @State private var didInit = false
     fileprivate enum ExerciseDist { case weight, reps, sets,duration}
 
     var body: some View {
         VStack(alignment: .leading, spacing: LayoutGrid.sectionSpacing) {
-            SectionDivider(label: "Filters")
-            FilterCard {
-                VStack(spacing: 8) {
-                    HStack {
+            // Show / Hide filters button
+                       Button {
+                               showFilters.toggle()
+                       } label: {
+                           HStack(spacing: 6) {
+                               Image(systemName: "line.3.horizontal.decrease.circle")
+                               Text(showFilters ? "Hide filters" : "Show filters")
+                               Spacer()
+                               if vm.hasActiveFilters {
+                                   Circle()
+                                       .fill(Color.accentColor)
+                                       .frame(width: 10, height: 10)
+                               }
+                           }
+                           .font(.subheadline)
+                           .padding(.vertical, 4)
+                       }
+                       .buttonStyle(.plain)
+                       .padding(.horizontal, LayoutGrid.outerHorizontal)
+
+            if showFilters {
+                FilterCard {
+                    VStack(spacing: 8) {
                         HStack {
-                            Text("Date Range")
-                            DateRangePicker(range: $vm.dateRange)
+                            HStack {
+                                Text("Date Range")
+                                DateRangePicker(range: $vm.dateRange)
+                            }
+                            ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
                         }
-                        ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
+                        FilterRow(title: "Plans", value: summary(vm.trainingPlanIDs)) { showPlanPicker = true }
+                            .sheet(isPresented: $showPlanPicker) {
+                                MultiSelectSheet(title: "Plans", options: vm.availableTrainingPlans, selected: $vm.trainingPlanIDs)
+                                    .onDisappear { vm.recomputeAll()
+                                        ReviewTrigger.shared.filtersChanged()}
+                            }
+                        FilterRow(title: "Exercise", value: summary(vm.exerciseNames)) { showExercisePicker = true }
+                            .sheet(isPresented: $showExercisePicker) {
+                                MultiSelectSheet(title: "Exercise", options: vm.availableExercises, selected: $vm.exerciseNames)
+                                    .onDisappear { vm.recomputeAll()
+                                        ReviewTrigger.shared.filtersChanged()}
+                            }
                     }
-                    FilterRow(title: "Plans", value: summary(vm.trainingPlanIDs)) { showPlanPicker = true }
-                        .sheet(isPresented: $showPlanPicker) {
-                            MultiSelectSheet(title: "Plans", options: vm.availableTrainingPlans, selected: $vm.trainingPlanIDs)
-                                .onDisappear { vm.recomputeAll()
-                                    ReviewTrigger.shared.filtersChanged()}
-                        }
-                    FilterRow(title: "Exercise", value: summary(vm.exerciseNames)) { showExercisePicker = true }
-                        .sheet(isPresented: $showExercisePicker) {
-                            MultiSelectSheet(title: "Exercise", options: vm.availableExercises, selected: $vm.exerciseNames)
-                                .onDisappear { vm.recomputeAll()
-                                    ReviewTrigger.shared.filtersChanged()}
-                        }
                 }
             }
 
@@ -1018,102 +1059,141 @@ fileprivate struct ClimbStatsView: View {
     @State private var showGymPicker = false
     @State private var showStylePicker = false
     @State private var showGradePicker = false
+    @State private var showFilters = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: LayoutGrid.sectionSpacing) {
-                SectionDivider(label: "Filters")
-            FilterCard {
-                VStack(spacing: 8) {
-                    HStack {
-                        HStack {
-                            Text("Date Range")
-                            DateRangePicker(range: $vm.dateRange)
-                        }
-                        ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
-                    }
-                    
-                    // Climb type — segmented with “All”
+            // Show / Hide filters button
+                       Button {
+                               showFilters.toggle()
+                       } label: {
+                           HStack(spacing: 6) {
+                               Image(systemName: "line.3.horizontal.decrease.circle")
+                               Text(showFilters ? "Hide filters" : "Show filters")
+                               Spacer()
+                               if vm.hasActiveFilters {
+                                   Circle()
+                                       .fill(Color.accentColor)
+                                       .frame(width: 10, height: 10)
+                               }
+                           }
+                           .font(.subheadline)
+                           .padding(.vertical, 4)
+                       }
+                       .buttonStyle(.plain)
+                       .padding(.horizontal, LayoutGrid.outerHorizontal)
+
+            if showFilters {
+                FilterCard {
                     VStack(spacing: 8) {
-                        // Climb type picker
                         HStack {
-                            Text("Type")
-                                .font(.callout)
-                                .foregroundStyle(.primary)
-                            Picker("", selection: Binding<ClimbStatsVM.ClimbType?>(
-                                get: { vm.climbType },
-                                set: { vm.climbType = $0 }
-                            )) {
-                                Text("All").tag(Optional<ClimbStatsVM.ClimbType>.none)
-                                ForEach(ClimbStatsVM.ClimbType.allCases, id: \.self) {
-                                    Text($0.rawValue).tag(Optional.some($0))
-                                }
+                            HStack {
+                                Text("Date Range")
+                                DateRangePicker(range: $vm.dateRange)
                             }
-                            .pickerStyle(.segmented)
+                            ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
                         }
-                        .pickerStyle(.segmented)
                         
-                        // Sport type picker (only when Sport selected)
-                        if vm.climbType == .sport {
-                            Picker("", selection: Binding<ClimbStatsVM.SportType?>(
-                                get: { vm.sportType },
-                                set: { vm.sportType = $0 }
-                            )) {
-                                Text("All").tag(Optional<ClimbStatsVM.SportType>.none)
-                                ForEach(ClimbStatsVM.SportType.allCases, id: \.self) {
-                                    Text($0.rawValue).tag(Optional.some($0))
+                        // Climb type — segmented with “All”
+                        VStack(spacing: 8) {
+                            // Climb type picker
+                            HStack {
+                                Text("Type")
+                                    .font(.callout)
+                                    .foregroundStyle(.primary)
+                                Picker("", selection: Binding<ClimbStatsVM.ClimbType?>(
+                                    get: { vm.climbType },
+                                    set: { vm.climbType = $0 }
+                                )) {
+                                    Text("All").tag(Optional<ClimbStatsVM.ClimbType>.none)
+                                    ForEach(ClimbStatsVM.ClimbType.allCases, id: \.self) {
+                                        Text($0.rawValue).tag(Optional.some($0))
+                                    }
                                 }
+                                .pickerStyle(.segmented)
                             }
                             .pickerStyle(.segmented)
-                            //.padding(.horizontal)
+                            
+                            // Sport type picker (only when Sport selected)
+                            if vm.climbType == .sport {
+                                Picker("", selection: Binding<ClimbStatsVM.SportType?>(
+                                    get: { vm.sportType },
+                                    set: { vm.sportType = $0 }
+                                )) {
+                                    Text("All").tag(Optional<ClimbStatsVM.SportType>.none)
+                                    ForEach(ClimbStatsVM.SportType.allCases, id: \.self) {
+                                        Text($0.rawValue).tag(Optional.some($0))
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                //.padding(.horizontal)
+                            }
                         }
-                    }
-                    .scrollDisabled(true)
-                    .onChange(of: vm.climbType) { _, newValue in
-                        if newValue != .sport { vm.sportType = nil }
-                        vm.recomputeAll()
-                    }
-                    
-                    
-                    FilterRow(title: "Gym", value: summary(vm.gyms)) { showGymPicker = true }
-                        .sheet(isPresented: $showGymPicker) {
-                            MultiSelectSheet(title: "Gym", options: vm.availableGyms, selected: $vm.gyms)
-                                .onDisappear { vm.recomputeAll() }
+                        .scrollDisabled(true)
+                        .onChange(of: vm.climbType) { _, newValue in
+                            if newValue != .sport { vm.sportType = nil }
+                            vm.recomputeAll()
                         }
-                    FilterRow(title: "Grade", value: summary(vm.grades)) { showGradePicker = true }
-                        .sheet(isPresented: $showGradePicker) {
-                            MultiSelectSheet(title: "Grade", options: vm.availableGrades, selected: $vm.grades)
-                                .onDisappear { vm.recomputeAll() }
-                        }
-                    HStack(spacing: 4) {
-                        Toggle(isOn: $vm.preferFeelsLikeGrade) {
-                            InfoLabel(
-                                text: "Prefer My Grade",
-                                helpMessage: """
+                        
+                        
+                        FilterRow(title: "Gym", value: summary(vm.gyms)) { showGymPicker = true }
+                            .sheet(isPresented: $showGymPicker) {
+                                MultiSelectSheet(title: "Gym", options: vm.availableGyms, selected: $vm.gyms)
+                                    .onDisappear { vm.recomputeAll() }
+                            }
+                        FilterRow(title: "Grade", value: summary(vm.grades)) { showGradePicker = true }
+                            .sheet(isPresented: $showGradePicker) {
+                                MultiSelectSheet(title: "Grade", options: vm.availableGrades, selected: $vm.grades)
+                                    .onDisappear { vm.recomputeAll() }
+                            }
+                        HStack(spacing: 4) {
+                            Toggle(isOn: $vm.preferFeelsLikeGrade) {
+                                InfoLabel(
+                                    text: "Prefer My Grade",
+                                    helpMessage: """
                                     When enabled, analytics prefer “My Grade”:
                                     If both grades exist → “My Grade” is used
                                     If only one exists → that grade is used
                                     """
-                            )
+                                )
+                            }
+                            .tint(.accentColor)
                         }
-                        .tint(.accentColor)
-                    }
-                    HStack {
-                        Text("WIP?")
-                            .font(.callout)
-                            .foregroundStyle(.primary)
-                        Picker("", selection: $vm.workInProgress) {
-                            Text("All").tag(ClimbStatsVM.WipFilter.all)
-                            Text("Yes").tag(ClimbStatsVM.WipFilter.yes)
-                            Text("No").tag(ClimbStatsVM.WipFilter.no)
+                        HStack {
+                            Text("WIP?")
+                                .font(.callout)
+                                .foregroundStyle(.primary)
+                            Picker("", selection: $vm.workInProgress) {
+                                Text("All").tag(ClimbStatsVM.WipFilter.all)
+                                Text("Yes").tag(ClimbStatsVM.WipFilter.yes)
+                                Text("No").tag(ClimbStatsVM.WipFilter.no)
+                            }
+                            .pickerStyle(.segmented)
                         }
                         .pickerStyle(.segmented)
-                    }
-                    .pickerStyle(.segmented)
-                    FilterRow(title: "Style", value: summary(vm.styles)) { showStylePicker = true }
-                        .sheet(isPresented: $showStylePicker) {
-                            MultiSelectSheet(title: "Style", options: vm.availableStyles, selected: $vm.styles)
-                                .onDisappear { vm.recomputeAll() }
+                        FilterRow(title: "Style", value: summary(vm.styles)) { showStylePicker = true }
+                            .sheet(isPresented: $showStylePicker) {
+                                MultiSelectSheet(title: "Style", options: vm.availableStyles, selected: $vm.styles)
+                                    .onDisappear { vm.recomputeAll() }
+                            }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundStyle(.secondary)
+
+                                TextField("Search anything...", text: $vm.searchQuery)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                                    .font(.subheadline)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(.regularMaterial)
+                            )
                         }
+                    }
                 }
             }
 
@@ -1153,6 +1233,10 @@ fileprivate struct ClimbStatsView: View {
                 ReviewTrigger.shared.filtersChanged()
             }
             .onChange(of: vm.preferFeelsLikeGrade) {
+                vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
+            }
+            .onChange(of: vm.searchQuery) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
             }
