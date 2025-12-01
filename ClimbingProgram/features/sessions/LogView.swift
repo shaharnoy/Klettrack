@@ -426,7 +426,7 @@ struct AddSessionItemSheet: View {
                 Section("Details") {
                     TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
                     TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
-                    TextField("Time", text: $inputDuration).keyboardType(.decimalPad)
+                    TextField("Duration", text: $inputDuration).keyboardType(.decimalPad)
                     TextField("Weight", text: $inputWeight).keyboardType(.decimalPad)
                     TextField("Grade", text: $inputGrade)
                         .autocapitalization(.none)
@@ -434,10 +434,10 @@ struct AddSessionItemSheet: View {
                     TextField("Notes", text: $inputNotes)
                 }
             }
-            .navigationTitle("Add Exercise")
+            .navigationTitle("Log Exercise")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                    Button("Save") {
                         guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
                         let reps = Double(inputReps.replacingOccurrences(of: ",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
@@ -589,7 +589,9 @@ struct SessionDetailView: View {
             AddSessionItemSheet(session: session)
         }
         .sheet(item: $editingItem) { item in
-            EditSessionItemView(item: item)
+            NavigationStack {
+                EditSessionItemView(item: item)
+            }
         }
         // Commit once when leaving edit mode, but only if a reorder occurred
         .onChange(of: editMode?.wrappedValue) { _, newValue in
@@ -690,7 +692,7 @@ struct EditSessionItemView: View {
                     Section("Details") {
                         TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
                         TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
-                        TextField("Time", text: $inputDuration).keyboardType(.decimalPad)
+                        TextField("Duration", text: $inputDuration).keyboardType(.decimalPad)
                         TextField("Weight", text: $inputWeight).keyboardType(.decimalPad)
                         TextField("Grade", text: $inputGrade)
                             .autocapitalization(.none)
@@ -1056,10 +1058,10 @@ private struct CombinedDayDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button(action: { addExercise() }) {
-                        Label("Add Exercise", systemImage: "dumbbell")
+                        Label("Log Exercise", systemImage: "dumbbell")
                     }
                     Button(action: { showingAddClimb = true }) {
-                        Label("Add Climb", systemImage: "figure.climbing")
+                        Label("Log Climb", systemImage: "figure.climbing")
                     }
                 } label: {
                     Image(systemName: "plus")
@@ -1085,8 +1087,11 @@ private struct CombinedDayDetailView: View {
             )
         }
         .sheet(item: $editingItem) { item in
+            NavigationStack {
                 EditSessionItemView(item: item)
             }
+        }
+
         // Commit once when leaving edit mode, but only if a reorder occurred
         .onChange(of: editMode?.wrappedValue) { _, newValue in
             if newValue == .inactive, didReorder {
