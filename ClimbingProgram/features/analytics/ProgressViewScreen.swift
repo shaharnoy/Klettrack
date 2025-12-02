@@ -2407,18 +2407,6 @@ fileprivate struct SeasonalityHeatmap: View {
             .sorted { $0.value > $1.value }
             .map { $0.key }
 
-        // DEBUG: weight per style in month 10
-        #if DEBUG
-        let debugMonth = 10
-        print("Top styles (weight in month \(debugMonth)):")
-        for (i, style) in sortedStyles.prefix(10).enumerated() {
-            let monthWeight = (groupedByStyle[style] ?? [])
-                .filter { $0.month == debugMonth }
-                .reduce(0) { $0 + $1.weight }
-            print("\(i + 1). \(style): month\(debugMonth)=\(monthWeight)")
-        }
-        #endif
-
         // Top (maxRows - 1) styles + "Other"
         let (stylesToShow, otherStyles): ([String], [String]) = {
             if sortedStyles.count <= maxRows {
