@@ -177,10 +177,9 @@ struct ClimbView: View {
             }
         }
         .sheet(isPresented: $showingAddClimb) {
-            AddClimbView()
-        }
-        .sheet(isPresented: $showingAddClimb) {
-            AddClimbView()
+            AddClimbView(onSave: { _ in
+                ensureDateRangeInitialized()
+            })
         }
         .sheet(item: $editingClimb) { climb in
             // Edit the climb directly inside ClimbLogForm
@@ -188,7 +187,11 @@ struct ClimbView: View {
                 title: "Edit Climb",
                 initialDate: climb.dateLogged,
                 existingClimb: climb,
-                onSave: nil    // no temp copy; changes are already applied
+                //onSave: nil    // no temp copy; changes are already applied
+                onSave: { _ in
+                            // recompute date range after editing
+                            ensureDateRangeInitialized()
+                        }
             )
         }
         // Credentials prompt sheet
@@ -470,17 +473,20 @@ struct ClimbView: View {
     }
     
     private func ensureDateRangeInitialized() {
-        guard dateRange.customStart == nil,
-              dateRange.customEnd == nil,
-              !climbEntries.isEmpty else { return }
+        guard !climbEntries.isEmpty else { return }
 
         if let minDate = climbEntries.map(\.dateLogged).min(),
            let maxDate = climbEntries.map(\.dateLogged).max() {
-            dateRange.customStart = minDate
-            dateRange.customEnd = maxDate
+
+            if dateRange.customStart == nil || dateRange.customStart! > minDate {
+                dateRange.customStart = minDate
+            }
+
+            if dateRange.customEnd == nil || dateRange.customEnd! < maxDate {
+                dateRange.customEnd = maxDate
+            }
         }
     }
-
     
     private func openCredentialsEditor(for board: TB2Client.Board) {
         if let creds = CredentialsStore.loadBoardCredentials(for: board) {

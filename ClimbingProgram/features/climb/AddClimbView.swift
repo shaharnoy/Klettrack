@@ -8,12 +8,18 @@ import SwiftUI
 import SwiftData
 
 struct AddClimbView: View {
-    var body: some View {
-        ClimbLogForm(title: "Add Climb")
-    }
-}
+    let onSave: ((ClimbEntry) -> Void)?
 
-#Preview {
-    AddClimbView()
-        .modelContainer(for: [ClimbEntry.self, ClimbStyle.self, ClimbGym.self])
+    init(onSave: ((ClimbEntry) -> Void)? = nil) {
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        ClimbLogForm(
+            title: "Add Climb",
+            initialDate: Date(),
+            existingClimb: nil,
+            onSave: onSave
+        )
+    }
 }

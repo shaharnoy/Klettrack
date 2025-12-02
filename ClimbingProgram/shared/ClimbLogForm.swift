@@ -106,7 +106,7 @@ struct ClimbLogForm: View {
         title: String = "Add Climb",
         initialDate: Date = Date(),
         existingClimb: ClimbEntry? = nil,
-        onSave: ((ClimbEntry) -> Void)? = nil
+        onSave: ((ClimbEntry) -> Void)? = nil 
     ) {
         self.title = title
         self.initialDate = initialDate
@@ -185,38 +185,39 @@ struct ClimbLogForm: View {
                     // Gym picker with add button
                     HStack {
                         Picker("Gym", selection: $selectedGym) {
-                            Text("select").tag("")
+                            Text("select...").tag("")
                                 .font(.subheadline)
                             ForEach(availableGyms, id: \.self) { gym in
                                 Text(gym).tag(gym)
                             }
                         }
                         .pickerStyle(.menu)
-                        
+                        .contentShape(Rectangle())
                         Button {
                             showingGymAlert = true
                         } label: {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundColor(.accentColor)
                         }
+                        .buttonStyle(.plain)
                     }
                     // Style picker with add button
                     HStack {
                         Picker("Style", selection: $selectedStyle) {
-                            Text("select").tag("")
+                            Text("select...").tag("")
                                 .font(.subheadline)
                             ForEach(availableStyles, id: \.self) { style in
                                 Text(style).tag(style)
                             }
                         }
                         .pickerStyle(.menu)
-                        
                         Button {
                             showingStyleAlert = true
                         } label: {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundColor(.accentColor)
                         }
+                        .buttonStyle(.plain)
                     }
                     Section {
                         // Shared layout constants
@@ -279,25 +280,25 @@ struct ClimbLogForm: View {
 
                                 Spacer(minLength: labelToControlSpacing)
 
-                                Button {
-                                    showAnglePickerSheet = true
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        if angleDegrees.isEmpty {
-                                                Text("")
-                                                    .font(.body)
-                                                    .foregroundStyle(.secondary)
-                                            } else {
-                                                Text("\(angleDegrees)°")
-                                                    .font(.body)
-                                            }
-                                        Image(systemName: "chevron.up.chevron.down")
-                                            .font(.caption2)
+                                HStack(spacing: 4) {
+                                    if angleDegrees.isEmpty {
+                                        Text("")
+                                            .font(.body)
                                             .foregroundStyle(.secondary)
+                                    } else {
+                                        Text("\(angleDegrees)°")
+                                            .font(.body)
                                     }
-                                    .frame(width: controlWidth, alignment: .trailing)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
                                 }
-                                .buttonStyle(.plain)
+                                .frame(width: controlWidth, alignment: .trailing)
+                                .contentShape(Rectangle())              // tap area = full frame
+                                .onTapGesture {
+                                    showAnglePickerSheet = true
+                                }
+
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .sheet(isPresented: $showAnglePickerSheet) {
@@ -332,19 +333,19 @@ struct ClimbLogForm: View {
 
                                 Spacer(minLength: labelToControlSpacing)
 
-                                Button {
-                                    showAttemptsPickerSheet = true
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Text("\(attemptsIntBinding.wrappedValue)")
-                                            .font(.body)
-                                        Image(systemName: "chevron.up.chevron.down")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .frame(width: controlWidth, alignment: .trailing)
+                                HStack(spacing: 4) {
+                                    Text("\(attemptsIntBinding.wrappedValue)")
+                                        .font(.body)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
                                 }
-                                .buttonStyle(.plain)
+                                .frame(width: controlWidth, alignment: .trailing)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    showAttemptsPickerSheet = true
+                                }
+
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .sheet(isPresented: $showAttemptsPickerSheet) {
@@ -606,7 +607,6 @@ struct ClimbLogForm: View {
     @MainActor
     private func saveClimb() async {
         guard !isSaving else { return }
-
         isSaving = true
         defer { isSaving = false }
 
