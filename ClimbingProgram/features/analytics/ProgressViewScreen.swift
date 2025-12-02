@@ -123,6 +123,7 @@ fileprivate struct SeasonalitySlice: Identifiable {
     let month: Int /*1...12*/
     let style: String
     let value: Double
+    let weight: Double
 }
 
 // MARK: - Date Range
@@ -870,20 +871,34 @@ fileprivate final class ClimbStatsVM: ObservableObject {
     
     private func buildSeasonality(entries: [ClimbEntry]) -> [SeasonalitySlice] {
         guard !entries.isEmpty else { return [] }
-        var dict: [String: [Int: Double]] = [:] // style -> month -> value
+
+        var dict: [String: [Int: Double]] = [:] // style -> month -> count
         let cal = Calendar.current
+
         for e in entries {
             let m = cal.component(.month, from: e.dateLogged)
             dict[e.style, default: [:]][m, default: 0] += 1
         }
-        // normalize by style total so shapes are comparable
+
         var out: [SeasonalitySlice] = []
+
         for (style, byMonth) in dict {
-            let total = max(1.0, byMonth.values.reduce(0,+))
-            for m in 1...12 { out.append(.init(month: m, style: style, value: (byMonth[m] ?? 0) / total)) }
+            for m in 1...12 {
+                let count = byMonth[m] ?? 0
+                out.append(
+                    .init(
+                        month: m,
+                        style: style,
+                        value: count,   // raw count, will be normalized later
+                        weight: count   // used for ranking
+                    )
+                )
+            }
         }
+
         return out
     }
+
 
     private func parseAttempts(_ s: String?) -> Int {
         guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return 1 }
@@ -1282,7 +1297,21 @@ fileprivate struct DistributionCards: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.headline)
             if rows.isEmpty { EmptyStateCard() } else {
-                Chart(rows.prefix(15), id: \.label) { row in
+                // Only compress categories for horizontal charts (vertical == false)
+                let (displayRows, displayBreakdown): ([(label: String, count: Int)], [String: [(String, Int)]]) = {
+                    if vertical {
+                        // no compression for vertical charts
+                        return (rows, breakdown)
+                    } else {
+                        // compress to max 10 categories (top 9 + "Other")
+                        return compressRows(
+                            rows: rows,
+                            breakdown: breakdown,
+                            maxCategories: 10
+                        )
+                    }
+                }()
+                Chart(displayRows, id: \.label) { row in
                     if vertical {
                         BarMark(x: .value("Category", row.label),
                                 y: .value("Count", row.count))
@@ -1291,7 +1320,11 @@ fileprivate struct DistributionCards: View {
                             .opacity(interactionsEnabled
                                      ? (selected == nil || selected == row.label ? 1 : 0.35)
                                      : 1)
-                            .annotation(position: .top) { Text("\(row.count)").font(.caption).foregroundStyle(.secondary) }
+                            .annotation(position: .top) {
+                                Text("\(row.count)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                     } else {
                         BarMark(x: .value("Count", row.count),
                                 y: .value("Category", row.label))
@@ -1299,12 +1332,26 @@ fileprivate struct DistributionCards: View {
                             .opacity(interactionsEnabled
                                      ? (selected == nil || selected == row.label ? 1 : 0.35)
                                      : 1)
-                            .annotation(position: .trailing) { Text("\(row.count)").font(.caption).foregroundStyle(.secondary) }
+                            .annotation(position: .trailing) {
+                                Text("\(row.count)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                     }
                 }
-                .frame(minHeight: vertical ? 220 : max(160, CGFloat(min(rows.count, 8)) * 28))
-                .chartYAxis { AxisMarks(position: .leading) { AxisGridLine(); AxisTick(); AxisValueLabel().font(.caption) } }
-                .if(interactionsEnabled && !breakdown.isEmpty) { view in
+                .frame(
+                    minHeight: vertical
+                        ? 220
+                        : max(160, CGFloat(min(displayRows.count, 8)) * 28) // CHANGED: use displayRows
+                )
+                .chartYAxis {
+                    AxisMarks(position: .leading) {
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel().font(.caption)
+                    }
+                }
+                .if(interactionsEnabled && !displayBreakdown.isEmpty) { view in
                     view.chartOverlay { proxy in
                         GeometryReader { geo in
                             Rectangle().fill(.clear).contentShape(Rectangle())
@@ -1327,6 +1374,26 @@ fileprivate struct DistributionCards: View {
                         }
                     }
                     .overlay(alignment: .topTrailing) {
+                        if let s = selected,
+                           let items = displayBreakdown[s], // use displayBreakdown
+                           !items.isEmpty {
+
+                            // sort by count DESC, take top 3
+                            let sorted = items.sorted { $0.1 > $1.1 }
+                            let top3   = sorted.prefix(3)
+                            let others = sorted.dropFirst(3)
+                            let lines  = top3.map { "\($0.0) ×\($0.1)" }
+                            let otherLine = others.isEmpty ? nil : "+ \(others.count) others"
+
+                            let multiline = ([s] + lines + (otherLine.map { [$0] } ?? []))
+                                .joined(separator: "\n")
+
+                            TooltipPill(text: multiline).padding(8)
+                        }
+                    }
+                }
+
+                    .overlay(alignment: .topTrailing) {
                         if let s = selected, let items = breakdown[s], !items.isEmpty {
                             // sort by count DESC, take top 3
                             let sorted = items.sorted { $0.1 > $1.1 }
@@ -1342,13 +1409,65 @@ fileprivate struct DistributionCards: View {
                         }
                     }
                 }
-            }
         }
         .padding(LayoutGrid.cardInner)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, LayoutGrid.outerHorizontal)
     }
+}
+
+// Limit the number of categories shown in DistributionCards.
+// Keeps the top (maxCategories - 1) by count and aggregates the rest into "Other".
+private func compressRows(
+    rows: [(label: String, count: Int)],
+    breakdown: [String: [(String, Int)]],
+    maxCategories: Int = 10
+) -> ([(label: String, count: Int)], [String: [(String, Int)]]) {
+    guard maxCategories > 0, rows.count > maxCategories else {
+        return (rows, breakdown)
+    }
+
+    // 1) Sort by count desc
+    let sorted = rows.sorted { $0.count > $1.count }
+
+    // 2) Keep top N-1, group rest into "Other"
+    let keepCount = maxCategories - 1
+    let top = Array(sorted.prefix(keepCount))
+    let rest = Array(sorted.dropFirst(keepCount))
+
+    let otherLabel = "Other"
+    let otherCount = rest.reduce(0) { $0 + $1.count }
+
+    var displayRows = top
+    displayRows.append((label: otherLabel, count: otherCount))
+
+    // 3) Build compressed breakdown
+    var displayBreakdown: [String: [(String, Int)]] = [:]
+
+    // keep breakdown for top labels as-is
+    for (label, _) in top {
+        displayBreakdown[label] = breakdown[label] ?? []
+    }
+
+    // merge breakdown for the grouped categories into "Other"
+    var otherMap: [String: Int] = [:]
+    for (label, _) in rest {
+        if let items = breakdown[label] {
+            for (name, value) in items {
+                otherMap[name, default: 0] += value
+            }
+        }
+    }
+
+    if !otherMap.isEmpty {
+        let mergedOther = otherMap
+            .map { ($0.key, $0.value) }
+            .sorted { $0.1 > $1.1 }
+        displayBreakdown[otherLabel] = mergedOther
+    }
+
+    return (displayRows, displayBreakdown)
 }
 
 private extension View {
@@ -2015,39 +2134,55 @@ fileprivate struct StackedByGradeSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.headline)
-            if stacks.isEmpty { EmptyStateCard() } else {
-                let (compressed, segments) = compressStacks(stacks: stacks, topN: 8)
+            if stacks.isEmpty {
+                EmptyStateCard()
+            } else {
+                // compress by rows (Y axis) to max 8 bars (top 7 + "Other")
+                let (compressed, segments) = compressStacks(
+                    stacks: stacks,
+                    maxRows: 9,
+                    maxSegments: 10
+                )
                 let orderedSegments = segments.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
 
                 Chart {
                     ForEach(compressed) { row in
                         ForEach(orderedSegments, id: \.self) { seg in
                             let v = row.stacks[seg] ?? 0
-                            BarMark(x: .value("Count", v),
-                                    y: .value("Grade", row.x),
-                                    stacking: .standard)
-                                .foregroundStyle(by: .value("Segment", seg))
+                            BarMark(
+                                x: .value("Count", v),
+                                y: .value("Grade", row.x),
+                                stacking: .standard
+                            )
+                            .foregroundStyle(by: .value("Segment", seg))
                         }
                     }
                 }
                 .chartLegend(position: .bottom, spacing: 1)
-                .frame(height: CGFloat(min(stacks.count, 8)) * 34 + 140)
+                // CHANGED: base height on compressed rows (already capped at <= 8)
+                .frame(height: CGFloat(compressed.count) * 34 + 140)
                 .chartXAxis { AxisMarks(position: .bottom) }
-                .chartYAxis { AxisMarks(position: .leading) { AxisValueLabel().font(.caption) } }
+                .chartYAxis {
+                    AxisMarks(position: .leading) {
+                        AxisValueLabel().font(.caption)
+                    }
+                }
                 .chartOverlay { proxy in
                     GeometryReader { geo in
+                        // use compressed data for hit-testing & tooltip
                         ChartTouchOverlay(
                             proxy: proxy,
                             geo: geo,
-                            stacks: stacks,
+                            stacks: compressed,
                             selectedGrade: $selectedGrade
                         )
                     }
                 }
                 .overlay(alignment: .topTrailing) {
                     if let g = selectedGrade,
-                       let row = stacks.first(where: { $0.x == g }) {
-                        // sort by count DESC, take top 3
+                       let row = compressed.first(where: { $0.x == g }) {
+
+                        // sort by count DESC, take top 3 segments
                         let sorted = row.stacks
                             .filter { $0.value > 0 }
                             .sorted { $0.value > $1.value }
@@ -2062,7 +2197,8 @@ fileprivate struct StackedByGradeSection: View {
                             .joined(separator: "\n")
 
                         if !lines.isEmpty || otherLine != nil {
-                            TooltipPill(text: multiline).padding(8)
+                            TooltipPill(text: multiline)
+                                .padding(8)
                         }
                     }
                 }
@@ -2132,56 +2268,94 @@ fileprivate struct StackedByGradeSection: View {
             }
         }
     }
-
-
-
-
-    // keep only top N segments by total count, group others into "Other"
+    // Limit both number of rows (Y) and segments (legend).
+    // - maxRows: 8 -> top 7 rows + "Other" row
+    // - maxSegments: 10 -> top 9 segments + "Other" segment
     private func compressStacks(
         stacks: [StackedBar<String,String>],
-        topN: Int = 8
+        maxRows: Int = 8,
+        maxSegments: Int = 10
     ) -> ([StackedBar<String,String>], [String]) {
-        // 1) Totals per segment across all rows
-        var totals: [String:Int] = [:]
-        for row in stacks {
-            for (k, v) in row.stacks { totals[k, default: 0] += v }
+        guard maxRows > 0, maxSegments > 0 else { return ([], []) }
+        // 1) ROW COMPRESSION (grades on Y axis)
+        func rowTotal(_ row: StackedBar<String,String>) -> Int {
+            row.stacks.values.reduce(0, +)
         }
 
-        // 2) Top-N segment keys by total desc
-        let topKeys = totals
+        let baseRows: [StackedBar<String,String>]
+        if stacks.count > maxRows {
+            let sortedRows = stacks.sorted { rowTotal($0) > rowTotal($1) }
+
+            let keepCount = max(0, maxRows - 1)
+            let topRows = Array(sortedRows.prefix(keepCount))
+            let restRows = Array(sortedRows.dropFirst(keepCount))
+
+            var otherStacks: [String:Int] = [:]
+            for row in restRows {
+                for (k, v) in row.stacks {
+                    otherStacks[k, default: 0] += v
+                }
+            }
+
+            var tmp = topRows
+            if !otherStacks.isEmpty {
+                tmp.append(.init(x: "Other", stacks: otherStacks))
+            }
+            baseRows = tmp
+        } else {
+            baseRows = stacks
+        }
+        // 2) SEGMENT COMPRESSION (legend entries)
+        // Compute totals per segment across the (already row-compressed) data
+        var segTotals: [String:Int] = [:]
+        for row in baseRows {
+            for (k, v) in row.stacks {
+                segTotals[k, default: 0] += v
+            }
+        }
+        // If segments already fit under the limit, just return
+        if segTotals.count <= maxSegments {
+            let segments = Array(segTotals.keys)
+            return (baseRows, segments)
+        }
+        // Otherwise: keep top maxSegments-1 segments and group the rest into "Other"
+        let topSegKeys = segTotals
             .sorted { $0.value > $1.value }
-            .prefix(topN)
+            .prefix(maxSegments - 1)
             .map { $0.key }
 
-        // 3) Rebuild rows: keep top keys, group others into "Other"
-        var anyOther = false
-        let compressed: [StackedBar<String,String>] = stacks.map { row in
+        var anyOtherSegment = false
+        let compressedRows: [StackedBar<String,String>] = baseRows.map { row in
             var map: [String:Int] = [:]
             var otherSum = 0
+
             for (k, v) in row.stacks {
-                if topKeys.contains(k) {
+                if topSegKeys.contains(k) {
                     map[k, default: 0] += v
                 } else {
                     otherSum += v
                 }
             }
+
             if otherSum > 0 {
-                map["Other"] = otherSum
-                anyOther = true
+                map["Other", default: 0] += otherSum
+                anyOtherSegment = true
             }
+
             return .init(x: row.x, stacks: map)
         }
 
-        // 4) Legend (segments) order: top keys then "Other" if present
-        let segments = topKeys + (anyOther ? ["Other"] : [])
-        return (compressed, segments)
+        let segments = topSegKeys + (anyOtherSegment ? ["Other"] : [])
+        return (compressedRows, segments)
     }
+
 }
+
 
 // MARK: - Seasonality
 fileprivate struct SeasonalitySection: View {
     let slices: [SeasonalitySlice]
-    @State private var focusTopN: Int = 20
+    @State private var focusTopN: Int = 8
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -2213,22 +2387,103 @@ fileprivate struct SeasonalityHeatmap: View {
     let topN: Int
 
     var body: some View {
-        let grouped = Dictionary(grouping: slices, by: { $0.style })
-        let ranked = grouped.mapValues { arr in arr.reduce(0) { $0 + $1.value } }
-        let styles = Array(ranked.sorted { $0.value > $1.value }.prefix(topN)).map { $0.key }
-        let grid: [HeatCell] = styles.flatMap { st in (1...12).map { m in HeatCell(style: st, month: m, value: slices.first(where: { $0.style == st && $0.month == m })?.value ?? 0) } }
-        Chart(grid) { cell in
+        // Group by style for totals + debug
+        let groupedByStyle = Dictionary(grouping: slices, by: { $0.style })
+
+        // TOTAL per style across all months (for ranking rows)
+        let totalsByStyle: [String: Double] = groupedByStyle.mapValues { arr in
+            arr.reduce(0) { $0 + $1.weight }
+        }
+
+        // TOTAL per month across all styles (for month-level shares)
+        let totalsByMonth: [Int: Double] = slices.reduce(into: [:]) { acc, slice in
+            acc[slice.month, default: 0] += slice.weight
+        }
+
+        let maxRows = topN
+
+        // Sort styles DESC by total weight (most used styles first)
+        let sortedStyles = totalsByStyle
+            .sorted { $0.value > $1.value }
+            .map { $0.key }
+
+        // DEBUG: weight per style in month 10
+        #if DEBUG
+        let debugMonth = 10
+        print("Top styles (weight in month \(debugMonth)):")
+        for (i, style) in sortedStyles.prefix(10).enumerated() {
+            let monthWeight = (groupedByStyle[style] ?? [])
+                .filter { $0.month == debugMonth }
+                .reduce(0) { $0 + $1.weight }
+            print("\(i + 1). \(style): month\(debugMonth)=\(monthWeight)")
+        }
+        #endif
+
+        // Top (maxRows - 1) styles + "Other"
+        let (stylesToShow, otherStyles): ([String], [String]) = {
+            if sortedStyles.count <= maxRows {
+                return (sortedStyles, [])
+            } else {
+                let keep = Array(sortedStyles.prefix(maxRows - 1))
+                let rest = Array(sortedStyles.dropFirst(maxRows - 1))
+                return (keep + ["Other"], rest)
+            }
+        }()
+
+        // 1) First pass: compute per-month share for each (style, month)
+        struct MonthShare {
+            let style: String
+            let month: Int
+            let share: Double   // monthWeight / monthTotal
+        }
+
+        var monthShares: [MonthShare] = []
+        var maxSharePerMonth: [Int: Double] = [:]
+
+        for st in stylesToShow {
+            for m in 1...12 {
+                let monthTotal = totalsByMonth[m, default: 0]
+
+                let monthWeight: Double
+                if st == "Other" {
+                    // Sum all non-top styles for that month
+                    monthWeight = slices
+                        .filter { otherStyles.contains($0.style) && $0.month == m }
+                        .reduce(0) { $0 + $1.weight }
+                } else {
+                    monthWeight = slices
+                        .first(where: { $0.style == st && $0.month == m })?.weight ?? 0
+                }
+
+                let share = monthTotal > 0 ? (monthWeight / monthTotal) : 0
+
+                monthShares.append(MonthShare(style: st, month: m, share: share))
+                maxSharePerMonth[m] = max(maxSharePerMonth[m, default: 0], share)
+            }
+        }
+
+        // 2) Second pass: normalize within each month so the top style = 1.0
+        let grid: [HeatCell] = monthShares.map { ms in
+            let maxShare = maxSharePerMonth[ms.month, default: 1]
+            let normalized = maxShare > 0 ? (ms.share / maxShare) : 0
+            return HeatCell(style: ms.style, month: ms.month, value: normalized)
+        }
+
+        return Chart(grid) { cell in
             RectangleMark(
                 x: .value("Month", shortMonth(cell.month)),
                 y: .value("Style", cell.style)
             )
-            .foregroundStyle(by: .value("Value", cell.value))   // map numeric → color
+            .foregroundStyle(by: .value("Value", cell.value))   // 0..1 within month
         }
         .chartForegroundStyleScale(range: Gradient(colors: [.blue, .red]))
         .chartYAxis { AxisMarks(position: .leading) { AxisValueLabel().font(.caption) } }
         .chartXAxis { AxisMarks(position: .bottom) }
     }
 }
+
+
+
 
 // MARK: - Shared UI
 struct ClearAllButton: View {
