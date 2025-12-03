@@ -260,10 +260,10 @@ struct SessionItemRow: View {
                 }
             }
             HStack(spacing: 16) {
-                if let r = item.reps { Text(String(format: "reps: %.1f", r)) }
-                if let s = item.sets { Text(String(format: "sets: %.1f", s)) }
-                if let d = item.duration { Text(String(format: "dur: %.1f", d)) }
-                if let w = item.weightKg { Text(String(format: "Wt: %.1f kg", w)) }
+                if let r = item.reps { Text(String(format: "Reps: %.1f", r)) }
+                if let s = item.sets { Text(String(format: "Sets: %.1f", s)) }
+                if let d = item.duration { Text(String(format: "Duration: %.1f", d)) }
+                if let w = item.weightKg { Text(String(format: "Weight: %.1f kg", w)) }
                 if let g = item.grade { Text("Grade: \(g)") }
             }
             .font(.footnote.monospacedDigit())
