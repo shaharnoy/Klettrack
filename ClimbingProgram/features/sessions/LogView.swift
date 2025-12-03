@@ -525,6 +525,9 @@ struct SessionDetailView: View {
     @State private var editingItem: SessionItem? = nil
     @State private var didReorder = false
 
+    //multi-exercise add flow
+    @State private var showingMultiExercisePicker = false
+    @State private var multiSelectedExercises: [String] = []
     var body: some View {
         List {
             Section("Exercises") {
@@ -956,6 +959,9 @@ private struct CombinedDayDetailView: View {
     @State private var didReorder = false
     @State private var editingClimb: ClimbEntry? = nil
     @State private var editingItem: SessionItem? = nil
+    //multi-exercise add flow
+    @State private var showingMultiExercisePicker = false
+    @State private var multiSelectedExercises: [String] = []
     
     // Pre-sorted climbs so we don't re-sort inside the body repeatedly
     private var sortedClimbs: [ClimbEntry] {
@@ -1060,6 +1066,9 @@ private struct CombinedDayDetailView: View {
                     Button(action: { addExercise() }) {
                         Label("Log Exercise", systemImage: "dumbbell")
                     }
+                    Button(action: { showingMultiExercisePicker = true }) {
+                               Label("Add Several Exercises", systemImage: "text.badge.plus")
+                           }
                     Button(action: { showingAddClimb = true }) {
                         Label("Log Climb", systemImage: "figure.climbing")
                     }
@@ -1077,6 +1086,13 @@ private struct CombinedDayDetailView: View {
         }
         .sheet(isPresented: $showingAddClimb) {
             AddClimbView()
+        }
+        // multi-select catalog picker
+        .sheet(isPresented: $showingMultiExercisePicker, onDismiss: {
+            addExercisesFromSelection()
+        }) {
+            CatalogExercisePicker(selected: $multiSelectedExercises)
+                .environment(\.isDataReady, isDataReady)
         }
         .sheet(item: $editingClimb) { climb in
             ClimbLogForm(
@@ -1120,6 +1136,41 @@ private struct CombinedDayDetailView: View {
         
         showingAddItem = true
     }
+    
+    private func addExercisesFromSelection() {
+        guard isDataReady else { return }
+        guard !multiSelectedExercises.isEmpty else { return }
+
+        // Create / reuse the session for this date
+        let targetSession: Session = {
+            if let session { return session }
+            let newSession = Session(date: date)
+            context.insert(newSession)
+            return newSession
+        }()
+
+        let startSort = (targetSession.items.map(\.sort).max() ?? -1) + 1
+
+        for (idx, name) in multiSelectedExercises.enumerated() {
+            let item = SessionItem(
+                exerciseName: name,
+                planSourceId: nil,
+                planName: nil,
+                reps: nil,
+                sets: nil,
+                weightKg: nil,
+                grade: nil,
+                notes: nil,
+                duration: nil
+            )
+            item.sort = startSort + idx
+            targetSession.items.append(item)
+        }
+
+        try? context.save()
+        multiSelectedExercises = []
+    }
+
     
     private func moveItems(in session: Session, from source: IndexSet, to destination: Int) {
         guard isDataReady else { return }
