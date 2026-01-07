@@ -183,6 +183,91 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         XCTAssertEqual(planItems.first?.exerciseName, "Test Exercise")
     }
     
+    // MARK: - TB2 Sync Logic Tests
+    
+    @MainActor
+    func testTB2PreviouslyClimbedRequiresPriorNonWIPAndSameAngle() {
+        let uuid = "tb2-uuid-123"
+        let style = "Tension board"
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let earlier = iso.date(from: "2025-01-01T10:00:00Z")!
+        let later   = iso.date(from: "2025-01-02T10:00:00Z")!
+
+        // Prior attempt (WIP) on SAME angle -> should NOT count
+        context.insert(ClimbEntry(
+            id: UUID(),
+            climbType: .boulder,
+            grade: "6a",
+            angleDegrees: 30,
+            style: style,
+            attempts: "3",
+            isWorkInProgress: true,
+            isPreviouslyClimbed: false,
+            holdColor: nil,
+            gym: "Test",
+            notes: nil,
+            dateLogged: earlier,
+            tb2ClimbUUID: uuid
+        ))
+
+        // Prior ascent (non-WIP) but on DIFFERENT angle -> should NOT count for angle 30
+        context.insert(ClimbEntry(
+            id: UUID(),
+            climbType: .boulder,
+            grade: "6a",
+            angleDegrees: 40,
+            style: style,
+            attempts: "1",
+            isWorkInProgress: false,
+            isPreviouslyClimbed: false,
+            holdColor: nil,
+            gym: "Test",
+            notes: nil,
+            dateLogged: earlier,
+            tb2ClimbUUID: uuid
+        ))
+
+        try? context.save()
+
+        // Verify: still false (only WIP on same angle + ascent on different angle)
+        let initially = TB2SyncManager.wasPreviouslyClimbed(
+            in: context,
+            tb2ClimbUUID: uuid,
+            angleDegrees: 30,
+            before: later
+        )
+        XCTAssertFalse(initially)
+
+        // Now add a real prior ascent on SAME angle -> should count
+        context.insert(ClimbEntry(
+            id: UUID(),
+            climbType: .boulder,
+            grade: "6a",
+            angleDegrees: 30,
+            style: style,
+            attempts: "1",
+            isWorkInProgress: false,
+            isPreviouslyClimbed: false,
+            holdColor: nil,
+            gym: "Test",
+            notes: nil,
+            dateLogged: earlier,
+            tb2ClimbUUID: uuid
+        ))
+        try? context.save()
+
+        let afterAscent = TB2SyncManager.wasPreviouslyClimbed(
+            in: context,
+            tb2ClimbUUID: uuid,
+            angleDegrees: 30,
+            before: later
+        )
+        XCTAssertTrue(afterAscent)
+    }
+
+    
     // MARK: - Exercise Catalog Management Tests
     
     func testExerciseAreaGrouping() {
@@ -204,6 +289,8 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         XCTAssertEqual(exercisesByArea["Pull"]?.count, 1)
         XCTAssertEqual(exercisesByArea[""]?.count, 1) // Ungrouped
     }
+    
+    
     
     func testBoulderCombinationManagement() {
         let activity = createTestActivity()

@@ -217,22 +217,13 @@ enum TB2SyncManager {
                 continue
             }
             
-            // Look for any earlier entry with same TB2 climb UUID (regardless of board)
-            var previously = false
-            do {
-                let prior = try context.fetch(
-                    FetchDescriptor<ClimbEntry>(
-                        predicate: #Predicate { entry in
-                            entry.tb2ClimbUUID == uuidOpt && entry.dateLogged < dayConst
-                        },
-                        sortBy: [SortDescriptor(\ClimbEntry.dateLogged)]
-                    )
-                )
-                previously = !prior.isEmpty
-            } catch {
-                previously = false
-            }
-            
+            let previously = wasPreviouslyClimbed(
+                in: context,
+                tb2ClimbUUID: r.climbUUID,
+                angleDegrees: r.angle,
+                before: r.day
+            )
+
             let grade = r.loggedGrade ?? ""
             let entry = ClimbEntry(
                 id: id,
@@ -254,8 +245,39 @@ enum TB2SyncManager {
         try? context.save()
     }
     
+    // MARK: - Previously climbed helper (testable)
+
+    @MainActor
+    internal static func wasPreviouslyClimbed(
+        in context: ModelContext,
+        tb2ClimbUUID: String,
+        angleDegrees: Int?,
+        before day: Date
+    ) -> Bool {
+        let uuidOpt: String? = tb2ClimbUUID
+        let angleConst: Int? = angleDegrees
+        let dayConst: Date = day
+
+        do {
+            // Only count prior *completed* entries on the same angle.
+            let priorCompleted = try context.fetch(
+                FetchDescriptor<ClimbEntry>(
+                    predicate: #Predicate { entry in
+                        entry.tb2ClimbUUID == uuidOpt &&
+                        entry.angleDegrees == angleConst &&
+                        entry.dateLogged < dayConst &&
+                        entry.isWorkInProgress == false
+                    },
+                    sortBy: [SortDescriptor(\ClimbEntry.dateLogged)]
+                )
+            )
+            return !priorCompleted.isEmpty
+        } catch {
+            return false
+        }
+    }
+
     // MARK: - Stable ID
-    
     private static func stableID(climbUUID: String, day: Date, angle: Int?, isMirror: Bool?, isAscent: Bool) -> UUID {
         let dayEpoch = Int((day.timeIntervalSince1970 / 86400.0).rounded(.down))
         let key = "tb2|\(climbUUID)|\(dayEpoch)|\(angle ?? -999)|\((isMirror ?? false) ? 1 : 0)|\((isAscent) ? 1 : 0)"
