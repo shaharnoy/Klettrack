@@ -157,6 +157,11 @@ struct RootTabView: View {
             runOnce(per: "isPreviouslyClimbed_backfill_2025-11-09") {
                 backfillIsWorkInProgressIfNeeded(context)
             }
+            
+            //run migration to backfill "previously climbed" using the new rule (uuid + angle + prior non-WIP)
+            runOnce(per: "tb2_backfill_previously_climbed_v2_2026-01-07") {
+                backfillPreviouslyClimbedFlags(context)
+            }
             // Ensure all changes are committed
             try context.save()
             
@@ -243,4 +248,57 @@ func backfillDefaultFlags(_ context: ModelContext) {
           print("backfillIsWorkInProgressIfNeeded failed: \(error.localizedDescription)")
       }
   }
+
+//one time migration to backfill isPreviouslyClimbed based on:
+// - same tb2ClimbUUID
+// - same angleDegrees
+// - only counts if there was a prior non-WIP entry (i.e. a real ascent)
+// WIP entries can still become isPreviouslyClimbed=true if there was a prior ascent.
+@MainActor
+func backfillPreviouslyClimbedFlags(_ context: ModelContext) {
+    struct Key: Hashable {
+        let uuid: String
+        let angle: Int?
+    }
+
+    do {
+        // Process chronologically so "prior" is meaningful
+        let descriptor = FetchDescriptor<ClimbEntry>(
+            predicate: #Predicate { $0.tb2ClimbUUID != nil },
+            sortBy: [SortDescriptor(\ClimbEntry.dateLogged)]
+        )
+        let entries = try context.fetch(descriptor)
+        guard !entries.isEmpty else { return }
+
+        var completedSeen = Set<Key>()
+        var changed = 0
+
+        for e in entries {
+            guard let uuid = e.tb2ClimbUUID else { continue }
+            let key = Key(uuid: uuid, angle: e.angleDegrees)
+
+            // Previously climbed iff we've seen a prior completed ascent for this (uuid, angle)
+            let shouldBePreviously = completedSeen.contains(key)
+            if e.isPreviouslyClimbed != shouldBePreviously {
+                e.isPreviouslyClimbed = shouldBePreviously
+                changed += 1
+            }
+
+            // Only a non-WIP row counts as a completed climb for future entries
+            if e.isWorkInProgress == false {
+                completedSeen.insert(key)
+            }
+        }
+
+        if changed > 0 {
+            // You already save in initializeData(), but saving here is fine & keeps this migration self-contained.
+            try? context.save()
+            print("Backfilled isPreviouslyClimbed for \(changed) ClimbEntry rows (uuid+angle, prior non-WIP).")
+        } else {
+            print("No isPreviouslyClimbed changes needed.")
+        }
+    } catch {
+        print("backfillPreviouslyClimbedFlags failed: \(error.localizedDescription)")
+    }
+}
 
