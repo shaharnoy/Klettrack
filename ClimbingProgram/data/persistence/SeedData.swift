@@ -113,6 +113,43 @@ struct SeedData {
             ensureEx("Shoulder Press", into: push, order: 1, reps: "15–20", sets: "1–2", rest: "3 min")
             ensureEx("Push-Up", into: push, order: 2, reps: "15–25", sets: "1–2", rest: "3 min")
         }
+       
+        // ===== GENERAL STRENGTH =====
+        let strength = CatalogSeeder.ensureActivity("General Strength", in: ctx)
+        do {
+            let pull  = CatalogSeeder.ensureType("Pull",  in: strength)
+            let push  = CatalogSeeder.ensureType("Push",  in: strength)
+            let hinge = CatalogSeeder.ensureType("Hinge", in: strength)
+            let squat = CatalogSeeder.ensureType("Squat", in: strength)
+
+            // Hinge
+            ensureEx("Deadlift", into: hinge, order: 1, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("Frog stretch", into: hinge, order: 2, reps: nil , duration: "45 sec", sets: "3", rest: "3 mins", notes: "Mobility")
+            ensureEx("Jefferson curl", into: hinge, order: 3, reps: "6", duration: nil, sets: "3", rest: "3 mins", notes: "Mobility")
+            ensureEx("Seated Straddle Good Mornings", into: hinge, order: 4, reps: "6", duration: nil, sets: "3", rest: "3 mins", notes: "Mobility")
+            ensureEx("Hip thrust", into: hinge, order: 5, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("RDLs", into: hinge, order: 6, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+
+            // Pull
+            ensureEx("External shoulder rotations", into: pull, order: 1, reps: "10", duration: nil, sets: "3", rest: "3 mins", notes: "Accessory Lifts")
+            ensureEx("single straight arm cable pull down", into: pull, order: 2, reps: "10", duration: nil, sets: "3", rest: "3 mins", notes: "Accessory Lifts")
+            ensureEx("bent over row", into: pull, order: 3, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("Weighted Pull ups", into: pull, order: 4, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+
+            // Squat
+            ensureEx("Cossack squat", into: squat, order: 5, reps: "6", duration: nil, sets: "3", rest: "3 mins", notes: "Mobility")
+            ensureEx("Back squat", into: squat, order: 1, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("Squats", into: squat, order: 4, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("Split squats", into: squat, order: 2, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("Bulgarian split squats", into: squat, order: 3, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+
+            // Push
+            ensureEx("Bench press", into: push, order: 1, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("Incline press", into: push, order: 2, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("Overhead press", into: push, order: 3, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
+            ensureEx("Prone military press", into: push, order: 4, reps: "10", duration: nil, sets: "3", rest: "3 mins", notes: "Accessory Lifts")
+            ensureEx("Lateral raise", into: push, order: 5, reps: "10", duration: nil, sets: "3", rest: "3 mins", notes: "Accessory Lifts")
+        }
 
         // ===== CLIMBING-SPECIFIC (non-bouldering) =====
         let climb = CatalogSeeder.ensureActivity("Climbing-Specific Exercises", in: ctx)
@@ -126,9 +163,11 @@ struct SeedData {
                      reps: "5", sets: "2–5", notes: "10s work, 50s rest")
             ensureEx("FB Max-Weight Hangs (7/53, 14–20mm)", into: maxStrength, order: 3, area: "Fingers",
                      reps: "3", sets: "2–5", notes: "7s work, 53s rest")
-            ensureEx("Loading Pin Lifts — repetitions", into: maxStrength, order: 4, area: "Fingers",
+            ensureEx("One Arm Hangs", into: maxStrength, order: 4, area: "Fingers",
+                     reps: "1 each hand", sets: "3", notes: "5s work, 3min rest; assist with band if needed", description: "4 finger edge (20mm)")
+            ensureEx("Loading Pin Lifts — repetitions", into: maxStrength, order: 5, area: "Fingers",
                      reps: "1:50% 2:60% 3:70% 4–7:80%", sets: "8 reps (1–3); 4 reps (4–7)")
-            ensureEx("Bouldering", into: maxStrength, order: 4, area: "Fingers",
+            ensureEx("Bouldering", into: maxStrength, order: 6, area: "Fingers",
                      reps: "3 ascents", sets: "3–10 problems", rest: "2 min/asc")
             // Pull
             ensureEx("Weighted Pull-Ups", into: maxStrength, order: 1, area: "Pull",
@@ -236,6 +275,41 @@ struct SeedData {
             ensureComboEx("Board 3×6", into: combSE4, order: 1,
                           reps: "3", duration: "on the minute", sets: "6", rest: "3 min",
                           notes: "6 boulders, 3 times on the minute - rest 3 minutes between boulders")
+            
+            ensureEx("10 moves boulder 3 times in a row", into: bSE, order: 4, reps: "3", duration: nil, sets: "1", rest: "no rest between ascents", notes: "As the name suggests, do 10 moves boulder in a row with only a brief rest between. Make sure you find a problem that you can send")
+            // ===== SKILL TRAINING =====
+            let skill = CatalogSeeder.ensureType("Skill training", in: boulder)
+            skill.typeDescription = ""
+
+            ensureEx("Same problem different solution", into: skill, order: 1, reps: nil, duration: nil, sets: nil, rest: nil, notes: nil)
+
+            ensureEx("One Leg", into: skill, order: 2, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=N_K0uSUuz_4")
+
+            ensureEx("One size fits all", into: skill, order: 3, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=IuYm8k17-vA")
+
+            ensureEx("Sloth Monkey", into: skill, order: 4, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=AGjQ_U-5iuk")
+
+            ensureEx("Hover", into: skill, order: 5, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=LBFvKsIqNUw")
+
+            ensureEx("Flash Execution", into: skill, order: 6, reps: nil, duration: nil, sets: nil, rest: nil, notes: nil)
+
+            ensureEx("Rooting", into: skill, order: 7, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=MjtTQYZGMeE")
+
+            ensureEx("Dead Stop", into: skill, order: 8, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=ovnBGz5fD4Q")
+
+            ensureEx("False start", into: skill, order: 9, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=1i8SNRkUwhI")
+
+            ensureEx("Hip shapes", into: skill, order: 10, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=QF0OxJk1xs4")
+
+            ensureEx("Heavy fit", into: skill, order: 11, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=yYlaFzuotoE")
+
+            ensureEx("Hand Foot Matching", into: skill, order: 12, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=mI8KcGhVCoY")
+
+            ensureEx("Matched breathing", into: skill, order: 13, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://youtu.be/epkmqDd_tH4?t=619&si=GRFODM7vEzgmmeut")
+
+            ensureEx("One touch", into: skill, order: 14, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=OPVvZCRToLo")
+
+            ensureEx("10 mins takedown", into: skill, order: 15, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=WtxZElPjzZ8")
 
             bSE.combinations = dedupPreserveOrder(bSE.combinations)
 

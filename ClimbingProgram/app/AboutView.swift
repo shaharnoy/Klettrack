@@ -174,16 +174,23 @@ extension AboutView {
         AboutView(
             aboutText:
             """
-            # Klettrack
+            # klettrack
 
             Plan, log, and analyze your climbing and training.
 
-            ## What Klettrack does
+            ## What klettrack does
             
             - Log climbs by style, grade, angle, holds, and colors
             - Plan and run training sessions with an interval timer
             - Import and export (e.g., CSV) to move your data where you want
             - Optional viewing/sync of sends from compatible board platforms
+            
+            ## Training Disclaimer
+
+            The exercise catalog and training features provided by klettrack are for **informational purposes only**.  
+            They do **not** constitute medical, health, or professional training advice.
+
+            You are solely responsible for how you use this information, including selecting exercises, determining intensity, volume, and progression, and assessing your own physical condition. Always train within your limits and consult a qualified professional if you are unsure or have any health concerns.
 
             ## Privacy
             
