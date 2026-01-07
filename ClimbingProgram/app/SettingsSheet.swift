@@ -21,6 +21,7 @@ struct SettingsSheet: View {
     // Export state
     @State private var showExporter = false
     @State private var exportDoc: LogCSVDocument? = nil
+    @State private var hasRequestedReviewThisSession = false
     
     var body: some View {
         NavigationStack {
@@ -150,7 +151,10 @@ struct SettingsSheet: View {
                 Section {
                     //rate the app
                     Button {
-                        ReviewRequester.requestReview()
+                        if !hasRequestedReviewThisSession {
+                            ReviewRequester.requestReview()
+                            hasRequestedReviewThisSession = true
+                        }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "star.fill")

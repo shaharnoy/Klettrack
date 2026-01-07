@@ -188,7 +188,7 @@ extension AboutView {
             ## Privacy
             
             Your data stays on your device by default. No ads. No tracking.
-            Read our full policy: https://github.com/shaharnoy/Klettrack/wiki/Privacy-Policy
+            Read our full policy: https://klettrack.com/privacy.html
 
             ## Open Source & Licenses
             
