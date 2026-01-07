@@ -880,7 +880,7 @@ struct PlanDayEditor: View {
                 HStack(spacing: 12) {
                     if let notes = exerciseInfo.notes {
                         HStack(spacing: 4) {
-                            Text(notes).italic()
+                            Text(.init(notes)).italic()
                         }
                     }
                 }
@@ -946,7 +946,7 @@ struct PlanDayEditor: View {
                 }
                 
                 if let notes = item.notes, !notes.isEmpty {
-                    Text(notes)
+                    Text(.init(notes))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -1389,7 +1389,7 @@ private struct QuickExerciseProgress: View {
                             .foregroundStyle(.secondary)
                         }
                         if let notes = r.notes, !notes.isEmpty {
-                            Text(notes)
+                            Text(.init(notes))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(3)

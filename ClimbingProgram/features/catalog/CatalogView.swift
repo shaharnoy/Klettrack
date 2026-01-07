@@ -639,7 +639,7 @@ private struct ExerciseRow: View {
             if let desc = ex.exerciseDescription, !desc.isEmpty {
                 Text(desc).font(.footnote)
             } else if let notes = ex.notes, !notes.isEmpty {
-                Text(notes).font(.footnote).foregroundStyle(.secondary)
+                Text(.init(notes)).font(.footnote).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)

@@ -366,7 +366,7 @@ struct LogClimbRow: View {
             }
             // Notes (if any)
             if let notes = climb.notes, !notes.isEmpty {
-                Text(notes)
+                Text(.init(notes))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
