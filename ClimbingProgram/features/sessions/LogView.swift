@@ -34,6 +34,11 @@ extension Session {
     }
 }
 
+private struct ExerciseSelection: Identifiable, Equatable {
+    let name: String
+    var id: String { name }
+}
+
 // MARK: - Log (list of sessions)
 
 struct LogView: View {
@@ -248,17 +253,31 @@ private struct SessionRow: View {
 // MARK: - Session item row
 struct SessionItemRow: View {
     @Bindable var item: SessionItem
+    var onProgress: (() -> Void)? = nil
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(item.exerciseName).font(.headline)
-                if let planName = item.planName {
-                    Spacer()
-                    Text("Plan: \(planName)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+                    HStack {
+                        Text(item.exerciseName).font(.headline)
+
+                        Spacer()
+
+                        if let onProgress {
+                            Button(action: onProgress) {
+                                Image(systemName: "chart.line.uptrend.xyaxis")
+                            }
+                            .labelStyle(.iconOnly)
+                            .controlSize(.small)
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel("Show progress for \(item.exerciseName)")
+                        }
+
+                        if let planName = item.planName {
+                            Text("Plan: \(planName)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
             HStack(spacing: 16) {
                 if let r = item.reps { Text(String(format: "Reps: %.1f", r)) }
                 if let s = item.sets { Text(String(format: "Sets: %.1f", s)) }
@@ -524,6 +543,8 @@ struct SessionDetailView: View {
     @State private var showingAddItem = false
     @State private var editingItem: SessionItem? = nil
     @State private var didReorder = false
+    // Quick Progress
+       @State private var progressExercise: ExerciseSelection? = nil
 
     //multi-exercise add flow
     @State private var showingMultiExercisePicker = false
@@ -532,7 +553,9 @@ struct SessionDetailView: View {
         List {
             Section("Exercises") {
                 ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
-                    SessionItemRow(item: item)
+                    SessionItemRow(item: item) {
+                        progressExercise = ExerciseSelection(name: item.exerciseName)
+                    }
                         .contentShape(Rectangle())
                         .onTapGesture {
                             editingItem = item
@@ -595,6 +618,9 @@ struct SessionDetailView: View {
             NavigationStack {
                 EditSessionItemView(item: item)
             }
+        }
+        .sheet(item: $progressExercise) { sel in
+            QuickExerciseProgress(exerciseName: sel.name)
         }
         // Commit once when leaving edit mode, but only if a reorder occurred
         .onChange(of: editMode?.wrappedValue) { _, newValue in
@@ -959,6 +985,8 @@ private struct CombinedDayDetailView: View {
     @State private var didReorder = false
     @State private var editingClimb: ClimbEntry? = nil
     @State private var editingItem: SessionItem? = nil
+    // Quick Progress
+    @State private var progressExercise: ExerciseSelection? = nil
     //multi-exercise add flow
     @State private var showingMultiExercisePicker = false
     @State private var multiSelectedExercises: [String] = []
@@ -974,7 +1002,9 @@ private struct CombinedDayDetailView: View {
             if let session = session, !session.items.isEmpty {
                 Section("Exercises") {
                     ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
-                        SessionItemRow(item: item)
+                        SessionItemRow(item: item) {
+                            progressExercise = ExerciseSelection(name: item.exerciseName)
+                        }
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 editingItem = item
@@ -1106,6 +1136,9 @@ private struct CombinedDayDetailView: View {
             NavigationStack {
                 EditSessionItemView(item: item)
             }
+        }
+        .sheet(item: $progressExercise) { sel in
+            QuickExerciseProgress(exerciseName: sel.name)
         }
 
         // Commit once when leaving edit mode, but only if a reorder occurred

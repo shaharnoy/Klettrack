@@ -1348,7 +1348,7 @@ struct PlanClimbLogView: View {
 
 // MARK: Quick progress
 
-private struct QuickExerciseProgress: View {
+struct QuickExerciseProgress: View {
     let exerciseName: String
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
