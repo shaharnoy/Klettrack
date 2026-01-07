@@ -9,13 +9,14 @@ import SwiftUI
 
 // Map catalog categories to colors (align with DayType colors where it makes sense)
 enum CatalogHue: String {
-    case core, antagonist, climbing, other, bouldering, mobility
+    case core, antagonist, climbing, other, bouldering, mobility, generalStrength
 
     var color: Color {
         switch self {
         case .core:        return .orange          // matches DayType.core
         case .antagonist:  return .cyan            // matches DayType.antagonist
         case .climbing:    return .green           // matches DayType.climbingFull
+        case .generalStrength: return .blue
         case .other:       return .red
         case .bouldering:  return .pink
         case .mobility:    return .purple
@@ -28,6 +29,7 @@ extension Activity {
         let n = name.lowercased()
         if n.contains("core") { return .core }
         if n.contains("antagonist") || n.contains("stabil") { return .antagonist }
+        if n.contains("general strength") { return .generalStrength }
         if n.contains("climbing") { return .climbing }
         if n.contains("boulder") { return .bouldering }
         if n.contains("mobility") { return .mobility }
