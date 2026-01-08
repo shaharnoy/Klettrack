@@ -7,8 +7,6 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-// MARK: - New SwiftData Models replacing enums
-
 @Model
 final class PlanKindModel {
     @Attribute(.unique) var id: UUID

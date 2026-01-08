@@ -162,6 +162,11 @@ struct RootTabView: View {
             runOnce(per: "tb2_backfill_previously_climbed_v2_2026-01-07") {
                 backfillPreviouslyClimbedFlags(context)
             }
+            
+            runOnce(per: "catalog_remove_bouldering_se_combos_v1_2026-01-08") {
+                removeLegacyBoulderingSECombos(context)
+            }
+
             // Ensure all changes are committed
             try context.save()
             
@@ -248,6 +253,49 @@ func backfillDefaultFlags(_ context: ModelContext) {
           print("backfillIsWorkInProgressIfNeeded failed: \(error.localizedDescription)")
       }
   }
+
+//one time migration to remove legacy "Strength-Endurance" combos that are now standalone exercises
+@MainActor
+func removeLegacyBoulderingSECombos(_ context: ModelContext) {
+    func norm(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    // Names currently seeded as combos in SeedData.swift (and their older legacy placeholders)
+    let legacyNames: Set<String> = Set([
+        "Classic 4X4",
+        "Big moves 4×4s",
+        "Board 3×6 combo",
+        "Combination 1",
+        "Combination 2",
+        "Combination 4",
+    ].map(norm))
+
+    do {
+        // 1) Detach from any TrainingType.combinations (safe even if SwiftData would cascade)
+        let allTypes: [TrainingType] = try context.fetch(FetchDescriptor<TrainingType>())
+        var detached = 0
+        for t in allTypes {
+            let before = t.combinations.count
+            t.combinations.removeAll { legacyNames.contains(norm($0.name)) }
+            detached += (before - t.combinations.count)
+        }
+
+        // 2) Hard-delete the combinations
+        let allCombos: [BoulderCombination] = try context.fetch(FetchDescriptor<BoulderCombination>())
+        let toDelete = allCombos.filter { legacyNames.contains(norm($0.name)) }
+
+        toDelete.forEach { context.delete($0) }
+
+        if detached > 0 || !toDelete.isEmpty {
+            try? context.save()
+            print("Removed legacy bouldering SE combos: deleted=\(toDelete.count), detached=\(detached)")
+        }
+    } catch {
+        print("removeLegacyBoulderingSECombos failed: \(error.localizedDescription)")
+    }
+}
+
 
 //one time migration to backfill isPreviouslyClimbed based on:
 // - same tb2ClimbUUID

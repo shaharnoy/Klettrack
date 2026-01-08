@@ -293,54 +293,61 @@ struct TrainingTypeDetailView: View {
                     }
                     .textCase(nil)
                 }
-            } else {
-                // Show exercises grouped by area if there are any groups
-                if !exercisesByArea.isEmpty {
-                    ForEach(exercisesByArea, id: \.0) { area, exercises in
-                        Section(area) {
-                            ForEach(exercises) { ex in
-                                ExerciseRow(ex: ex, tint: tint)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { openEditor(for: ex) }
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        Button(role: .destructive) {
-                                            context.delete(ex); try? context.save()
-                                        } label: { Label("Delete", systemImage: "trash") }
-                                    }
-                            }
-                            .onDelete { indexes in
-                                indexes.map { exercises[$0] }.forEach { context.delete($0) }
-                                try? context.save()
-                            }
-                        }
-                    }
-                }
-                
-                // Show ungrouped exercises if any
-                if !ungroupedExercises.isEmpty {
-                    Section("Exercises") {
-                        ForEach(ungroupedExercises) { ex in
+            }
+            // Standalone exercises (also show for types that have combinations)
+            // Grouped by area
+            if !exercisesByArea.isEmpty {
+                ForEach(exercisesByArea, id: \.0) { area, exercises in
+                    Section(area) {
+                        ForEach(exercises) { ex in
                             ExerciseRow(ex: ex, tint: tint)
                                 .contentShape(Rectangle())
                                 .onTapGesture { openEditor(for: ex) }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
-                                        context.delete(ex); try? context.save()
-                                    } label: { Label("Delete", systemImage: "trash") }
+                                        context.delete(ex)
+                                        try? context.save()
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                         }
                         .onDelete { indexes in
-                            indexes.map { ungroupedExercises[$0] }.forEach { context.delete($0) }
+                            indexes.map { exercises[$0] }.forEach { context.delete($0) }
                             try? context.save()
                         }
                     }
                 }
-
-                Button { startNewExercise() } label: {
-                    Label("Add Exercise", systemImage: "plus")
-                }
-                .textCase(nil)
             }
+
+            // Ungrouped exercises
+            if !ungroupedExercises.isEmpty {
+                Section("Exercises") {
+                    ForEach(ungroupedExercises) { ex in
+                        ExerciseRow(ex: ex, tint: tint)
+                            .contentShape(Rectangle())
+                            .onTapGesture { openEditor(for: ex) }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    context.delete(ex)
+                                    try? context.save()
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                    }
+                    .onDelete { indexes in
+                        indexes.map { ungroupedExercises[$0] }.forEach { context.delete($0) }
+                        try? context.save()
+                    }
+                }
+            }
+
+            // Always allow adding an exercise
+            Button { startNewExercise() } label: {
+                Label("Add Exercise", systemImage: "plus")
+            }
+            .textCase(nil)
         }
         .listStyle(.insetGrouped)
         .navigationTitle(trainingType.name)
