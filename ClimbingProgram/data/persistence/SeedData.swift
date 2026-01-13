@@ -134,7 +134,7 @@ struct SeedData {
 
             // Pull
             ensureEx("External Shoulder Rotations", into: pull, order: 3, reps: "10", duration: nil, sets: "3", rest: "3 mins", notes: "Accessory Lifts")
-            ensureEx("single Straight Arm Cable/Band Pull Down", into: pull, order: 4, reps: "10", duration: nil, sets: "3", rest: "3 mins", notes: "Accessory Lifts")
+            ensureEx("Single Straight Arm Cable/Band Pull Down", into: pull, order: 4, reps: "10", duration: nil, sets: "3", rest: "3 mins", notes: "Accessory Lifts")
             ensureEx("Bent Over Row", into: pull, order: 1, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
             ensureEx("Weighted Pull Ups", into: pull, order: 2, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
 
@@ -288,6 +288,7 @@ struct SeedData {
             ensureEx(
                 "Board 3×6",
                 into: bSE,
+                order: 3,
                 order: 3,
                 reps: "3",
                 duration: "on the minute",

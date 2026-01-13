@@ -152,20 +152,22 @@ struct SettingsSheet: View {
                     //rate the app
                     Button {
                         if !hasRequestedReviewThisSession {
-                            ReviewRequester.requestReview()
-                            hasRequestedReviewThisSession = true
+                            if let url = URL(string: "itms-apps://apps.apple.com/app/id6754015176?action=write-review") {
+                                UIApplication.shared.open(url)
+                                hasRequestedReviewThisSession = true
+                            }
                         }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "star.fill")
                                 .imageScale(.medium)
-
                             Text("Rate klettrack")
                                 .font(.body)
                                 .fontWeight(.medium)
                         }
                         .padding(.vertical, 6)
                     }
+                    .buttonStyle(.plain)
                     //Feature request / feedback button opens link to roadmap
                     Button {
                         if let url = URL(string: "https://klettrack.featurebase.app/") {
