@@ -289,7 +289,6 @@ struct SeedData {
                 "Board 3×6",
                 into: bSE,
                 order: 3,
-                order: 3,
                 reps: "3",
                 duration: "on the minute",
                 sets: "6",
