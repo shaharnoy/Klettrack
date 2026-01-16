@@ -8,9 +8,11 @@ import SwiftUI
 import SwiftData
 
 struct AddClimbView: View {
+    let bulkCount: Int
     let onSave: ((ClimbEntry) -> Void)?
 
-    init(onSave: ((ClimbEntry) -> Void)? = nil) {
+    init(bulkCount: Int = 1, onSave: ((ClimbEntry) -> Void)? = nil) {
+        self.bulkCount = max(1, bulkCount)
         self.onSave = onSave
     }
 
@@ -19,6 +21,7 @@ struct AddClimbView: View {
             title: "Add Climb",
             initialDate: Date(),
             existingClimb: nil,
+            bulkCount: bulkCount,
             onSave: onSave
         )
     }

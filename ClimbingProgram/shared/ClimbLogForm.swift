@@ -24,6 +24,8 @@ struct ClimbLogForm: View {
     let initialDate: Date
     let onSave: ((ClimbEntry) -> Void)?
     let existingClimb: ClimbEntry?
+    let bulkCount: Int
+
 
     // Session manager for remembering climb type and gym
     @State private var sessionManager = ClimbSessionManager.shared
@@ -106,11 +108,14 @@ struct ClimbLogForm: View {
         title: String = "Add Climb",
         initialDate: Date = Date(),
         existingClimb: ClimbEntry? = nil,
-        onSave: ((ClimbEntry) -> Void)? = nil 
+        bulkCount: Int = 1,
+        onSave: ((ClimbEntry) -> Void)? = nil
+        
     ) {
         self.title = title
         self.initialDate = initialDate
         self.existingClimb = existingClimb
+        self.bulkCount = max(1, bulkCount)
         self.onSave = onSave
 
         if let climb = existingClimb {
@@ -636,30 +641,72 @@ struct ClimbLogForm: View {
 
             target = existing
         } else {
-            // NEW CLIMB – create and insert
-            let climb = ClimbEntry(
-                climbType: selectedClimbType,
-                ropeClimbType: ropeType,
-                grade: grade.isEmpty ? "Unknown" : grade,
-                feelsLikeGrade: feelsLikeGrade.isEmpty ? "" : feelsLikeGrade,
-                angleDegrees: angleInt,
-                style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
-                attempts: attemptsText,
-                isWorkInProgress: isWorkInProgress,
-                isPreviouslyClimbed: isPreviouslyClimbed ? true : false,
-                holdColor: selectedHoldColor,
-                gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
-                notes: notesText,
-                dateLogged: selectedDate
-            )
+            // NEW CLIMB – create and insert (optionally in bulk)
+            func makeClimb() -> ClimbEntry {
+                ClimbEntry(
+                    climbType: selectedClimbType,
+                    ropeClimbType: ropeType,
+                    grade: grade.isEmpty ? "Unknown" : grade,
+                    feelsLikeGrade: feelsLikeGrade.isEmpty ? "" : feelsLikeGrade,
+                    angleDegrees: angleInt,
+                    style: selectedStyle.isEmpty ? "Unknown" : selectedStyle,
+                    attempts: attemptsText,
+                    isWorkInProgress: isWorkInProgress,
+                    isPreviouslyClimbed: isPreviouslyClimbed ? true : false,
+                    holdColor: selectedHoldColor,
+                    gym: selectedGym.isEmpty ? "Unknown" : selectedGym,
+                    notes: notesText,
+                    dateLogged: selectedDate
+                )
+            }
 
-            // Update session memory with this climb's info
+            // Update session memory once
             sessionManager.updateSession(climbType: selectedClimbType, gym: selectedGym)
 
-            modelContext.insert(climb)
-            target = climb
-        }
+            // Create the first climb
+            let first = makeClimb()
+            modelContext.insert(first)
 
+            // Create clones (unique UUIDs because each ClimbEntry() generates a new one)
+            if bulkCount > 1 {
+                for _ in 2...bulkCount {
+                    let clone = makeClimb()
+                    modelContext.insert(clone)
+
+                    // Duplicate media picks for each clone (same asset references, new ClimbMedia rows)
+                    if !mediaPreviews.isEmpty {
+                        for preview in mediaPreviews {
+                            switch preview.kind {
+                            case .photo(let assetId, let thumbnail):
+                                let media = ClimbMedia(
+                                    assetLocalIdentifier: assetId,
+                                    thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
+                                    type: .photo,
+                                    createdAt: .now,
+                                    climb: clone
+                                )
+                                modelContext.insert(media)
+
+                            case .video(let assetId, let thumbnail):
+                                let media = ClimbMedia(
+                                    assetLocalIdentifier: assetId,
+                                    thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
+                                    type: .video,
+                                    createdAt: .now,
+                                    climb: clone
+                                )
+                                modelContext.insert(media)
+
+                            case .existingPhoto, .existingVideo:
+                                // In Add mode these shouldn't appear; ignore if they do.
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+            target = first
+        }
         // Handle media persistence
         // - existingPhoto / existingVideo: already stored on `target` (we only delete them via deletePreview)
         // - photo / video: new picks, insert as new ClimbMedia rows

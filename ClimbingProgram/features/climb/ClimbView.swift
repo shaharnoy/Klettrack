@@ -46,6 +46,12 @@ struct ClimbView: View {
     // In-app review guard (only once per session)
     @State private var hasRequestedReviewThisSession = false
     
+    //bulk uploads
+    @State private var showingBulkPrompt = false
+    @State private var bulkCountText = "5"
+    @State private var pendingBulkCount: Int = 1
+
+    
     // Track successful syncs across launches + pending review trigger
     @AppStorage("klettrack.successfulSyncCount") private var successfulSyncCount = 0
     @AppStorage("klettrack.didRequestReviewAfterSync") private var didRequestReviewAfterSync = false
@@ -157,30 +163,41 @@ struct ClimbView: View {
                 }
                 .disabled(!isDataReady || isSyncing)
             }
+
+            // Replaces the old lock button
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        openCredentialsEditor(for: .tension)
-                    } label: {
-                        Text("TB2 Login")
-                    }
-                    Divider()
-                    Button {
-                        openCredentialsEditor(for: .kilter)
-                    } label: {
-                        Text("Kilter Login")
-                    }
+                Button {
+                    guard isDataReady else { return }
+                    bulkCountText = "5"
+                    showingBulkPrompt = true
                 } label: {
-                    Image(systemName: "lock.circle")
+                    Image(systemName: "square.stack.3d.up.fill")
                 }
                 .disabled(!isDataReady)
+                .accessibilityLabel("Bulk add climbs")
             }
         }
+        .alert("Bulk Log Climbs", isPresented: $showingBulkPrompt) {
+            TextField("How many climbs?", text: $bulkCountText)
+                .keyboardType(.numberPad)
+
+            Button("Continue") {
+                let raw = Int(bulkCountText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
+                pendingBulkCount = max(1, raw)
+                showingAddClimb = true
+            }
+
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Create multiple climbs from one entry")
+        }
         .sheet(isPresented: $showingAddClimb) {
-            AddClimbView(onSave: { _ in
+            AddClimbView(bulkCount: pendingBulkCount, onSave: { _ in
                 ensureDateRangeInitialized()
+                pendingBulkCount = 1 // reset for next time
             })
         }
+
         .sheet(item: $editingClimb) { climb in
             // Edit the climb directly inside ClimbLogForm
             ClimbLogForm(
