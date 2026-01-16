@@ -11,6 +11,50 @@ import UniformTypeIdentifiers
 
 import UIKit
 
+//delete later
+private func dbg(_ msg: String) {
+    let t = Date().formatted(.dateTime.hour().minute().second().secondFraction(.fractional(3)))
+    print("🧭 \(t) \(msg)")
+}
+
+@MainActor
+private final class PlanDayEditorCache: ObservableObject {
+
+    struct ExerciseGuidance {
+        let repsText: String?
+        let setsText: String?
+        let restText: String?
+        let notes: String?
+        let durationText: String?
+
+        var hasGuidance: Bool {
+            [repsText, setsText, restText, notes, durationText]
+                .contains { ($0?.isEmpty == false) }
+        }
+    }
+
+    @Published var guidanceByName: [String: ExerciseGuidance] = [:]
+    @Published var boulderingExerciseNames: Set<String> = []
+    @Published var parentPlan: Plan? = nil
+    @Published var loggedItemsForDay: [SessionItem] = []
+
+    @Published var isWarm: Bool = false
+
+    // Simple global in-memory store keyed by PlanDay id
+    private static var store: [UUID: PlanDayEditorCache] = [:]
+
+    static func forDay(_ id: UUID) -> PlanDayEditorCache {
+        if let existing = store[id] {
+            return existing
+        }
+        let created = PlanDayEditorCache()
+        store[id] = created
+        return created
+    }
+}
+
+
+
 struct SharePayload: Identifiable {
     let id = UUID()
     let url: URL
@@ -74,7 +118,6 @@ struct PlansListView: View {
     @State private var importProgress: Double = 0
 
     // Share (use Identifiable payload)
-    struct SharePayload: Identifiable { let id = UUID(); let url: URL }
     @State private var sharePayload: SharePayload? = nil
 
     // Alerts
@@ -82,138 +125,77 @@ struct PlansListView: View {
 
 
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(plans) { plan in
-                    Button {
-                        // Use programmatic navigation with Hashable wrapper
-                        timerAppState.plansNavigationPath.append(PlanNavigationItem(plan: plan))
-                    } label: {
-                        PlanRow(plan: plan)
+        NavigationStack(path: $timerAppState.plansNavigationPath) {
+            plansList
+                .listStyle(.insetGrouped)
+                .navigationTitle("TRAIN")
+                .navigationBarTitleDisplayMode(.large)
+                .plansDestinations(plans: plans, timerAppState: timerAppState)
+                .plansToolbar(
+                    isDataReady: isDataReady,
+                    context: context,
+                    showingNew: $showingNew,
+                    showExporter: $showExporter,
+                    exportDoc: $exportDoc,
+                    showImporter: $showImporter,
+                    sharePayload: $sharePayload,
+                    resultMessage: $resultMessage
+                )
+                .sheet(isPresented: $showingNew) { NewPlanSheet() }
+                .fileExporter(
+                    isPresented: $showExporter,
+                    document: exportDoc,
+                    contentType: .commaSeparatedText,
+                    defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
+                ) { result in
+                    switch result {
+                    case .success:
+                        resultMessage = "CSV exported."
+                    case .failure(let err):
+                        resultMessage = "Export failed: \(err.localizedDescription)"
                     }
-                    .buttonStyle(.plain)
                 }
-                .onDelete { idx in
-                    guard isDataReady else { return }
-                    idx.map { plans[$0] }.forEach(context.delete)
-                    try? context.save()
+                .fileImporter(
+                    isPresented: $showImporter,
+                    allowedContentTypes: [.commaSeparatedText],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleImportResult(result)
                 }
-            }
-            .listStyle(.insetGrouped)
-            .navigationDestination(for: PlanNavigationItem.self) { planItem in
-                // Find the plan by ID and pass it to PlanDetailView
-                if let plan = plans.first(where: { $0.id == planItem.planId }) {
-                    PlanDetailView(plan: plan)
-                        .environmentObject(timerAppState)
-                } else {
-                    Text("Plan not found")
-                }
-            }
-            .navigationDestination(for: PlanDayNavigationItem.self) { dayItem in
-                // Find the plan day by ID across all plans
-                let allDays = plans.flatMap { $0.days }
-                if let day = allDays.first(where: { $0.id == dayItem.planDayId }) {
-                    PlanDayEditor(day: day)
-                        .environmentObject(timerAppState)
-                } else {
-                    Text("Plan day not found")
-                }
-            }
-            .navigationTitle("TRAIN")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                // Overflow menu: export / share / import
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        // Export (save to Files)
-                        Button {
-                            guard isDataReady else { return }
-                            exportDoc = LogCSV.makeExportCSV(context: context)
-                            showExporter = true
-                        } label: {
-                            Label("Export logs to CSV", systemImage: "square.and.arrow.up")
-                        }
-
-                        // Share (Mail / Messages / Files…)
-                        Button {
-                            guard isDataReady else { return }
-                            let doc = LogCSV.makeExportCSV(context: context)
-                            let fn = "klettrack-log-\(Date().formatted(.dateTime.year().month().day())).csv"
-                            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
-
-                            do {
-                                try doc.csv.write(to: url, atomically: true, encoding: .utf8)
-                                guard FileManager.default.fileExists(atPath: url.path) else {
-                                    resultMessage = "Share failed: file not found."
-                                    return
-                                }
-                                // triggers the share sheet
-                                sharePayload = SharePayload(url: url)
-                            } catch {
-                                resultMessage = "Share prep failed: \(error.localizedDescription)"
-                            }
-                        } label: {
-                            Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
-                        }
-
-                        // Import (from Files / cloud storage)
-                        Button {
-                            guard isDataReady else { return }
-                            showImporter = true
-                        } label: {
-                            Label("Import logs from CSV", systemImage: "square.and.arrow.down")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+                .sheet(item: $sharePayload) { payload in
+                    ShareSheet(items: [payload.url]) {
+                        try? FileManager.default.removeItem(at: payload.url)
                     }
-                    .disabled(!isDataReady)
+                    .presentationDetents([.medium])
                 }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        guard isDataReady else { return }
-                        showingNew = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .disabled(!isDataReady)
+                .alert(resultMessage ?? "", isPresented: Binding(
+                    get: { resultMessage != nil },
+                    set: { if !$0 { resultMessage = nil } }
+                )) {
+                    Button("OK", role: .cancel) { }
                 }
-            }
-            .sheet(isPresented: $showingNew) { NewPlanSheet() }
-            // Exporter
-            .fileExporter(isPresented: $showExporter,
-                          document: exportDoc,
-                          contentType: .commaSeparatedText,
-                          defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))") { result in
-                switch result {
-                case .success:
-                    resultMessage = "CSV exported."
-                case .failure(let err):
-                    resultMessage = "Export failed: \(err.localizedDescription)"
-                }
-            }
-            // Importer (async)
-            .fileImporter(
-                isPresented: $showImporter,
-                allowedContentTypes: [.commaSeparatedText],
-                allowsMultipleSelection: false
-            ) { result in
-                handleImportResult(result)
-            }
-            // Share
-              .sheet(item: $sharePayload) { payload in
-                  ShareSheet(items: [payload.url]) {
-                      try? FileManager.default.removeItem(at: payload.url)
-                  }
-                  .presentationDetents([.medium])
-              }
-            // Result alert
-            .alert(resultMessage ?? "", isPresented: Binding(
-                get: { resultMessage != nil },
-                set: { if !$0 { resultMessage = nil } }
-            )) { Button("OK", role: .cancel) {} }
         }
     }
+
+    private var plansList: some View {
+        List {
+            ForEach(plans) { plan in
+                Button {
+                    timerAppState.plansNavigationPath.append(PlanNavigationItem(plan: plan))
+                } label: {
+                    PlanRow(plan: plan)
+                }
+                .buttonStyle(.plain)
+            }
+            .onDelete { idx in
+                guard isDataReady else { return }
+                idx.map { plans[$0] }.forEach(context.delete)
+                try? context.save()
+            }
+        }
+    }
+
+    
     private func handleImportResult(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
@@ -251,6 +233,138 @@ struct PlansListView: View {
             resultMessage = "Import failed: \(error.localizedDescription)"
         }
     }
+}
+
+private struct PlansDestinationsModifier: ViewModifier {
+    let plans: [Plan]
+    let timerAppState: TimerAppState
+
+    func body(content: Content) -> some View {
+        content
+            .navigationDestination(for: PlanNavigationItem.self) { item in
+                // Resolve plan from current list to avoid relying on PlanNavigationItem's stored property name
+                if let plan = plans.first(where: { $0.id == item.planId }) {
+                    PlanDetailView(plan: plan)
+                        .environmentObject(timerAppState)
+                } else {
+                    Text("Plan not found")
+                }
+            }
+            .navigationDestination(for: PlanDayNavigationItem.self) { dayItem in
+                if let plan = plans.first(where: { plan in
+                    plan.days.contains(where: { $0.id == dayItem.planDayId })
+                }) {
+                    PlanDetailView(plan: plan)
+                        .environmentObject(timerAppState)
+                } else {
+                    Text("Plan day not found")
+                }
+            }
+    }
+}
+
+private extension View {
+    func plansDestinations(plans: [Plan], timerAppState: TimerAppState) -> some View {
+        modifier(PlansDestinationsModifier(plans: plans, timerAppState: timerAppState))
+    }
+}
+
+private struct PlansToolbarModifier: ViewModifier {
+    let isDataReady: Bool
+    let context: ModelContext
+
+    @Binding var showingNew: Bool
+    @Binding var showExporter: Bool
+    @Binding var exportDoc: LogCSVDocument?
+    @Binding var showImporter: Bool
+    @Binding var sharePayload: SharePayload?
+    @Binding var resultMessage: String?
+
+    func body(content: Content) -> some View {
+        content.toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        guard isDataReady else { return }
+                        exportDoc = LogCSV.makeExportCSV(context: context)
+                        showExporter = true
+                    } label: {
+                        Label("Export logs to CSV", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        guard isDataReady else { return }
+                        let doc = LogCSV.makeExportCSV(context: context)
+                        let fn = "klettrack-log-\(Date().formatted(.dateTime.year().month().day())).csv"
+                        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
+
+                        do {
+                            try doc.csv.write(to: url, atomically: true, encoding: .utf8)
+                            guard FileManager.default.fileExists(atPath: url.path) else {
+                                resultMessage = "Share failed: file not found."
+                                return
+                            }
+                            sharePayload = SharePayload(url: url)
+                        } catch {
+                            resultMessage = "Share prep failed: \(error.localizedDescription)"
+                        }
+                    } label: {
+                        Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
+                    }
+
+                    Button {
+                        guard isDataReady else { return }
+                        showImporter = true
+                    } label: {
+                        Label("Import logs from CSV", systemImage: "square.and.arrow.down")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .disabled(!isDataReady)
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    guard isDataReady else { return }
+                    showingNew = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(!isDataReady)
+            }
+        }
+    }
+}
+
+private extension View {
+    func plansToolbar(
+        isDataReady: Bool,
+        context: ModelContext,
+        showingNew: Binding<Bool>,
+        showExporter: Binding<Bool>,
+        exportDoc: Binding<LogCSVDocument?>,
+        showImporter: Binding<Bool>,
+        sharePayload: Binding<SharePayload?>,
+        resultMessage: Binding<String?>
+    ) -> some View {
+        modifier(PlansToolbarModifier(
+            isDataReady: isDataReady,
+            context: context,
+            showingNew: showingNew,
+            showExporter: showExporter,
+            exportDoc: exportDoc,
+            showImporter: showImporter,
+            sharePayload: sharePayload,
+            resultMessage: resultMessage
+        ))
+    }
+}
+
+
+struct EditablePlanDayNav: Hashable {
+    let planId: UUID
+    let planDayId: UUID
 }
 
 // Small, explicit row view reduces type inference work
@@ -461,15 +575,19 @@ struct PlanDetailView: View {
     }
     
     // Helper: resolve a safe color for a plan day by refetching its day type
+    @State private var dayTypeColorById: [UUID: Color] = [:]
+
+    private func loadDayTypeColors() {
+        let desc = FetchDescriptor<DayTypeModel>()
+        let all = (try? context.fetch(desc)) ?? []
+        dayTypeColorById = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0.color) })
+    }
+
     private func dayTypeColor(for day: PlanDay) -> Color {
         guard let typeId = day.type?.id else { return .gray }
-        let fetch = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.id == typeId })
-        if let fresh = (try? context.fetch(fetch))?.first {
-            return fresh.color
-        } else {
-            return .gray
-        }
+        return dayTypeColorById[typeId] ?? .gray
     }
+
     
     // Break down toolbar into smaller components
     @ToolbarContentBuilder
@@ -491,54 +609,68 @@ struct PlanDetailView: View {
     private var weeklyContent: some View {
         ScrollViewReader { proxy in
             List {
-                ForEach(groupedByWeek, id: \.weekStart) { group in
-                    Section(header: Text("Week of \(group.weekStart.formatted(date: .abbreviated, time: .omitted))")) {
-                        ForEach(group.days) { day in
-                            Button {
-                                // Use programmatic navigation with Hashable wrapper
-                                timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
-                            } label: {
-                                HStack {
-                                    Circle().fill(dayTypeColor(for: day)).frame(width: 10, height: 10)
-                                    Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
-                                    Spacer()
-                                    Text(day.type?.name ?? "Unknown").foregroundStyle(.secondary)
+                ForEach(groupedByWeek, id: \.weekStart) { week in
+                    Section {
+                        ForEach(week.days.map(\.id), id: \.self) { dayId in
+                            if let idx = plan.days.firstIndex(where: { $0.id == dayId }) {
+                                Button {
+                                    timerAppState.plansNavigationPath.append(
+                                        EditablePlanDayNav(
+                                            planId: plan.id,
+                                            planDayId: dayId
+                                        )
+                                    )
+                                } label: {
+                                    let day = plan.days[idx]
+
+                                    HStack {
+                                        Circle()
+                                            .fill(dayTypeColor(for: day))
+                                            .frame(width: 10, height: 10)
+
+                                        Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
+
+                                        Spacer()
+
+                                        Text(day.type?.name ?? "Unknown")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 16)
                                 }
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 16)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(isToday(day.date) ? Color.yellow.opacity(0.1) : Color.clear)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(isToday(day.date) ? Color.black : Color.clear, lineWidth: 1)
-                                )
+                                .buttonStyle(.plain)
+                                .id(dayId)
                             }
-                            .buttonStyle(.plain)
-                            .id(day.id) // For ScrollViewReader
                         }
+                    } header: {
+                        Text(week.weekStart.formatted(date: .abbreviated, time: .omitted))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
             .listStyle(.insetGrouped)
             .onAppear {
-                // Scroll to current day when view appears
-                if let currentId = currentDayId {
-                    DispatchQueue.main.asyncAfter(deadline: .now()) {
-                        proxy.scrollTo(currentId, anchor: .center)
-                    }
+                guard let currentId = currentDayId else { return }
+                Task { @MainActor in
+                    await Task.yield()
+                    proxy.scrollTo(currentId, anchor: .center)
                 }
             }
         }
     }
 
+
     @ViewBuilder
     private var monthlyContent: some View {
         ScrollView {
             let monthGroups = groupDaysByMonth(plan.days, calendar: cal)
-            MonthlyGridView(groups: monthGroups, calendar: cal)
-                .environmentObject(timerAppState)
+            MonthlyGridView(
+                planId: plan.id,
+                groups: monthGroups,
+                calendar: cal
+            )
+            .environmentObject(timerAppState)
         }
     }
 
@@ -557,9 +689,22 @@ struct PlanDetailView: View {
             } else {
                 monthlyContent
             }
+            
         }
         .navigationTitle(plan.name)
+        .navigationDestination(for: EditablePlanDayNav.self) { nav in
+            if nav.planId == plan.id,
+               let idx = plan.days.firstIndex(where: { $0.id == nav.planDayId }) {
+                PlanDayEditor(day: $plan.days[idx])
+                    .environmentObject(timerAppState)
+            } else {
+                Text("Plan day not found")
+            }
+        }
+
+
         .toolbar { toolbarContent }
+        .task { loadDayTypeColors() }
         .alert("Add weeks", isPresented: $showingDupPrompt) {
             TextField("Number of weeks", text: $weeksToAdd)
                 .keyboardType(.numberPad)
@@ -585,12 +730,14 @@ private struct ExerciseSelection: Identifiable, Equatable {
 // MARK: Day editor
 
 struct PlanDayEditor: View {
-    @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.editMode) private var editMode
     @EnvironmentObject private var timerAppState: TimerAppState
     @State private var didReorder = false
-    @State var day: PlanDay
+    @Binding var day: PlanDay
+
+    @Environment(\.modelContext) private var context
+    @StateObject private var cache: PlanDayEditorCache
     
     @Query(
         filter: #Predicate<DayTypeModel> { $0.isHidden == false },
@@ -623,56 +770,22 @@ struct PlanDayEditor: View {
     // New: Picker selection by identifier (prevents invalidated object binding)
     @State private var selectedDayTypeId: UUID? = nil
     
+    init(day: Binding<PlanDay>) {
+        self._day = day
+        self._cache = StateObject(wrappedValue: PlanDayEditorCache.forDay(day.wrappedValue.id))
+    }
+    
     // Helper function to check if an exercise belongs to the Bouldering activity
     private func isBoulderingExercise(name: String) -> Bool {
-        let activityDescriptor = FetchDescriptor<Activity>()
-        let allActivities = (try? context.fetch(activityDescriptor)) ?? []
-        
-        // Find if this exercise belongs to an activity with "boulder" in the name
-        for activity in allActivities {
-            if activity.name.lowercased().contains("boulder") {
-                for trainingType in activity.types {
-                    // Check direct exercises
-                    if trainingType.exercises.contains(where: { $0.name == name }) {
-                        return true
-                    }
-                    // Check combination exercises
-                    for combination in trainingType.combinations {
-                        if combination.exercises.contains(where: { $0.name == name }) {
-                            return true
-                        }
-                    }
-                }
-            }
-        }
-        return false
+        cache.boulderingExerciseNames.contains(name)
     }
+
     
     // Query for logged exercises on this day that belong to this plan
     private var loggedExercisesForDay: [SessionItem] {
-        let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: day.date)
-        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
-        
-        let sessionDescriptor = FetchDescriptor<Session>(predicate: #Predicate<Session> {
-            $0.date >= dayStart && $0.date < dayEnd
-        })
-        let sessions = (try? context.fetch(sessionDescriptor)) ?? []
-        
-        // Find the plan that contains this day
-        let planDescriptor = FetchDescriptor<Plan>()
-        let plans = (try? context.fetch(planDescriptor)) ?? []
-        let parentPlan = plans.first { plan in
-            plan.days.contains { $0.id == day.id }
-        }
-        
-        // Return session items for this day that belong to this plan
-        return sessions.flatMap { session in
-            session.items.filter { item in
-                item.planSourceId == parentPlan?.id
-            }
-        }
+        cache.loggedItemsForDay
     }
+
     
     // Helper to get exercises sorted by their catalog order
     private func sortedChosenExercises() -> [String] {
@@ -782,16 +895,29 @@ struct PlanDayEditor: View {
     // Break down exercise row into its own view builder
     @ViewBuilder
     private func exerciseRow(name: String) -> some View {
+
+
         let isQuickLogged = isExerciseQuickLogged(name: name)
-        let exerciseInfo = getExerciseInfo(name: name)
-        let isBouldering = isBoulderingExercise(name: name)
+        //delete
+        let _ = dbg("🧱 exerciseRow build day=\(day.id) name='\(name)' cache.isWarm=\(cache.isWarm) guidanceHit=\(cache.guidanceByName[name] != nil) boulderHit=\(cache.boulderingExerciseNames.contains(name)) quickLogged=\(isQuickLogged)")
+        // Guidance: use real values only when caches are ready, otherwise a stable placeholder.
+        let exerciseInfo = cache.isWarm
+            ? getExerciseInfo(name: name)
+            : (repsText: " ", setsText: " ", restText: " ", notes: " ", durationText: " ", hasGuidance: true)
+        //delete
+        let _ = dbg("🧱 exerciseRow info day=\(day.id) name='\(name)' hasGuidance=\(exerciseInfo.hasGuidance) reps=\(exerciseInfo.repsText ?? "nil") sets=\(exerciseInfo.setsText ?? "nil") rest=\(exerciseInfo.restText ?? "nil") dur=\(exerciseInfo.durationText ?? "nil")")
+
         
+        // Bouldering detection: tri-state to avoid briefly showing the wrong icon while loading.
+        let isBouldering: Bool? = cache.isWarm ? isBoulderingExercise(name: name) : nil
+
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(name)
                     .lineLimit(2)
+
                 Spacer()
-                
+
                 // Quick Tick (log without details)
                 Button {
                     quickLogExercise(name: name)
@@ -804,7 +930,7 @@ struct PlanDayEditor: View {
                 .foregroundColor(isQuickLogged ? .gray : .green)
                 .disabled(isQuickLogged)
                 .accessibilityLabel(isQuickLogged ? "\(name) already logged" : "Quick log \(name)")
-                
+
                 // Quick Progress (icon-only)
                 Button {
                     progressExercise = ExerciseSelection(name: name)
@@ -816,26 +942,29 @@ struct PlanDayEditor: View {
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Show progress for \(name)")
 
-                // Conditional logging button based on exercise type
-                if isBouldering {
-                    // Climb Log button for bouldering exercises
+                // Conditional logging button based on exercise type (no “wrong icon then swap”)
+                if isBouldering == true {
                     Button {
                         climbLoggingExercise = ExerciseSelection(name: name)
-                        inputGrade = ""; inputReps = ""
+                        inputGrade = ""
+                        inputReps = ""
                     } label: {
                         Image(systemName: "mountain.2")
                     }
                     .labelStyle(.iconOnly)
                     .controlSize(.small)
                     .buttonStyle(.bordered)
-                    .foregroundColor(.pink) // Use bouldering color
+                    .foregroundColor(.pink)
                     .accessibilityLabel("Log climb for \(name)")
-                } else {
-                    // Regular exercise log button for non-bouldering exercises
+                } else if isBouldering == false {
                     Button {
                         loggingExercise = ExerciseSelection(name: name)
-                        inputReps = ""; inputSets = ""; inputDuration = ""
-                        inputWeight = ""; inputGrade = ""; inputNotes = ""
+                        inputReps = ""
+                        inputSets = ""
+                        inputDuration = ""
+                        inputWeight = ""
+                        inputGrade = ""
+                        inputNotes = ""
                     } label: {
                         Image(systemName: "square.and.pencil")
                     }
@@ -843,31 +972,38 @@ struct PlanDayEditor: View {
                     .controlSize(.small)
                     .buttonStyle(.bordered)
                     .accessibilityLabel("Log exercise details for \(name)")
+                } else {
+                    // Keep spacing stable while caches load
+                    Image(systemName: "square.and.pencil")
+                        .opacity(0)
+                        .frame(width: 28, height: 28)
                 }
             }
-            
-            // Exercise guidance information
-            if exerciseInfo.hasGuidance {
+
+            // Guidance block:
+            // - While loading: show placeholder (redacted) so the row doesn't "grow" later.
+            // - When ready: keep old behavior (only visible when actual guidance exists).
+            Group {
                 HStack(spacing: 12) {
-                    if let reps = exerciseInfo.repsText {
+                    if let reps = exerciseInfo.repsText, !reps.isEmpty {
                         HStack(spacing: 4) {
                             Text("Reps").bold().foregroundStyle(.primary)
                             Text(reps)
                         }
                     }
-                    if let sets = exerciseInfo.setsText {
+                    if let sets = exerciseInfo.setsText, !sets.isEmpty {
                         HStack(spacing: 4) {
                             Text("Sets").bold().foregroundStyle(.primary)
                             Text(sets)
                         }
                     }
-                    if let duration = exerciseInfo.durationText {
+                    if let duration = exerciseInfo.durationText, !duration.isEmpty {
                         HStack(spacing: 4) {
                             Text("Duration").bold().foregroundStyle(.primary)
                             Text(duration)
                         }
                     }
-                    if let rest = exerciseInfo.restText {
+                    if let rest = exerciseInfo.restText, !rest.isEmpty {
                         HStack(spacing: 4) {
                             Text("Rest").bold().foregroundStyle(.primary)
                             Text(rest)
@@ -877,8 +1013,9 @@ struct PlanDayEditor: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 4)
+
                 HStack(spacing: 12) {
-                    if let notes = exerciseInfo.notes {
+                    if let notes = exerciseInfo.notes, !notes.isEmpty {
                         HStack(spacing: 4) {
                             Text(.init(notes)).italic()
                         }
@@ -888,31 +1025,20 @@ struct PlanDayEditor: View {
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 4)
             }
+            .redacted(reason: cache.isWarm ? [] : .placeholder)
+            .opacity(cache.isWarm ? (exerciseInfo.hasGuidance ? 1 : 0) : 1)
         }
     }
+
     
     // Helper to get exercise information from catalog
-    private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?,notes: String?,durationText: String?, hasGuidance: Bool) {
-        let exerciseDescriptor = FetchDescriptor<Exercise>()
-        let allExercises = (try? context.fetch(exerciseDescriptor)) ?? []
-        
-        // Find the exercise by name
-        let exercise = allExercises.first { $0.name == name }
-        
-        let reps = exercise?.repsText
-        let sets = exercise?.setsText
-        let rest = exercise?.restText
-        let notes = exercise?.notes
-        let duration = exercise?.durationText
-        let hasGuidance = (reps != nil && !reps!.isEmpty) ||
-                         (sets != nil && !sets!.isEmpty) ||
-                         (rest != nil && !rest!.isEmpty) ||
-                         (notes != nil && !notes!.isEmpty) ||
-                         (duration != nil && !duration!.isEmpty)
-        
-        return (reps, sets, rest,notes, duration, hasGuidance)
+    private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?, notes: String?, durationText: String?, hasGuidance: Bool) {
+        let g = cache.guidanceByName[name] ?? PlanDayEditorCache.ExerciseGuidance(
+            repsText: nil, setsText: nil, restText: nil, notes: nil, durationText: nil
+        )
+        return (g.repsText, g.setsText, g.restText, g.notes, g.durationText, g.hasGuidance)
     }
-    
+
     // Helper function to check if an exercise has been quick-logged today
     private func isExerciseQuickLogged(name: String) -> Bool {
         return loggedExercisesForDay.contains { item in
@@ -935,11 +1061,11 @@ struct PlanDayEditor: View {
                         .foregroundStyle(.secondary)
                 } else {
                     LogMetricRow(
-                        reps: item.reps.map{ String(format: "%.1f", $0) },
-                        sets: item.sets.map{ String(format: "%.1f", $0) },
-                        weight: item.weightKg.map{ String(format: "%.1f", $0) },
-                        grade: item.grade.map { String(format: "%.1f", $0) },
-                        duration: item.duration.map { String(format: "%.1f", $0) }
+                        reps: item.reps.map { $0.formatted(.number.precision(.fractionLength(1))) },
+                        sets: item.sets.map { $0.formatted(.number.precision(.fractionLength(1))) },
+                        weight: item.weightKg.map { $0.formatted(.number.precision(.fractionLength(1))) },
+                        grade: item.grade, // grade is a String in your model usage; don't numeric-format it
+                        duration: item.duration.map { $0.formatted(.number.precision(.fractionLength(1))) }
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -972,8 +1098,24 @@ struct PlanDayEditor: View {
     private var chosenActivitiesSection: some View {
         Section("Chosen activities") {
             if day.chosenExercises.isEmpty {
+                //delete
+                let _ = dbg("🧩 chosenActivitiesSection: EMPTY day=\(day.id)")
+
                 Text("No activities yet").foregroundStyle(.secondary)
+            } else if !cache.isWarm {
+                //delete
+                let _ = dbg("🧩 chosenActivitiesSection: LOADING day=\(day.id) chosen=\(day.chosenExercises.count)")
+                // Prevent “partial content → full content” flash
+                
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading…").foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
             } else {
+                //delete
+                let _ = dbg("🧩 chosenActivitiesSection: RENDER day=\(day.id) chosen=\(day.chosenExercises.count) guidance=\(cache.guidanceByName.count) boulderSet=\(cache.boulderingExerciseNames.count)")
+
                 let groupedExercises = groupedChosenExercises()
                 ForEach(groupedExercises, id: \.activityName) { group in
                     ActivityGroupView(
@@ -995,15 +1137,25 @@ struct PlanDayEditor: View {
             .textCase(nil)
         }
     }
+
     
     // Break down the logged exercises section
     @State private var itemToEdit: SessionItem?
     @ViewBuilder
     private var loggedExercisesSection: some View {
         Section("Logged exercises") {
+            //delete
+            let _ = dbg("🧾 loggedExercisesSection render day=\(day.id) logged=\(loggedExercisesForDay.count) cache.isWarm=\(cache.isWarm)")
+
             if loggedExercisesForDay.isEmpty {
+                //delete
+                let _ = dbg("🧾 loggedExercisesSection: EMPTY day=\(day.id)")
+
                 Text("No logs yet for this day").foregroundStyle(.secondary)
             } else {
+                //delete
+                let _ = dbg("🧾 loggedExercisesSection: LIST day=\(day.id) count=\(loggedExercisesForDay.count)")
+
                 ForEach(loggedExercisesForDay.sorted(by: { $0.sort < $1.sort })) { item in
                     loggedExerciseRow(item: item)
                         .swipeActions(edge: .trailing) {
@@ -1053,6 +1205,10 @@ struct PlanDayEditor: View {
 
     var body: some View {
         Form {
+           //to be deleted
+            let _ = dbg("📌 PlanDayEditor.body day=\(day.id) date=\(day.date.shortFormat) cache.isWarm=\(cache.isWarm) chosen=\(day.chosenExercises.count) logged=\(cache.loggedItemsForDay.count)")
+
+
             // Day type picker – bind to ID to avoid invalidated object crashes
             Picker("Day type", selection: $selectedDayTypeId) {
                 ForEach(dayTypes) { t in
@@ -1135,6 +1291,26 @@ struct PlanDayEditor: View {
                     .sensoryFeedback(.success, trigger: saveTick)
             }
         }
+        .task(id: day.id) {
+            //delete
+            dbg("🚀 task(start) day=\(day.id) cache.isWarm(before)=\(cache.isWarm)")
+
+            if !cache.isWarm {
+                warmCachesIntoCache()
+                cache.isWarm = true
+                dbg("🟩 cache.isWarm -> true day=\(day.id)")
+            } else {
+                // returning to the view: refresh only the volatile part
+                refreshLoggedItemsIntoCache()
+            }
+            //delete
+            dbg("✅ task(done) day=\(day.id) guidance=\(cache.guidanceByName.count) boulderSet=\(cache.boulderingExerciseNames.count) cache.parentPlan=\(cache.parentPlan?.id.uuidString ?? "nil") logged=\(cache.loggedItemsForDay.count)")
+        }
+
+
+        .onChange(of: saveTick) { _, _ in
+            refreshLoggedItemsIntoCache()
+        }
         // Quick Progress sheet
         .sheet(item: $progressExercise) { sel in
             QuickExerciseProgress(exerciseName: sel.name)
@@ -1142,14 +1318,82 @@ struct PlanDayEditor: View {
         // Climb Log sheet for bouldering exercises
         .sheet(item: $climbLoggingExercise) { sel in
             PlanClimbLogView(
-                exerciseName: sel.name,
                 planDay: day,
+                exerciseName: sel.name,
                 onSave: {
-                    // Refresh any state if needed
+                    refreshLoggedItemsIntoCache()
                 }
             )
         }
+        .transaction { $0.animation = nil }
+
     }
+    
+    private func warmCachesIntoCache() {
+        dbg("🧊 warmCaches(start) day=\(day.id)")
+
+        // 1) Guidance map (Exercises)
+        let exDesc = FetchDescriptor<Exercise>()
+        let exercises = (try? context.fetch(exDesc)) ?? []
+
+        cache.guidanceByName = Dictionary(
+            exercises.map {
+                ($0.name, PlanDayEditorCache.ExerciseGuidance(
+                    repsText: $0.repsText,
+                    setsText: $0.setsText,
+                    restText: $0.restText,
+                    notes: $0.notes,
+                    durationText: $0.durationText
+                ))
+            },
+            uniquingKeysWith: { existing, _ in existing } // first wins; no crash
+        )
+
+        // 2) Bouldering set (Activities)
+        let actDesc = FetchDescriptor<Activity>()
+        let activities = (try? context.fetch(actDesc)) ?? []
+        var boulderSet: Set<String> = []
+        for a in activities where a.name.localizedLowercase.contains("boulder") {
+            for t in a.types {
+                for ex in t.exercises { boulderSet.insert(ex.name) }
+                for c in t.combinations { for ex in c.exercises { boulderSet.insert(ex.name) } }
+            }
+        }
+        cache.boulderingExerciseNames = boulderSet
+
+        // 3) Parent plan (resolve once)
+        let planDesc = FetchDescriptor<Plan>()
+        let plans = (try? context.fetch(planDesc)) ?? []
+        cache.parentPlan = plans.first { $0.days.contains(where: { $0.id == day.id }) }
+
+        // 4) Logged items
+        refreshLoggedItemsIntoCache()
+
+        dbg("🧊 warmCaches(done) day=\(day.id) guidance=\(cache.guidanceByName.count) boulderSet=\(cache.boulderingExerciseNames.count) cache.parentPlan=\(cache.parentPlan?.id.uuidString ?? "nil") logged=\(cache.loggedItemsForDay.count)")
+    }
+
+    private func refreshLoggedItemsIntoCache() {
+        dbg("🧾 cache.refreshLoggedItems(start) day=\(day.id) cache.parentPlan=\(cache.parentPlan?.id.uuidString ?? "nil")")
+
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: day.date)
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
+            cache.loggedItemsForDay = []
+            return
+        }
+
+        let sessionDesc = FetchDescriptor<Session>(predicate: #Predicate<Session> { $0.date >= start && $0.date < end })
+        let sessions = (try? context.fetch(sessionDesc)) ?? []
+
+        let planId = cache.parentPlan?.id
+        let allItems = sessions.flatMap(\.items)
+        let filtered = allItems.filter { $0.planSourceId == planId }
+
+        dbg("🧾 cache.refreshLoggedItems(assign) sessions=\(sessions.count) items=\(allItems.count) filtered=\(filtered.count) planId=\(planId?.uuidString ?? "nil")")
+        cache.loggedItemsForDay = filtered
+    }
+
+
     
     private func saveLogEntry(exerciseName: String) {
         let reps = Double(inputReps.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
@@ -1165,16 +1409,12 @@ struct PlanDayEditor: View {
         let dayStart = calendar.startOfDay(for: day.date)
         let _ = calendar.date(byAdding: .day, value: 1, to: dayStart)!
         
-        let planDescriptor = FetchDescriptor<Plan>()
-        let plans = (try? context.fetch(planDescriptor)) ?? []
-        let parentPlan = plans.first { plan in
-            plan.days.contains { $0.id == day.id }
-        }
+        let p = cache.parentPlan
         
         session.items.append(SessionItem(
             exerciseName: exerciseName,
-            planSourceId: parentPlan?.id,
-            planName: parentPlan?.name,
+            planSourceId: p?.id,
+            planName: p?.name,
             reps: reps,
             sets: sets,
             weightKg: weight,
@@ -1191,17 +1431,13 @@ struct PlanDayEditor: View {
     private func quickLogExercise(name: String) {
         let session = findOrCreateSession(for: day.date, in: context)
         
-        let planDescriptor = FetchDescriptor<Plan>()
-        let plans = (try? context.fetch(planDescriptor)) ?? []
-        let parentPlan = plans.first { plan in
-            plan.days.contains { $0.id == day.id }
-        }
+        let p = cache.parentPlan
         
         // Create a simple log entry without metrics - just capture that it was done
         session.items.append(SessionItem(
             exerciseName: name,
-            planSourceId: parentPlan?.id,
-            planName: parentPlan?.name,
+            planSourceId: p?.id,
+            planName: p?.name,
             reps: nil,
             sets: nil,
             weightKg: nil,
@@ -1284,12 +1520,23 @@ struct PlanDayEditor: View {
 
 // MARK: Plan Climb Log View for Bouldering Exercises
 
-struct PlanClimbLogView: View {
-    @Environment(\.modelContext) private var context
-    
-    let exerciseName: String
+private struct PlanClimbLogView: View {
     let planDay: PlanDay
+    let exerciseName: String
     let onSave: () -> Void
+
+    @Environment(\.modelContext) private var context
+
+    @State private var parentPlan: Plan? = nil
+
+    private func loadParentPlan() {
+        let planDescriptor = FetchDescriptor<Plan>()
+        let plans = (try? context.fetch(planDescriptor)) ?? []
+        parentPlan = plans.first { plan in
+            plan.days.contains { $0.id == planDay.id }
+        }
+    }
+
     
     var body: some View {
         ClimbLogForm(
@@ -1299,15 +1546,14 @@ struct PlanClimbLogView: View {
             // Custom save logic for plan integration
             handlePlanClimbSave(climbEntry: climbEntry)
         }
+        .task(id: planDay.id) {
+                loadParentPlan()
+            }
     }
     
     private func handlePlanClimbSave(climbEntry: ClimbEntry) {
         // Find the parent plan
-        let planDescriptor = FetchDescriptor<Plan>()
-        let plans = (try? context.fetch(planDescriptor)) ?? []
-        let parentPlan = plans.first { plan in
-            plan.days.contains { $0.id == planDay.id }
-        }
+        let p = parentPlan
         
         // Create SessionItem for plan tracking
         let session = findOrCreateSession(for: planDay.date, in: context)
@@ -1317,8 +1563,8 @@ struct PlanClimbLogView: View {
         
         session.items.append(SessionItem(
             exerciseName: exerciseName,
-            planSourceId: parentPlan?.id,
-            planName: parentPlan?.name,
+            planSourceId: p?.id,
+            planName: p?.name,
             reps: attemptsDouble, // Store attempts as reps for consistency
             sets: nil,
             weightKg: nil,
@@ -1538,8 +1784,8 @@ struct CatalogExercisePicker: View {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         return allExerciseHits.filter {
-            $0.name.localizedCaseInsensitiveContains(q)
-            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
+            $0.name.localizedStandardContains(q)
+            || ($0.subtitle?.localizedStandardContains(q) ?? false)
         }
     }
     
@@ -1599,8 +1845,7 @@ struct CatalogExercisePicker: View {
                 }
                 // Add a refresh mechanism
                 .task {
-                    // Small delay to allow SwiftData to initialize
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+                    try? await Task.sleep(for: .milliseconds(100))
                 }
             } else {
                 List {
@@ -1701,9 +1946,9 @@ struct TypesList: View {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         return allHits.filter {
-            $0.name.localizedCaseInsensitiveContains(q)
-            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
-        }
+            $0.name.localizedStandardContains(q)
+              || ($0.subtitle?.localizedStandardContains(q) ?? false)
+          }
     }
     
     var body: some View {
@@ -1811,9 +2056,9 @@ struct CombosList: View {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         return allHits.filter {
-            $0.name.localizedCaseInsensitiveContains(q)
-            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
-        }
+            $0.name.localizedStandardContains(q)
+              || ($0.subtitle?.localizedStandardContains(q) ?? false)
+          }
     }
 
     var body: some View {
@@ -1909,9 +2154,9 @@ struct ComboExercisesList: View {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         return allHits.filter {
-            $0.name.localizedCaseInsensitiveContains(q)
-            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
-        }
+            $0.name.localizedStandardContains(q)
+              || ($0.subtitle?.localizedStandardContains(q) ?? false)
+          }
     }
 
     var body: some View {
@@ -1998,9 +2243,9 @@ struct ExercisesList: View {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         return allHits.filter {
-            $0.name.localizedCaseInsensitiveContains(q)
-            || ($0.subtitle?.localizedCaseInsensitiveContains(q) ?? false)
-        }
+            $0.name.localizedStandardContains(q)
+              || ($0.subtitle?.localizedStandardContains(q) ?? false)
+          }
     }
 
     // Group exercises by area similar to CatalogView
@@ -2132,21 +2377,23 @@ private struct ExercisePickRow: View {
     let onTap: () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Circle().fill(tint).frame(width: 8, height: 8)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(name).font(.subheadline).fontWeight(.semibold)
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        Button(action: onTap) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Circle().fill(tint).frame(width: 8, height: 8)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name).font(.subheadline).bold()
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    MetricRow(reps: reps, sets: sets, rest: rest, duration: duration)
                 }
-                MetricRow(reps: reps, sets: sets, rest: rest, duration: duration)
+                Spacer()
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .imageScale(.large)
             }
-            Spacer()
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .imageScale(.large)
+            .padding(.vertical, 6)
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
+        .buttonStyle(.plain)
         .padding(.vertical, 6)
     }
 }
@@ -2214,25 +2461,23 @@ private func findOrCreateSession(for date: Date, in context: ModelContext) -> Se
     let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
     
     let descriptor = FetchDescriptor<Session>(
+        predicate: #Predicate<Session> { $0.date >= startOfDay && $0.date < endOfDay },
         sortBy: [SortDescriptor(\Session.date)]
     )
-    let existingSessions = (try? context.fetch(descriptor)) ?? []
-    let existing = existingSessions.first { session in
-        session.date >= startOfDay && session.date < endOfDay
-    }
-    
-    if let existing = existing {
+    if let existing = (try? context.fetch(descriptor))?.first {
         return existing
     }
-    
+
     let newSession = Session(date: date)
     context.insert(newSession)
     return newSession
 }
 
 private struct MonthlyGridView: View {
+    let planId: UUID
     let groups: [(components: DateComponents, days: [PlanDay])]
     let calendar: Calendar
+
     @EnvironmentObject private var timerAppState: TimerAppState
     @Environment(\.modelContext) private var context
 
@@ -2246,23 +2491,31 @@ private struct MonthlyGridView: View {
         groups.flatMap { $0.days }.first { isToday($0.date) }?.id
     }
     
-    // Resolve color by refetching the DayTypeModel
+    @State private var dayTypeColorById: [UUID: Color] = [:]
+    
+    private func loadDayTypeColors() {
+        let desc = FetchDescriptor<DayTypeModel>()
+        let all = (try? context.fetch(desc)) ?? []
+        dayTypeColorById = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0.color) })
+    }
+
     private func dayTypeColor(for day: PlanDay) -> Color {
         guard let typeId = day.type?.id else { return .gray }
-        let fetch = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.id == typeId })
-        if let fresh = (try? context.fetch(fetch))?.first {
-            return fresh.color
-        } else {
-            return .gray
-        }
+        return dayTypeColorById[typeId] ?? .gray
     }
 
     // Extract day cell into separate view to reduce type checking complexity
     @ViewBuilder
     private func dayCell(for day: PlanDay) -> some View {
         Button {
-            timerAppState.plansNavigationPath.append(PlanDayNavigationItem(planDay: day))
+            timerAppState.plansNavigationPath.append(
+                EditablePlanDayNav(
+                    planId: planId,
+                    planDayId: day.id
+                )
+            )
         } label: {
+
             VStack(spacing: 4) {
                 Text("\(calendar.component(.day, from: day.date))")
                     .font(.caption)
@@ -2308,13 +2561,14 @@ private struct MonthlyGridView: View {
             }
             .padding(.horizontal)
             .onAppear {
-                // Scroll to current day when view appears
-                if let currentId = currentDayId {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        proxy.scrollTo(currentId, anchor: .center)
-                    }
+                guard let currentId = currentDayId else { return }
+                Task { @MainActor in
+                    // yield once to let List lay out (keeps the “scroll to today” behavior)
+                    await Task.yield()
+                    proxy.scrollTo(currentId, anchor: .center)
                 }
             }
+
         }
     }
 }
@@ -2382,32 +2636,40 @@ private struct ClimbLogMetricRow: View {
 }
 
 // MARK: Activity Group View Component
-private struct ActivityGroupView: View {
+private struct ActivityGroupView<RowContent: View>: View {
     let group: (activityName: String, activityColor: Color, exercises: [String])
     @Binding var day: PlanDay
     let context: ModelContext
-    let exerciseRowBuilder: (String) -> AnyView
+    @ViewBuilder let exerciseRowBuilder: (String) -> RowContent
     let onReorder: () -> Void
 
     @Environment(\.editMode) private var editMode
-    @State private var localOrder: [String] = []
+    @State private var localOrder: [String]
 
-    init(group: (activityName: String, activityColor: Color, exercises: [String]),
-         day: Binding<PlanDay>,
-         context: ModelContext,
-         exerciseRowBuilder: @escaping (String) -> some View,
-         onReorder: @escaping () -> Void) {
+    init(
+        group: (activityName: String, activityColor: Color, exercises: [String]),
+        day: Binding<PlanDay>,
+        context: ModelContext,
+        @ViewBuilder exerciseRowBuilder: @escaping (String) -> RowContent,
+        onReorder: @escaping () -> Void
+    ) {
         self.group = group
         self._day = day
         self.context = context
-        self.exerciseRowBuilder = { name in AnyView(exerciseRowBuilder(name)) }
+        self.exerciseRowBuilder = exerciseRowBuilder
         self.onReorder = onReorder
-        self._localOrder = State(initialValue: group.exercises) // seed
+        self._localOrder = State(initialValue: group.exercises)
     }
 
     var body: some View {
+        //delete
+        let _ = dbg("🧷 ActivityGroupView.body activity='\(group.activityName)' day=\(day.id) localOrder=\(localOrder.count) editMode=\(String(describing: editMode?.wrappedValue))")
+
         Section {
             ForEach(localOrder, id: \.self) { name in
+                //delete
+                let _ = dbg("🧷 ActivityGroupView row activity='\(group.activityName)' name='\(name)'")
+
                 exerciseRowBuilder(name)
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {

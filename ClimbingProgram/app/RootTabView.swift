@@ -38,15 +38,12 @@ class TimerAppState: ObservableObject {
 // MARK: - Navigation Types for Plans
 struct PlanNavigationItem: Hashable {
     let planId: UUID
-    
-    init(planId: UUID) {
-        self.planId = planId
-    }
-    
+
     init(plan: Plan) {
         self.planId = plan.id
     }
 }
+
 
 struct PlanDayNavigationItem: Hashable {
     let planDayId: UUID
