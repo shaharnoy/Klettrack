@@ -1594,15 +1594,17 @@ struct PlanDayEditor: View {
 }
 
 // MARK: Plan Climb Log View for Bouldering Exercises
-
 private struct PlanClimbLogView: View {
     let planDay: PlanDay
     let exerciseName: String
     let onSave: () -> Void
 
     @Environment(\.modelContext) private var context
-
     @State private var parentPlan: Plan? = nil
+
+    // NEW: drill context (Activity name + ActivityType name)
+    @State private var drillActivityName: String? = nil
+    @State private var drillTypeName: String? = nil
 
     private func loadParentPlan() {
         let planDescriptor = FetchDescriptor<Plan>()
@@ -1612,57 +1614,108 @@ private struct PlanClimbLogView: View {
         }
     }
 
-    
+    // NEW: find where this drill lives (activity + type)
+    private func loadDrillContext() {
+        let actDesc = FetchDescriptor<Activity>()
+        let activities = (try? context.fetch(actDesc)) ?? []
+
+        for a in activities {
+            for t in a.types {
+                if t.exercises.contains(where: { $0.name == exerciseName }) {
+                    drillActivityName = a.name
+                    drillTypeName = t.name
+                    return
+                }
+                if t.combinations.contains(where: { combo in combo.exercises.contains(where: { $0.name == exerciseName }) }) {
+                    drillActivityName = a.name
+                    drillTypeName = t.name
+                    return
+                }
+            }
+        }
+
+        drillActivityName = nil
+        drillTypeName = nil
+    }
+
     var body: some View {
         ClimbLogForm(
             title: "Climb Log for \(exerciseName)",
-            initialDate: planDay.date
+            initialDate: planDay.date,
+            initialNotes: drillNotesPrefill()   // NEW
         ) { climbEntry in
-            // Custom save logic for plan integration
             handlePlanClimbSave(climbEntry: climbEntry)
         }
+
         .task(id: planDay.id) {
-                loadParentPlan()
-            }
+            loadParentPlan()
+            loadDrillContext() // NEW
+        }
     }
+
+    private func drillNotesPrefill() -> String? {
+        // Find Activity + Type that contain this exerciseName
+        let actDesc = FetchDescriptor<Activity>()
+        let activities = (try? context.fetch(actDesc)) ?? []
+
+        for a in activities {
+            for t in a.types {
+                if t.exercises.contains(where: { $0.name == exerciseName }) {
+                    return "Drill: \(exerciseName) (\(a.name) · \(t.name))"
+                }
+                if t.combinations.contains(where: { $0.exercises.contains(where: { $0.name == exerciseName }) }) {
+                    return "Drill: \(exerciseName) (\(a.name) · \(t.name))"
+                }
+            }
+        }
+
+        // Fallback: still useful even if not found in catalog structure
+        return "Drill: \(exerciseName)"
+    }
+
     
     private func handlePlanClimbSave(climbEntry: ClimbEntry) {
-        // Find the parent plan
         let p = parentPlan
-        
-        // Create SessionItem for plan tracking
         let session = findOrCreateSession(for: planDay.date, in: context)
-        
-        // Convert attempts to Double for consistency
+
         let attemptsDouble = climbEntry.attempts != nil ? Double(climbEntry.attempts!) : nil
-        
+
         session.items.append(SessionItem(
             exerciseName: exerciseName,
             planSourceId: p?.id,
             planName: p?.name,
-            reps: attemptsDouble, // Store attempts as reps for consistency
+            reps: attemptsDouble,
             sets: nil,
             weightKg: nil,
             grade: climbEntry.grade != "Unknown" ? climbEntry.grade : nil,
-            notes: buildSessionNotes(from: climbEntry),
+            notes: buildSessionNotes(from: climbEntry), // now includes drill info
             duration: nil
         ))
-        
+
         try? context.save()
         onSave()
     }
-    
+
     private func buildSessionNotes(from climbEntry: ClimbEntry) -> String {
         var noteParts: [String] = []
-        
+
+        // NEW: Drill info (requested)
+        if let a = drillActivityName, let t = drillTypeName {
+            noteParts.append("Drill: \(exerciseName) (\(a) · \(t))")
+        } else if let t = drillTypeName {
+            noteParts.append("Drill: \(exerciseName) (\(t))")
+        } else {
+            noteParts.append("Drill: \(exerciseName)")
+        }
+
         if climbEntry.style != "Unknown" {
             noteParts.append("Style: \(climbEntry.style)")
         }
-        
+
         if climbEntry.gym != "Unknown" {
             noteParts.append("Gym: \(climbEntry.gym)")
         }
-        
+
         return noteParts.joined(separator: " • ")
     }
 }

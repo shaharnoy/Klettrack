@@ -24,6 +24,7 @@ struct ClimbLogForm: View {
     let initialDate: Date
     let onSave: ((ClimbEntry) -> Void)?
     let existingClimb: ClimbEntry?
+    let initialNotes: String?
     let bulkCount: Int
 
 
@@ -38,7 +39,6 @@ struct ClimbLogForm: View {
     @State private var attempts: String = ""
     @State private var isWorkInProgress: Bool = false
     @State private var selectedGym: String = ""
-    @State private var notes: String = ""
     @State private var selectedDate: Date
     @State private var isPreviouslyClimbed: Bool = false
     @State private var feelsLikeGrade: String = ""
@@ -59,6 +59,9 @@ struct ClimbLogForm: View {
     
     @State private var showAnglePickerSheet = false
     @State private var showAttemptsPickerSheet = false
+    @State private var inputNotes: String = ""
+    //ensures we only prefill once (not every re-render)
+    @State private var didPrefillNotes = false
 
 
     
@@ -93,27 +96,29 @@ struct ClimbLogForm: View {
     }
     
     private var isFormValid: Bool {
-        // Allow saving if any field has input (no mandatory fields)
         !grade.isEmpty ||
         !angleDegrees.isEmpty ||
         !selectedStyle.isEmpty ||
         !attempts.isEmpty ||
         !selectedGym.isEmpty ||
-        !notes.isEmpty ||
+        !inputNotes.isEmpty ||
         !feelsLikeGrade.isEmpty ||
         isWorkInProgress
     }
+
     
     init(
         title: String = "Add Climb",
         initialDate: Date = Date(),
         existingClimb: ClimbEntry? = nil,
+        initialNotes: String? = nil,
         bulkCount: Int = 1,
         onSave: ((ClimbEntry) -> Void)? = nil
         
     ) {
         self.title = title
         self.initialDate = initialDate
+        self.initialNotes = initialNotes
         self.existingClimb = existingClimb
         self.bulkCount = max(1, bulkCount)
         self.onSave = onSave
@@ -131,7 +136,7 @@ struct ClimbLogForm: View {
             _isPreviouslyClimbed = State(initialValue: climb.isPreviouslyClimbed ?? false)
             _selectedHoldColor = State(initialValue: climb.holdColor ?? .none)
             _selectedGym = State(initialValue: climb.gym == "Unknown" ? "" : climb.gym)
-            _notes = State(initialValue: climb.notes ?? "")
+            _inputNotes = State(initialValue: climb.notes ?? "")
             _selectedDate = State(initialValue: climb.dateLogged)
 
             // NEW: show already attached media as previews
@@ -417,7 +422,7 @@ struct ClimbLogForm: View {
                         }
 
                         // Notes
-                        TextField("Notes", text: $notes)
+                        TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
                     }
 
                     // Hold color picker (compact) using JugHoldShape
@@ -542,6 +547,13 @@ struct ClimbLogForm: View {
                     loadSessionDefaults()
                 }
             }
+            .onAppear {
+                guard !didPrefillNotes else { return }
+                didPrefillNotes = true
+                if let initialNotes, !initialNotes.isEmpty {
+                    inputNotes = initialNotes
+                }
+            }
             .onChange(of: mediaPickerItems) { _, newItems in
                 Task {
                     await loadMediaPreviews(from: newItems)
@@ -617,7 +629,9 @@ struct ClimbLogForm: View {
 
         let angleInt      = angleDegrees.isEmpty ? nil : Int(angleDegrees)
         let attemptsText  = attempts.isEmpty ? nil : attempts
-        let notesText     = notes.isEmpty ? nil : notes
+        let notesText     = inputNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil
+            : inputNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         let ropeType: RopeClimbType? = (selectedClimbType == .sport) ? selectedRopeClimbType : nil
 
         // Decide whether we’re creating a new climb or updating an existing one
