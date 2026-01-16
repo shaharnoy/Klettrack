@@ -1161,16 +1161,32 @@ struct PlanDayEditor: View {
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 guard isDataReady else { return }
+
+                                // 1) Update the UI source-of-truth immediately (prevents “stays until nav back”)
+                                cache.loggedItemsForDay.removeAll { $0.id == item.id }
+
+                                // 2) Persist deletion
                                 if let parent = item.session {
-                                    do { try parent.removeItem(item, in: context) } catch { }
+                                    do {
+                                        try parent.removeItem(item, in: context)
+                                        try? context.save()
+                                    } catch {
+                                        // If it failed, re-sync from DB so UI doesn't get stuck wrong
+                                        refreshLoggedItemsIntoCache()
+                                        return
+                                    }
                                 } else {
                                     // Fallback if no back-reference
                                     context.delete(item)
                                     try? context.save()
                                 }
+
+                                // 3) Re-sync to guarantee correctness (ordering/filtering/relationship cleanup)
+                                refreshLoggedItemsIntoCache()
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+
 
                             NavigationLink {
                                 EditSessionItemView(item: item)
@@ -2728,6 +2744,7 @@ private struct ActivityGroupView<RowContent: View>: View {
         localOrder.removeAll { names.contains($0) }
         //Remove from chosenExercises
         day.chosenExercises.removeAll { names.contains($0) }
+        
         //Clean up per-day order map
         for n in names { day.exerciseOrder.removeValue(forKey: n) }
         //Reindex remaining names in this group to keep contiguous order
