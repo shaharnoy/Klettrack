@@ -1391,14 +1391,21 @@ struct PlanDayEditor: View {
 
         // Optionally apply to existing days immediately
         if applyRecurringToExisting {
+            let todayStart = cal.startOfDay(for: Date())
+
             for d in plan.days {
+                // NEW: don't apply backwards
+                guard cal.startOfDay(for: d.date) >= todayStart else { continue }
+
                 let wd = cal.component(.weekday, from: d.date)
                 guard weekdays.contains(wd) else { continue }
+
                 d.chosenExercises = day.chosenExercises
                 d.exerciseOrder = day.exerciseOrder
                 d.type = day.type
             }
         }
+
 
         try? context.save()
 
@@ -2835,7 +2842,7 @@ private struct CloneRecurringSheet: View {
                     }
                 } else {
                     Section("Recurring setup") {
-                        Toggle("Apply to existing days", isOn: $applyRecurringToExisting)
+                        Toggle("Apply to existing future days", isOn: $applyRecurringToExisting)
 
                         // Multi-select weekdays
                         ForEach(weekdayOptions, id: \.id) { w in
