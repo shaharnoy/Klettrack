@@ -70,11 +70,31 @@ struct PlanFactory {
         guard let lastDate = existing.last?.date else { return }
         let startNext = cal.date(byAdding: .day, value: 1, to: lastDate)!
         let restType = dayType(withKey: "rest", in: context)
+
+        // Helper: resolve DayTypeModel by id (only when needed)
+        func resolveDayType(_ id: UUID?) -> DayTypeModel? {
+            guard let id else { return nil }
+            let d = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.id == id })
+            return (try? context.fetch(d))?.first
+        }
+
         for w in 0..<count {
             for i in 0..<7 {
                 let date = cal.date(byAdding: .day, value: w*7 + i, to: startNext)!
-                plan.days.append(PlanDay(date: date, type: restType))
+                let weekday = cal.component(.weekday, from: date)
+
+                let day = PlanDay(date: date, type: restType)
+
+                // NEW: If plan has a recurrence for this weekday, apply it.
+                if let chosen = plan.recurringChosenExercisesByWeekday[weekday] {
+                    day.chosenExercises = chosen
+                    day.exerciseOrder = plan.recurringExerciseOrderByWeekday[weekday] ?? [:]
+                    day.type = resolveDayType(plan.recurringDayTypeIdByWeekday[weekday]) ?? day.type
+                }
+
+                plan.days.append(day)
             }
         }
     }
+
 }

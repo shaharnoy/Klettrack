@@ -767,9 +767,15 @@ struct PlanDayEditor: View {
     // State for daily notes to handle the optional binding
     @State private var dailyNotesText: String = ""
     
-    // New: Picker selection by identifier (prevents invalidated object binding)
+    // Picker selection by identifier (prevents invalidated object binding)
     @State private var selectedDayTypeId: UUID? = nil
     
+    
+    @State private var showingCloneRecurringSheet = false
+    @State private var cloneTargetDate: Date = Date()
+    @State private var applyRecurringToExisting = true
+    @State private var cloneMessage: String? = nil
+
     init(day: Binding<PlanDay>) {
         self._day = day
         self._cache = StateObject(wrappedValue: PlanDayEditorCache.forDay(day.wrappedValue.id))
@@ -898,16 +904,10 @@ struct PlanDayEditor: View {
 
 
         let isQuickLogged = isExerciseQuickLogged(name: name)
-        //delete
-        let _ = dbg("🧱 exerciseRow build day=\(day.id) name='\(name)' cache.isWarm=\(cache.isWarm) guidanceHit=\(cache.guidanceByName[name] != nil) boulderHit=\(cache.boulderingExerciseNames.contains(name)) quickLogged=\(isQuickLogged)")
         // Guidance: use real values only when caches are ready, otherwise a stable placeholder.
         let exerciseInfo = cache.isWarm
             ? getExerciseInfo(name: name)
             : (repsText: " ", setsText: " ", restText: " ", notes: " ", durationText: " ", hasGuidance: true)
-        //delete
-        let _ = dbg("🧱 exerciseRow info day=\(day.id) name='\(name)' hasGuidance=\(exerciseInfo.hasGuidance) reps=\(exerciseInfo.repsText ?? "nil") sets=\(exerciseInfo.setsText ?? "nil") rest=\(exerciseInfo.restText ?? "nil") dur=\(exerciseInfo.durationText ?? "nil")")
-
-        
         // Bouldering detection: tri-state to avoid briefly showing the wrong icon while loading.
         let isBouldering: Bool? = cache.isWarm ? isBoulderingExercise(name: name) : nil
 
@@ -1098,13 +1098,8 @@ struct PlanDayEditor: View {
     private var chosenActivitiesSection: some View {
         Section("Chosen activities") {
             if day.chosenExercises.isEmpty {
-                //delete
-                let _ = dbg("🧩 chosenActivitiesSection: EMPTY day=\(day.id)")
-
                 Text("No activities yet").foregroundStyle(.secondary)
             } else if !cache.isWarm {
-                //delete
-                let _ = dbg("🧩 chosenActivitiesSection: LOADING day=\(day.id) chosen=\(day.chosenExercises.count)")
                 // Prevent “partial content → full content” flash
                 
                 HStack(spacing: 12) {
@@ -1113,8 +1108,6 @@ struct PlanDayEditor: View {
                 }
                 .padding(.vertical, 8)
             } else {
-                //delete
-                let _ = dbg("🧩 chosenActivitiesSection: RENDER day=\(day.id) chosen=\(day.chosenExercises.count) guidance=\(cache.guidanceByName.count) boulderSet=\(cache.boulderingExerciseNames.count)")
 
                 let groupedExercises = groupedChosenExercises()
                 ForEach(groupedExercises, id: \.activityName) { group in
@@ -1144,18 +1137,9 @@ struct PlanDayEditor: View {
     @ViewBuilder
     private var loggedExercisesSection: some View {
         Section("Logged exercises") {
-            //delete
-            let _ = dbg("🧾 loggedExercisesSection render day=\(day.id) logged=\(loggedExercisesForDay.count) cache.isWarm=\(cache.isWarm)")
-
             if loggedExercisesForDay.isEmpty {
-                //delete
-                let _ = dbg("🧾 loggedExercisesSection: EMPTY day=\(day.id)")
-
                 Text("No logs yet for this day").foregroundStyle(.secondary)
             } else {
-                //delete
-                let _ = dbg("🧾 loggedExercisesSection: LIST day=\(day.id) count=\(loggedExercisesForDay.count)")
-
                 ForEach(loggedExercisesForDay.sorted(by: { $0.sort < $1.sort })) { item in
                     loggedExerciseRow(item: item)
                         .swipeActions(edge: .trailing) {
@@ -1221,9 +1205,6 @@ struct PlanDayEditor: View {
 
     var body: some View {
         Form {
-           //to be deleted
-            let _ = dbg("📌 PlanDayEditor.body day=\(day.id) date=\(day.date.shortFormat) cache.isWarm=\(cache.isWarm) chosen=\(day.chosenExercises.count) logged=\(cache.loggedItemsForDay.count)")
-
 
             // Day type picker – bind to ID to avoid invalidated object crashes
             Picker("Day type", selection: $selectedDayTypeId) {
@@ -1251,20 +1232,13 @@ struct PlanDayEditor: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 10) {
-                    // Timer button
-                    Button {
-                        timerAppState.switchToTimer(with: day)
-                    } label: {
-                        Image(systemName: "timer")
-                    }
+                    Button { timerAppState.switchToTimer(with: day) } label: { Image(systemName: "timer") }
 
-                    // Vertical separator
                     Rectangle()
                         .frame(width: 1, height: 18)
                         .foregroundStyle(.secondary.opacity(0.5))
                         .padding(.horizontal, 2)
 
-                    // Reorder toggle button
                     Button {
                         withAnimation {
                             editMode?.wrappedValue = (editMode?.wrappedValue == .active) ? .inactive : .active
@@ -1272,9 +1246,42 @@ struct PlanDayEditor: View {
                     } label: {
                         Image(systemName: editMode?.wrappedValue == .active ? "checkmark" : "line.3.horizontal")
                     }
+
+                    Menu {
+                        Button {
+                            // default target = today or current day (we set it to current day so user moves it)
+                            cloneTargetDate = day.date
+                            showingCloneRecurringSheet = true
+                        } label: {
+                            Label("Clone / Recurring…", systemImage: "arrow.branch")
+                        }
+                    } label: {
+                        Image(systemName: "arrow.branch")
+                    }
                 }
             }
         }
+        .sheet(isPresented: $showingCloneRecurringSheet) {
+            CloneRecurringSheet(
+                sourceDay: day,
+                parentPlan: cache.parentPlan,
+                cloneTargetDate: $cloneTargetDate,
+                applyRecurringToExisting: $applyRecurringToExisting,
+                onClone: { targetDate in
+                    cloneSetupToDate(targetDate)
+                },
+                onSetRecurring: { weekdays in
+                    setRecurring(weekdays: weekdays)
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .alert(cloneMessage ?? "", isPresented: Binding(
+            get: { cloneMessage != nil },
+            set: { if !$0 { cloneMessage = nil } }
+        )) { Button("OK", role: .cancel) {} }
+
         .onChange(of: editMode?.wrappedValue) { _, newValue in
                     if newValue == .inactive, didReorder {
                         didReorder = false
@@ -1308,19 +1315,13 @@ struct PlanDayEditor: View {
             }
         }
         .task(id: day.id) {
-            //delete
-            dbg("🚀 task(start) day=\(day.id) cache.isWarm(before)=\(cache.isWarm)")
-
             if !cache.isWarm {
                 warmCachesIntoCache()
                 cache.isWarm = true
-                dbg("🟩 cache.isWarm -> true day=\(day.id)")
             } else {
                 // returning to the view: refresh only the volatile part
                 refreshLoggedItemsIntoCache()
             }
-            //delete
-            dbg("✅ task(done) day=\(day.id) guidance=\(cache.guidanceByName.count) boulderSet=\(cache.boulderingExerciseNames.count) cache.parentPlan=\(cache.parentPlan?.id.uuidString ?? "nil") logged=\(cache.loggedItemsForDay.count)")
         }
 
 
@@ -1345,8 +1346,71 @@ struct PlanDayEditor: View {
 
     }
     
+    private func cloneSetupToDate(_ targetDate: Date) {
+        guard let plan = cache.parentPlan else {
+            cloneMessage = "Plan not found."
+            return
+        }
+
+        let cal = Calendar.current
+        let targetStart = cal.startOfDay(for: targetDate)
+
+        guard let targetDay = plan.days.first(where: { cal.isDate($0.date, inSameDayAs: targetStart) }) else {
+            cloneMessage = "Target date is not in this plan."
+            return
+        }
+
+        // Copy "setup" only (NOT logs)
+        targetDay.chosenExercises = day.chosenExercises
+        targetDay.exerciseOrder = day.exerciseOrder
+        targetDay.type = day.type
+
+        try? context.save()
+        cloneMessage = "Cloned setup to \(targetStart.formatted(date: .abbreviated, time: .omitted))."
+    }
+
+    private func setRecurring(weekdays: Set<Int>) {
+        guard let plan = cache.parentPlan else {
+            cloneMessage = "Plan not found."
+            return
+        }
+
+        let cal = Calendar.current
+
+        for weekday in weekdays {
+            // Store template per selected weekday
+            plan.recurringChosenExercisesByWeekday[weekday] = day.chosenExercises
+            plan.recurringExerciseOrderByWeekday[weekday] = day.exerciseOrder
+
+            if let typeId = day.type?.id {
+                plan.recurringDayTypeIdByWeekday[weekday] = typeId
+            } else {
+                plan.recurringDayTypeIdByWeekday.removeValue(forKey: weekday)
+            }
+        }
+
+        // Optionally apply to existing days immediately
+        if applyRecurringToExisting {
+            for d in plan.days {
+                let wd = cal.component(.weekday, from: d.date)
+                guard weekdays.contains(wd) else { continue }
+                d.chosenExercises = day.chosenExercises
+                d.exerciseOrder = day.exerciseOrder
+                d.type = day.type
+            }
+        }
+
+        try? context.save()
+
+        if weekdays.count == 7 {
+            cloneMessage = "Set recurring every day."
+        } else {
+            cloneMessage = "Set recurring for selected weekdays."
+        }
+    }
+
+    
     private func warmCachesIntoCache() {
-        dbg("🧊 warmCaches(start) day=\(day.id)")
 
         // 1) Guidance map (Exercises)
         let exDesc = FetchDescriptor<Exercise>()
@@ -1384,13 +1448,9 @@ struct PlanDayEditor: View {
 
         // 4) Logged items
         refreshLoggedItemsIntoCache()
-
-        dbg("🧊 warmCaches(done) day=\(day.id) guidance=\(cache.guidanceByName.count) boulderSet=\(cache.boulderingExerciseNames.count) cache.parentPlan=\(cache.parentPlan?.id.uuidString ?? "nil") logged=\(cache.loggedItemsForDay.count)")
     }
 
     private func refreshLoggedItemsIntoCache() {
-        dbg("🧾 cache.refreshLoggedItems(start) day=\(day.id) cache.parentPlan=\(cache.parentPlan?.id.uuidString ?? "nil")")
-
         let calendar = Calendar.current
         let start = calendar.startOfDay(for: day.date)
         guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
@@ -1405,7 +1465,6 @@ struct PlanDayEditor: View {
         let allItems = sessions.flatMap(\.items)
         let filtered = allItems.filter { $0.planSourceId == planId }
 
-        dbg("🧾 cache.refreshLoggedItems(assign) sessions=\(sessions.count) items=\(allItems.count) filtered=\(filtered.count) planId=\(planId?.uuidString ?? "nil")")
         cache.loggedItemsForDay = filtered
     }
 
@@ -2651,6 +2710,132 @@ private struct ClimbLogMetricRow: View {
     }
 }
 
+private struct CloneRecurringSheet: View {
+    enum Mode: String, CaseIterable, Identifiable {
+        case clone = "Clone"
+        case recurring = "Recurring"
+        var id: String { rawValue }
+    }
+
+    let sourceDay: PlanDay
+    let parentPlan: Plan?
+
+    @Binding var cloneTargetDate: Date
+    @Binding var applyRecurringToExisting: Bool
+
+    // NEW
+    @State private var mode: Mode = .clone
+    @State private var selectedWeekdays: Set<Int> = [] // Calendar weekday: 1=Sun ... 7=Sat
+
+    let onClone: (Date) -> Void
+    let onSetRecurring: (_ weekdays: Set<Int>) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var planDateRange: ClosedRange<Date>? {
+        guard let plan = parentPlan else { return nil }
+        let days = plan.days.map(\.date).sorted()
+        guard let first = days.first, let last = days.last else { return nil }
+        return first...last
+    }
+
+    private var weekdayOptions: [(id: Int, title: String)] {
+        // Use the user’s locale/calendar naming
+        let cal = Calendar.current
+        // weekdaySymbols is Sun..Sat, ids are 1..7
+        return cal.weekdaySymbols.enumerated().map { (idx, name) in (idx + 1, name) }
+    }
+
+    private var canSave: Bool {
+        guard parentPlan != nil else { return false }
+        switch mode {
+        case .clone:
+            return true
+        case .recurring:
+            return !selectedWeekdays.isEmpty
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Mode", selection: $mode) {
+                        ForEach(Mode.allCases) { m in
+                            Text(m.rawValue).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                if mode == .clone {
+                    Section("Clone setup") {
+                        if let r = planDateRange {
+                            DatePicker("Target date", selection: $cloneTargetDate, in: r, displayedComponents: .date)
+                        } else {
+                            DatePicker("Target date", selection: $cloneTargetDate, displayedComponents: .date)
+                                .disabled(true)
+                            Text("Plan not found.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Section("Recurring setup") {
+                        Toggle("Apply to existing days", isOn: $applyRecurringToExisting)
+
+                        // Multi-select weekdays
+                        ForEach(weekdayOptions, id: \.id) { w in
+                            Button {
+                                if selectedWeekdays.contains(w.id) {
+                                    selectedWeekdays.remove(w.id)
+                                } else {
+                                    selectedWeekdays.insert(w.id)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: selectedWeekdays.contains(w.id) ? "checkmark.square.fill" : "square")
+                                    Text(w.title)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle()) // easier tapping anywhere on the row
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Clone / Recurring")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+
+                // one consistent Save button
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        switch mode {
+                        case .clone:
+                            onClone(cloneTargetDate)
+                        case .recurring:
+                            onSetRecurring(selectedWeekdays)
+                        }
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+            .onAppear {
+                // Default recurring selection to the source day’s weekday (nice UX)
+                let weekday = Calendar.current.component(.weekday, from: sourceDay.date)
+                selectedWeekdays = [weekday]
+            }
+        }
+    }
+}
+
+
+
 // MARK: Activity Group View Component
 private struct ActivityGroupView<RowContent: View>: View {
     let group: (activityName: String, activityColor: Color, exercises: [String])
@@ -2678,14 +2863,8 @@ private struct ActivityGroupView<RowContent: View>: View {
     }
 
     var body: some View {
-        //delete
-        let _ = dbg("🧷 ActivityGroupView.body activity='\(group.activityName)' day=\(day.id) localOrder=\(localOrder.count) editMode=\(String(describing: editMode?.wrappedValue))")
-
         Section {
             ForEach(localOrder, id: \.self) { name in
-                //delete
-                let _ = dbg("🧷 ActivityGroupView row activity='\(group.activityName)' name='\(name)'")
-
                 exerciseRowBuilder(name)
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {

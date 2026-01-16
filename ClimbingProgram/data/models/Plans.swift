@@ -110,9 +110,14 @@ final class Plan {
     @Attribute(.unique) var id: UUID
     var name: String
     var startDate: Date
-    // Relationship to PlanKindModel (replaces enum/raw storage)
     @Relationship(deleteRule: .nullify) var kind: PlanKindModel?
     var days: [PlanDay] = []
+
+    // Weekly recurrence templates keyed by Calendar weekday (1...7).
+    // Copies only the "setup" (chosen exercises + order + day type).
+    var recurringChosenExercisesByWeekday: [Int: [String]] = [:]
+    var recurringExerciseOrderByWeekday: [Int: [String: Int]] = [:]
+    var recurringDayTypeIdByWeekday: [Int: UUID] = [:]
 
     init(id: UUID = UUID(), name: String, kind: PlanKindModel?, startDate: Date) {
         self.id = id
@@ -121,6 +126,7 @@ final class Plan {
         self.startDate = startDate
     }
 }
+
 
 @Model
 final class PlanDay {
