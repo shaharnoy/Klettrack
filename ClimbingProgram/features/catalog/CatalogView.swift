@@ -147,16 +147,26 @@ struct ActivityDetailView: View {
                         }
                         Button(role: .destructive) {
                             guard isDataReady else { return }
+
+                            activity.types.removeAll { $0.id == t.id }
+
                             context.delete(t)
                             try? context.save()
                         } label: { Label("Delete", systemImage: "trash") }
+
                     }
                 }
                 .onDelete { idx in
                     guard isDataReady else { return }
-                    idx.map { activity.types[$0] }.forEach { context.delete($0) }
+                    let toDelete = idx.map { activity.types[$0] }
+                    let ids = Set(toDelete.map(\.id))
+
+                    activity.types.removeAll { ids.contains($0.id) }
+
+                    toDelete.forEach { context.delete($0) }
                     try? context.save()
                 }
+
 
                 Button {
                     guard isDataReady else { return }
@@ -305,6 +315,10 @@ struct TrainingTypeDetailView: View {
                                 .onTapGesture { openEditor(for: ex) }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
+                                        // Update UI immediately (source-of-truth is trainingType.exercises)
+                                        trainingType.exercises.removeAll { $0.id == ex.id }
+
+                                        // Persist
                                         context.delete(ex)
                                         try? context.save()
                                     } label: {
@@ -313,9 +327,17 @@ struct TrainingTypeDetailView: View {
                                 }
                         }
                         .onDelete { indexes in
-                            indexes.map { exercises[$0] }.forEach { context.delete($0) }
+                            let toDelete = indexes.map { exercises[$0] }
+                            let ids = Set(toDelete.map(\.id))
+
+                            // Update UI immediately
+                            trainingType.exercises.removeAll { ids.contains($0.id) }
+
+                            // Persist
+                            toDelete.forEach { context.delete($0) }
                             try? context.save()
                         }
+
                     }
                 }
             }
@@ -329,17 +351,25 @@ struct TrainingTypeDetailView: View {
                             .onTapGesture { openEditor(for: ex) }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
+                                    trainingType.exercises.removeAll { $0.id == ex.id }
                                     context.delete(ex)
                                     try? context.save()
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
+
                     }
                     .onDelete { indexes in
-                        indexes.map { ungroupedExercises[$0] }.forEach { context.delete($0) }
+                        let toDelete = indexes.map { ungroupedExercises[$0] }
+                        let ids = Set(toDelete.map(\.id))
+
+                        trainingType.exercises.removeAll { ids.contains($0.id) }
+
+                        toDelete.forEach { context.delete($0) }
                         try? context.save()
                     }
+
                 }
             }
 
@@ -481,20 +511,34 @@ struct CombinationDetailView: View {
                         .onTapGesture { openEditor(for: ex) }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
-                                context.delete(ex); try? context.save()
+                                combo.exercises.removeAll { $0.id == ex.id }
+                                context.delete(ex)
+                                try? context.save()
                             } label: { Label("Delete", systemImage: "trash") }
+
                         }
                         .contextMenu {
-                            Button(role: .destructive) { context.delete(ex); try? context.save() } label: {
+                            Button(role: .destructive) {
+                                combo.exercises.removeAll { $0.id == ex.id }
+                                context.delete(ex)
+                                try? context.save()
+                            } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+
                         }
                 }
                 .onDelete { idx in
                     let sortedExercises = combo.exercises.sorted { $0.order < $1.order }
-                    idx.map { sortedExercises[$0] }.forEach { context.delete($0) }
+                    let toDelete = idx.map { sortedExercises[$0] }
+                    let ids = Set(toDelete.map(\.id))
+
+                    combo.exercises.removeAll { ids.contains($0.id) }
+
+                    toDelete.forEach { context.delete($0) }
                     try? context.save()
                 }
+
 
                 Button { startNewExercise() } label: {
                     Label("Add Exercise", systemImage: "plus")
