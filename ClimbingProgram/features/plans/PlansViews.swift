@@ -1259,7 +1259,7 @@ struct PlanDayEditor: View {
                             cloneTargetDate = day.date
                             showingCloneRecurringSheet = true
                         } label: {
-                            Label("Clone / Recurring…", systemImage: "arrow.branch")
+                            Label("Clone / Recurring", systemImage: "arrow.branch")
                         }
                     } label: {
                         Image(systemName: "arrow.branch")
