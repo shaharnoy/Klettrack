@@ -47,11 +47,11 @@ struct ClimbView: View {
     @State private var hasRequestedReviewThisSession = false
     
     //bulk uploads
-    @State private var showingBulkPrompt = false
-    @State private var bulkCountText = "5"
-    @State private var pendingBulkCount: Int = 1
+    @State private var showingBulkClimbPrompt = false
+    @State private var bulkClimbCountText = "4"
+    @State private var pendingBulkClimbCount: Int = 1
 
-    
+
     // Track successful syncs across launches + pending review trigger
     @AppStorage("klettrack.successfulSyncCount") private var successfulSyncCount = 0
     @AppStorage("klettrack.didRequestReviewAfterSync") private var didRequestReviewAfterSync = false
@@ -168,8 +168,8 @@ struct ClimbView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     guard isDataReady else { return }
-                    bulkCountText = "5"
-                    showingBulkPrompt = true
+                    bulkClimbCountText = "4"
+                    showingBulkClimbPrompt = true
                 } label: {
                     Image(systemName: "square.stack.3d.up.fill")
                 }
@@ -177,24 +177,10 @@ struct ClimbView: View {
                 .accessibilityLabel("Bulk add climbs")
             }
         }
-        .alert("Bulk Log Climbs", isPresented: $showingBulkPrompt) {
-            TextField("How many climbs?", text: $bulkCountText)
-                .keyboardType(.numberPad)
-
-            Button("Continue") {
-                let raw = Int(bulkCountText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
-                pendingBulkCount = max(1, raw)
-                showingAddClimb = true
-            }
-
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Create multiple climbs from one entry")
-        }
         .sheet(isPresented: $showingAddClimb) {
-            AddClimbView(bulkCount: pendingBulkCount, onSave: { _ in
+            AddClimbView(bulkCount: pendingBulkClimbCount, onSave: { _ in
                 ensureDateRangeInitialized()
-                pendingBulkCount = 1 // reset for next time
+                pendingBulkClimbCount = 1 // reset for next time
             })
         }
 
@@ -258,6 +244,15 @@ struct ClimbView: View {
                 }
             }
         }
+        .bulkClimbCountPrompt(
+            isPresented: $showingBulkClimbPrompt,
+            countText: $bulkClimbCountText,
+            title: "Bulk add climbs",
+            message: "How many climbs to add?"
+        ) { count in
+            pendingBulkClimbCount = count
+            showingAddClimb = true
+        }
         .opacity(isDataReady ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isDataReady)
         .navigationTitle("CLIMB")
@@ -265,6 +260,7 @@ struct ClimbView: View {
         .overlay {
             if isSyncing {
                 ProgressView("Syncing…")
+               
                     .padding(12)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }

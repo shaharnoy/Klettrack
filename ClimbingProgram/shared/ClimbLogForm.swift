@@ -63,6 +63,8 @@ struct ClimbLogForm: View {
     //ensures we only prefill once (not every re-render)
     @State private var didPrefillNotes = false
 
+    @State private var showingBulkClimbPrompt = false
+    @State private var bulkClimbCountText = "4"
 
     
     // Focus management
@@ -564,31 +566,53 @@ struct ClimbLogForm: View {
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
+                    if existingClimb != nil {
+                        // EDIT MODE: only Cancel (no duplication)
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .disabled(isSaving)
+                    } else {
+                        // ADD MODE: overflow menu with Save & duplicate
+                        Menu {
+                            Button {
+                                bulkClimbCountText = "4"
+                                showingBulkClimbPrompt = true
+                            } label: {
+                                Text("Save & Clone")
+                            }
+
+                            Divider()
+
+                            Button(role: .destructive) {
+                                dismiss()
+                            } label: {
+                                Text("Cancel")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .disabled(isSaving)
                     }
-                    .disabled(isSaving)
                 }
+
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        Task {
-                            await saveClimb()
-                        }
+                        Task { await saveClimb(bulkCount: bulkCount) }
                     }
                     .disabled(!isFormValid || isSaving || isLoadingMedia)
                 }
-                // Center title + date in the nav bar
-                        ToolbarItem(placement: .title) {
-                            VStack(spacing: 24) {
-                                DatePicker(
-                                    "",
-                                    selection: $selectedDate,
-                                    displayedComponents: [.date]
-                                )
-                                .labelsHidden()
-                                .datePickerStyle(.compact)
-                            }
-                        }
+            }
+            .applyIf(existingClimb == nil) { view in
+                view.bulkClimbCountPrompt(
+                    isPresented: $showingBulkClimbPrompt,
+                    countText: $bulkClimbCountText,
+                    title: "Bulk Log climbs",
+                    message: "How many?",
+                    confirmTitle: "Save"
+                ) { count in
+                    Task { await saveClimb(bulkCount: count) }
+                }
             }
             .alert("Add New Style", isPresented: $showingStyleAlert) {
                 TextField("Style name", text: $newStyleName)
@@ -622,7 +646,7 @@ struct ClimbLogForm: View {
     }
     
     @MainActor
-    private func saveClimb() async {
+    private func saveClimb(bulkCount: Int = 1) async {
         guard !isSaving else { return }
         isSaving = true
         defer { isSaving = false }
@@ -1144,6 +1168,17 @@ extension ClimbLogForm {
                     ClimbLogMediaPreview(kind: .photo(assetLocalIdentifier: id, thumbnail: thumb))
                 )
             }
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func applyIf<T: View>(_ condition: Bool, transform: (Self) -> T) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
         }
     }
 }

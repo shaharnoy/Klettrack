@@ -613,6 +613,8 @@ struct PlanDetailView: View {
                     Section {
                         ForEach(week.days.map(\.id), id: \.self) { dayId in
                             if let idx = plan.days.firstIndex(where: { $0.id == dayId }) {
+                                let day = plan.days[idx]
+
                                 Button {
                                     timerAppState.plansNavigationPath.append(
                                         EditablePlanDayNav(
@@ -621,8 +623,6 @@ struct PlanDetailView: View {
                                         )
                                     )
                                 } label: {
-                                    let day = plan.days[idx]
-
                                     HStack {
                                         Circle()
                                             .fill(dayTypeColor(for: day))
@@ -637,6 +637,12 @@ struct PlanDetailView: View {
                                     }
                                     .padding(.vertical, 8)
                                     .padding(.horizontal, 16)
+                                    .background {
+                                        if isToday(day.date) {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(Color.yellow.opacity(0.15))
+                                        }
+                                    }
                                 }
                                 .buttonStyle(.plain)
                                 .id(dayId)
@@ -1668,10 +1674,10 @@ private struct PlanClimbLogView: View {
         for a in activities {
             for t in a.types {
                 if t.exercises.contains(where: { $0.name == exerciseName }) {
-                    return "Drill: \(exerciseName) (\(a.name) · \(t.name))"
+                    return "Drill: \(exerciseName) (\(t.name))"
                 }
-                if t.combinations.contains(where: { $0.exercises.contains(where: { $0.name == exerciseName }) }) {
-                    return "Drill: \(exerciseName) (\(a.name) · \(t.name))"
+                if let combo = t.combinations.first(where: { $0.exercises.contains(where: { $0.name == exerciseName }) }) {
+                    return "Drill: \(combo.name) — \(exerciseName) (\(t.name))"
                 }
             }
         }
@@ -1706,10 +1712,8 @@ private struct PlanClimbLogView: View {
     private func buildSessionNotes(from climbEntry: ClimbEntry) -> String {
         var noteParts: [String] = []
 
-        // NEW: Drill info (requested)
-        if let a = drillActivityName, let t = drillTypeName {
-            noteParts.append("Drill: \(exerciseName) (\(a) · \(t))")
-        } else if let t = drillTypeName {
+        // Drill info
+        if let t = drillTypeName {
             noteParts.append("Drill: \(exerciseName) (\(t))")
         } else {
             noteParts.append("Drill: \(exerciseName)")
