@@ -1372,7 +1372,7 @@ struct PlanDayEditor: View {
         targetDay.type = day.type
 
         try? context.save()
-        cloneMessage = "Cloned setup to \(targetStart.formatted(date: .abbreviated, time: .omitted))."
+        cloneMessage = "Cloned to \(targetStart.formatted(date: .abbreviated, time: .omitted))"
     }
 
     private func setRecurring(weekdays: Set<Int>) {
@@ -1414,12 +1414,7 @@ struct PlanDayEditor: View {
 
 
         try? context.save()
-
-        if weekdays.count == 7 {
-            cloneMessage = "Set recurring every day."
-        } else {
-            cloneMessage = "Set recurring for selected weekdays."
-        }
+        cloneMessage = "Success"
     }
 
     

@@ -49,6 +49,8 @@ struct LogView: View {
 
     // New session
     @State private var showingNew = false
+    @State private var navigationPath = NavigationPath()
+
 
     // Export
     @State private var exportDoc: LogCSVDocument? = nil
@@ -67,13 +69,34 @@ struct LogView: View {
     @State private var resultMessage: String? = nil
 
     var body: some View {
-        NavigationStack {
-            CombinedLogList(sessions: sessions, climbEntries: climbEntries) // <- updated to show both
-                .toolbar { trailingToolbar }
-                .sheet(isPresented: $showingNew) { NewSessionSheet() }
-                .navigationTitle("LOG")
-                .navigationBarTitleDisplayMode(.large)
-        }
+            NavigationStack(path: $navigationPath) {
+                CombinedLogList(sessions: sessions, climbEntries: climbEntries)
+                    .toolbar { trailingToolbar }
+                    .sheet(isPresented: $showingNew) {
+                        NewSessionSheet { createdDay in
+                            navigationPath.append(createdDay)
+                        }
+                    }
+                    .navigationTitle("LOG")
+                    .navigationBarTitleDisplayMode(.large)
+                    .navigationDestination(for: Date.self) { day in
+                        let dayKey = Calendar.current.startOfDay(for: day)
+
+                        let sessionForDay = sessions.first(where: {
+                            Calendar.current.startOfDay(for: $0.date) == dayKey
+                        })
+
+                        let climbsForDay = climbEntries.filter {
+                            Calendar.current.startOfDay(for: $0.dateLogged) == dayKey
+                        }
+
+                        CombinedDayDetailView(
+                            date: dayKey,
+                            session: sessionForDay,
+                            climbEntries: climbsForDay
+                        )
+                    }
+            }
         // Exporter
         .fileExporter(
             isPresented: $showExporter,
@@ -512,26 +535,96 @@ private struct ImportProgressOverlay: View {
 struct NewSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Environment(\.isDataReady) private var isDataReady
+
     @State private var date = Date()
+
+    // NEW: multi-exercise add flow
+    @State private var showingMultiExercisePicker = false
+    @State private var selectedExercises: [String] = []
+
+    // NEW: tell LogView what day to open after creation
+    let onCreated: (Date) -> Void
 
     var body: some View {
         NavigationStack {
             Form {
-                DatePicker("Date", selection: $date, displayedComponents: .date)
+                Section {
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                }
+
+                Section("Exercises (optional)") {
+                    Button {
+                        guard isDataReady else { return }
+                        showingMultiExercisePicker = true
+                    } label: {
+                        HStack {
+                            Text("Add Exercises")
+                            Spacer()
+                            if selectedExercises.isEmpty {
+                                Text("Choose…").foregroundStyle(.secondary)
+                            } else {
+                                Text("\(selectedExercises.count) selected")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .disabled(!isDataReady)
+
+                    if !selectedExercises.isEmpty {
+                        Text(selectedExercises.joined(separator: ", "))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .navigationTitle("New Session")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        context.insert(Session(date: date))
+                        let dayKey = Calendar.current.startOfDay(for: date)
+
+                        let session = Session(date: date)
+
+                        if !selectedExercises.isEmpty {
+                            for (idx, name) in selectedExercises.enumerated() {
+                                let item = SessionItem(
+                                    exerciseName: name,
+                                    planSourceId: nil,
+                                    planName: nil,
+                                    reps: nil,
+                                    sets: nil,
+                                    weightKg: nil,
+                                    grade: nil,
+                                    notes: nil,
+                                    duration: nil
+                                )
+                                item.sort = idx
+                                session.items.append(item)
+                            }
+                        }
+
+                        context.insert(session)
                         try? context.save()
+
                         dismiss()
+
+                        // Navigate after the sheet is dismissed
+                        DispatchQueue.main.async {
+                            onCreated(dayKey)
+                        }
                     }
+                    .disabled(!isDataReady)
                 }
             }
         }
+        .sheet(isPresented: $showingMultiExercisePicker) {
+            CatalogExercisePicker(selected: $selectedExercises)
+                .environment(\.isDataReady, isDataReady)
+        }
     }
 }
+
 
 // MARK: - Session detail
 
