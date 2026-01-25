@@ -1649,8 +1649,8 @@ private struct PlanClimbLogView: View {
     var body: some View {
         ClimbLogForm(
             title: "Climb Log for \(exerciseName)",
-            initialDate: planDay.date,
-            initialNotes: drillNotesPrefill()   // NEW
+            initialDate: .now,
+            initialNotes: drillNotesPrefill()
         ) { climbEntry in
             handlePlanClimbSave(climbEntry: climbEntry)
         }
