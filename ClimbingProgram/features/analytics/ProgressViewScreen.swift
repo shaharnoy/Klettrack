@@ -1659,7 +1659,7 @@ fileprivate struct SendRatioSwitcherSection: View {
                 }
             }
             .padding(LayoutGrid.cardInner)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, LayoutGrid.outerHorizontal)
         }
@@ -2568,8 +2568,16 @@ fileprivate struct KPICard: View {
 
     var body: some View {
         VStack(alignment: .center, spacing: 6) {
-            Text("\(value)")
+            // Keep the raw integer string (no thousands separator) and make the text
+            // adapt to available width by scaling down instead of allowing the card
+            // to expand. This keeps the KPI card fixed while still showing large
+            // numbers (e.g. 10000).
+            Text(String(value))
                 .font(.system(size: 34, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .allowsTightening(true)
+                .multilineTextAlignment(.center)
             Text(title)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -2591,6 +2599,10 @@ fileprivate struct KPITextCard: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(valueText)
                 .font(.system(size: 34, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .allowsTightening(true)
+                .multilineTextAlignment(.center)
             Text(title)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -2834,4 +2846,3 @@ fileprivate extension DateFormatter { func then(_ block: (DateFormatter)->Void) 
 
 // MARK: - Preview
 #Preview { NavigationStack { ProgressViewScreen() } }
-
