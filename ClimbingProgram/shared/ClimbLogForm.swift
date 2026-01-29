@@ -43,6 +43,9 @@ struct ClimbLogForm: View {
     @State private var isPreviouslyClimbed: Bool = false
     @State private var feelsLikeGrade: String = ""
     @State private var selectedHoldColor: HoldColor = .none
+    @State private var didAutoClearGrade = false
+    @State private var gradeFocusWasUserInitiated = false
+
     
     @State private var showingStyleAlert = false
     @State private var showingGymAlert = false
@@ -236,7 +239,7 @@ struct ClimbLogForm: View {
                         let labelWidth: CGFloat = 80
                         let controlWidth: CGFloat = 70
                         let labelToControlSpacing: CGFloat = 8
-
+                        
                         // ROW 1 — Grade | My Grade
                         HStack {
                             HStack {
@@ -256,17 +259,33 @@ struct ClimbLogForm: View {
                                     .submitLabel(.done)
                                     .frame(width: controlWidth, alignment: .trailing)
                                     .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            focusedField = .grade
+                                    .simultaneousGesture(
+                                        TapGesture().onEnded {
+                                            // mark that the user intentionally tapped grade
+                                            gradeFocusWasUserInitiated = true
+                                            // if we were already focused, onChange won't fire → clear immediately here
+                                            if focusedField == .grade {
+                                                if !didAutoClearGrade && !grade.isEmpty {
+                                                    grade = ""
+                                                    didAutoClearGrade = true
+                                                }
+                                                gradeFocusWasUserInitiated = false
+                                            } else {
+                                                // cause focus change so the onChange handler below can clear
+                                                focusedField = .grade
+                                            }
                                         }
+                                    )
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                             HStack {
                                 InfoLabel(
                                     text: "My Grade",
                                     helpMessage: "Use My Grade for mismatched gym grades, sandbagged climbs, or noting how the climb really felt.",
                                     labelWidth: labelWidth
                                 )
+
                                 Spacer(minLength: labelToControlSpacing)
 
                                 TextField("7a+", text: $feelsLikeGrade)
@@ -278,11 +297,11 @@ struct ClimbLogForm: View {
                                     .submitLabel(.done)
                                     .onSubmit { focusedField = nil }
                                     .frame(width: controlWidth, alignment: .trailing)
+                                    .contentShape(Rectangle())
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-
-
                         }
+
                         // ROW 2 — Angle | Attempts
                         HStack {
                             HStack {
@@ -531,16 +550,6 @@ struct ClimbLogForm: View {
                              .transition(.opacity)
                          }
                      }
-            .onChange(of: focusedField) { _, newValue in
-                        switch newValue {
-                        case .grade:
-                            grade = ""
-                        case .feelsLikeGrade:
-                            feelsLikeGrade = ""
-                        default:
-                            break
-                        }
-                    }
             //.navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -559,6 +568,18 @@ struct ClimbLogForm: View {
             .onChange(of: mediaPickerItems) { _, newItems in
                 Task {
                     await loadMediaPreviews(from: newItems)
+                }
+            }
+            .onChange(of: focusedField) { _, newValue in
+                if newValue == .grade {
+                    if gradeFocusWasUserInitiated && !didAutoClearGrade && !grade.isEmpty {
+                        grade = ""
+                        didAutoClearGrade = true
+                    }
+                    gradeFocusWasUserInitiated = false
+                } else {
+                    didAutoClearGrade = false
+                    gradeFocusWasUserInitiated = false
                 }
             }
             .fullScreenCover(item: $previewToViewFullScreen) { preview in
