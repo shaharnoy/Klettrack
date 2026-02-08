@@ -35,10 +35,12 @@ struct MediaManagerView: View {
                     ForEach(group.items) { media in
                         HStack(alignment: .top, spacing: 12) {
                             //Thumbnail – tap to open full-screen media viewer
-                            MediaThumbnailView(media: media)
-                                .onTapGesture {
-                                    fullScreenMedia = media
-                                }
+                            Button {
+                                fullScreenMedia = media
+                            } label: {
+                                MediaThumbnailView(media: media)
+                            }
+                            .buttonStyle(.plain)
                             //Climb card – tap/arrow to jump into climb editor
                             Button {
                                 editingClimb = media.climb
@@ -124,18 +126,18 @@ struct MediaManagerView: View {
 
                         Text(display)
                             .font(.body)
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                     }
                     // Angle
                     if let angle = climb.angleDegrees {
                         if climb.grade != "Unknown" && !climb.grade.isEmpty && (climb.feelsLikeGrade ?? "").isEmpty == false {
                             Text("•")
                                 .font(.body)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         Text("\(angle)°")
                             .font(.body)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     
                     Spacer()
@@ -146,7 +148,7 @@ struct MediaManagerView: View {
                         )
                     )
                     .font(.body)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 }
                 let hasStyle = climb.style != "Unknown" && !climb.style.isEmpty
                 let hasGym = climb.gym != "Unknown" && !climb.gym.isEmpty
@@ -156,18 +158,18 @@ struct MediaManagerView: View {
                         if hasStyle {
                             Text(climb.style)
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         
                         if hasGym {
                             if hasStyle {
                                 Text("•")
                                     .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             Text(climb.gym)
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -180,6 +182,5 @@ struct MediaManagerView: View {
 
     }
 }
-
 
 

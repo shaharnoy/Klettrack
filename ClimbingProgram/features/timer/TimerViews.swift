@@ -10,16 +10,21 @@ import UIKit
 
 // MARK: - Main Timer View
 struct TimerView: View {
+    private enum SheetRoute: String, Identifiable {
+        case templateSelector
+        case customTimer
+        case allTemplates
+        case timerSetup
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     
-    // Use ObservedObject to observe the existing shared instance
-    @ObservedObject private var sharedTimerManager = SharedTimerManager.shared
+    // Keep shared timer manager alive in view state and observe via @Observable tracking
+    @State private var sharedTimerManager = SharedTimerManager.shared
     
-    @State private var showingTemplateSelector = false
-    @State private var showingCustomTimer = false
-    @State private var showingAllTemplates = false
-    @State private var showingTimerSetup = false
+    @State private var sheetRoute: SheetRoute?
     
     let planDay: PlanDay?
     
@@ -63,16 +68,16 @@ struct TimerView: View {
                         Menu {
                             Section("Timer Setup") {
                                 Button("Select Template", systemImage: "bolt.fill") {
-                                    showingTemplateSelector = true
+                                    sheetRoute = .templateSelector
                                 }
                                 Button("Custom Timer", systemImage: "gearshape.fill") {
-                                    showingCustomTimer = true
+                                    sheetRoute = .customTimer
                                 }
                             }
                             
                             Section("Template Management") {
                                 Button("All Templates", systemImage: "folder") {
-                                    showingAllTemplates = true
+                                    sheetRoute = .allTemplates
                                 }
                             }
                         } label: {
@@ -82,29 +87,29 @@ struct TimerView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingTemplateSelector) {
-                TimerTemplateSelector { template in
-                    loadTemplate(template)
-                }
-            }
-            .sheet(isPresented: $showingAllTemplates) {
-                TimerTemplatesListView()
-            }
-            .sheet(isPresented: $showingCustomTimer) {
-                CustomTimerSetupWithContext { config in
-                    startTimer(with: config)
-                }
-            }
-            .sheet(isPresented: $showingTimerSetup) {
-                TimerSetupView(planDay: planDay) { config, template in
-                    // Load the configuration immediately to display on screen
-                    timerManager.loadConfiguration(config)
-                    
-                    // Update template usage but don't start the timer
-                    if let template = template {
-                        template.lastUsedDate = Date()
-                        template.useCount += 1
-                        try? context.save()
+            .sheet(item: $sheetRoute) { route in
+                switch route {
+                case .templateSelector:
+                    TimerTemplateSelector { template in
+                        loadTemplate(template)
+                    }
+                case .allTemplates:
+                    TimerTemplatesListView()
+                case .customTimer:
+                    CustomTimerSetupWithContext { config in
+                        startTimer(with: config)
+                    }
+                case .timerSetup:
+                    TimerSetupView(planDay: planDay) { config, template in
+                        // Load the configuration immediately to display on screen
+                        timerManager.loadConfiguration(config)
+
+                        // Update template usage but don't start the timer
+                        if let template = template {
+                            template.lastUsedDate = Date()
+                            template.useCount += 1
+                            try? context.save()
+                        }
                     }
                 }
             }
@@ -165,7 +170,7 @@ struct TimerView: View {
                         
                         Text("Get Ready")
                             .font(.title2.weight(.semibold))
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                             .frame(minWidth: 240, alignment: .center)
                             .multilineTextAlignment(.center)
                     }
@@ -199,7 +204,7 @@ struct TimerView: View {
                         
                         Text(getPhaseText())
                             .font(.title2.weight(.semibold))
-                            .foregroundColor(getPhaseColor())
+                            .foregroundStyle(getPhaseColor())
                             .frame(minWidth: 240, alignment: .center) // Fixed width to accommodate "Rest Between Iterations"
                             .multilineTextAlignment(.center)
                     }
@@ -225,10 +230,10 @@ struct TimerView: View {
                 VStack(spacing: 2) {
                     Text("Elapsed")
                         .font(.caption.weight(.medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text(timerManager.formatTime(timerManager.totalElapsedTime))
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .contentTransition(.numericText())
                 }
                 
@@ -243,10 +248,10 @@ struct TimerView: View {
                     VStack(spacing: 2) {
                         Text("Remaining")
                             .font(.caption.weight(.medium))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text(timerManager.formatTime(remaining))
                             .font(.subheadline.weight(.medium))
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.primary)
                             .contentTransition(.numericText())
                     }
                     .transition(.opacity.combined(with: .scale))
@@ -269,11 +274,11 @@ struct TimerView: View {
                 HStack {
                     Text("Overall Progress")
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Spacer()
                     Text("\(Int(timerManager.progressPercentage * 100))%")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                 }
                 
                 ProgressView(value: timerManager.progressPercentage)
@@ -337,7 +342,7 @@ struct TimerView: View {
         }
         .padding(12)
         .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .clipShape(.rect(cornerRadius: 12))
     }
     
     // MARK: - Control Buttons Section
@@ -347,7 +352,7 @@ struct TimerView: View {
             if timerManager.isStopped {
                 Button("Start") {
                     if timerManager.configuration == nil {
-                        showingTimerSetup = true
+                        sheetRoute = .timerSetup
                     } else {
                         startTimerWithExistingConfig()
                     }
@@ -415,7 +420,7 @@ struct TimerView: View {
                     HStack(spacing: 16) {
                         Button("Start") {
                             if timerManager.configuration == nil {
-                                showingTimerSetup = true
+                                sheetRoute = .timerSetup
                             } else {
                                 startTimerWithExistingConfig()
                             }
@@ -431,7 +436,7 @@ struct TimerView: View {
     // Bug Fix 5: New method to handle starting timer with existing config
     private func startTimerWithExistingConfig() {
         guard let config = timerManager.configuration else {
-            showingCustomTimer = true
+            sheetRoute = .customTimer
             return
         }
         
@@ -459,7 +464,7 @@ struct TimerView: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(12)
+        .clipShape(.rect(cornerRadius: 12))
     }
     
     // MARK: - Helper Methods
@@ -558,7 +563,7 @@ struct LapRowView: View {
         HStack {
             Text("#\(lap.lapNumber)")
                 .font(.caption.weight(.medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 30, alignment: .leading)
             
             Text(formatTime(lap.elapsedSeconds))
@@ -569,13 +574,13 @@ struct LapRowView: View {
             if let notes = lap.notes, !notes.isEmpty {
                 Text(notes)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             
             Text(lap.timestamp.formatted(date: .omitted, time: .shortened))
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
     }
@@ -583,7 +588,8 @@ struct LapRowView: View {
     private func formatTime(_ seconds: Int) -> String {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        let paddedSeconds = remainingSeconds.formatted(.number.grouping(.never).precision(.integerLength(2)))
+        return "\(minutes):\(paddedSeconds)"
     }
 }
 
@@ -594,10 +600,10 @@ struct PrimaryTimerButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.title2.weight(.semibold))
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .frame(width: 120, height: 50)
             .background(color)
-            .cornerRadius(25)
+            .clipShape(.rect(cornerRadius: 25))
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -609,10 +615,10 @@ struct SecondaryTimerButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.medium))
-            .foregroundColor(color)
+            .foregroundStyle(color)
             .frame(width: 80, height: 36)
             .background(color.opacity(0.1))
-            .cornerRadius(18)
+            .clipShape(.rect(cornerRadius: 18))
             .overlay(
                 RoundedRectangle(cornerRadius: 18)
                     .stroke(color.opacity(0.3), lineWidth: 1)
@@ -629,10 +635,10 @@ struct BigTimerButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.title3.weight(.semibold))
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .frame(height: 60)
             .background(color)
-            .cornerRadius(30)
+            .clipShape(.rect(cornerRadius: 30))
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -645,10 +651,10 @@ struct WideTimerButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.title3.weight(.semibold))
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(color)
-            .cornerRadius(25)
+            .clipShape(.rect(cornerRadius: 25))
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -661,10 +667,10 @@ struct FullWidthTimerButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.title3.weight(.semibold))
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(color)
-            .cornerRadius(25)
+            .clipShape(.rect(cornerRadius: 25))
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -677,10 +683,10 @@ struct LoadConfigButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline.weight(.medium))
-            .foregroundColor(.white)
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(color)
-            .cornerRadius(22)
+            .clipShape(.rect(cornerRadius: 22))
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -790,21 +796,21 @@ struct TimerTemplateRowForSelection: View {
                 HStack {
                     Text(template.name)
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     Spacer()
                     
                     if template.useCount > 0 {
                         Text("Used \(template.useCount) times")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 
                 if let description = template.templateDescription {
                     Text(description)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 
@@ -839,7 +845,7 @@ struct TimerTemplateRowForSelection: View {
                     }
                 }
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 
                 if let lastUsed = template.lastUsedDate {
                     Text("Last used: \(lastUsed.formatted(date: .abbreviated, time: .shortened))")
@@ -974,15 +980,15 @@ struct CustomTimerSetupTab: View {
     
     private var intervalsSection: some View {
         Section("Intervals") {
-            ForEach(intervals.indices, id: \.self) { index in
+            ForEach(Array(intervals.enumerated()), id: \.element.id) { index, item in
                 IntervalInputRow(
                     interval: $intervals[index],
                     onDelete: {
-                        intervals.remove(at: index)
+                        intervals.removeAll { $0.id == item.id }
                     }
                 )
             }
-            
+
             Button("Add Interval") {
                 intervals.append(IntervalInput())
             }
@@ -1104,18 +1110,18 @@ struct ProgressCard: View {
         VStack(spacing: 4) {
             HStack {
                 Image(systemName: icon)
-                    .foregroundColor(color)
+                    .foregroundStyle(color)
                     .font(.title2)
                 
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 Spacer()
                 
                 Text("\(current) / \(total)")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             
                 let safeTotal = max(1, total)
@@ -1133,4 +1139,3 @@ struct ProgressCard: View {
         )
     }
 }
-

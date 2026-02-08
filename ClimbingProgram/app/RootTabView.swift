@@ -6,21 +6,21 @@
 
 import SwiftUI
 import SwiftData
-import Combine
 
 // Shared timer state to ensure only one timer instance
 @MainActor
-class TimerAppState: ObservableObject {
-    @Published var selectedTab: Int = 1
-    @Published var currentPlanDay: PlanDay? = nil
+@Observable
+class TimerAppState {
+    var selectedTab: Int = 1
+    var currentPlanDay: PlanDay? = nil
     
     // Navigation path storage for each tab to preserve navigation state
-    @Published var catalogNavigationPath = NavigationPath()
-    @Published var plansNavigationPath = NavigationPath()
-    @Published var climbNavigationPath = NavigationPath()
-    @Published var logNavigationPath = NavigationPath()
-    @Published var progressNavigationPath = NavigationPath()
-    @Published var settingsNavigationPath = NavigationPath()
+    var catalogNavigationPath = NavigationPath()
+    var plansNavigationPath = NavigationPath()
+    var climbNavigationPath = NavigationPath()
+    var logNavigationPath = NavigationPath()
+    var progressNavigationPath = NavigationPath()
+    var settingsNavigationPath = NavigationPath()
     
     // Reference to shared timer manager
     private let sharedTimerManager = SharedTimerManager.shared
@@ -58,10 +58,15 @@ struct PlanDayNavigationItem: Hashable {
 }
 
 struct RootTabView: View {
+    private enum SheetRoute: String, Identifiable {
+        case settings
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @State private var isDataReady = false
-    @StateObject private var timerAppState = TimerAppState()
-    @State private var showingSettings = false
+    @State private var timerAppState = TimerAppState()
+    @State private var sheetRoute: SheetRoute?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -101,21 +106,23 @@ struct RootTabView: View {
             
             // Custom tab bar with Settings button
             CustomTabBar(selectedTab: $timerAppState.selectedTab, onSettingsTapped: {
-                showingSettings = true
+                sheetRoute = .settings
             })
         }
         // Inject shared environment once for the whole subtree
         .environment(\.isDataReady, isDataReady)
-        .environmentObject(timerAppState)
+        .environment(timerAppState)
         .task {
             await initializeData()
             //SeedData.nukeAndReseed(context) // Uncomment this line to reset data during development
             //SeedTimerTemplates.nukeAndReseed(context) // Uncomment this line to reset data during development
             //SeedClimbingData.nukeAndReseed(context) // Uncomment this line to reset data during development
         }
-        .sheet(isPresented: $showingSettings) {
-            SettingsSheet()
-                .environmentObject(timerAppState)
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .settings:
+                SettingsSheet()
+            }
         }
     }
     
@@ -346,4 +353,3 @@ func backfillPreviouslyClimbedFlags(_ context: ModelContext) {
         print("backfillPreviouslyClimbedFlags failed: \(error.localizedDescription)")
     }
 }
-

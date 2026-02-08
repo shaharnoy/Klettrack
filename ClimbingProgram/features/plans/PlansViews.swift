@@ -18,7 +18,8 @@ private func dbg(_ msg: String) {
 }
 
 @MainActor
-private final class PlanDayEditorCache: ObservableObject {
+@Observable
+private final class PlanDayEditorCache {
 
     struct ExerciseGuidance {
         let repsText: String?
@@ -33,12 +34,12 @@ private final class PlanDayEditorCache: ObservableObject {
         }
     }
 
-    @Published var guidanceByName: [String: ExerciseGuidance] = [:]
-    @Published var boulderingExerciseNames: Set<String> = []
-    @Published var parentPlan: Plan? = nil
-    @Published var loggedItemsForDay: [SessionItem] = []
+    var guidanceByName: [String: ExerciseGuidance] = [:]
+    var boulderingExerciseNames: Set<String> = []
+    var parentPlan: Plan? = nil
+    var loggedItemsForDay: [SessionItem] = []
 
-    @Published var isWarm: Bool = false
+    var isWarm: Bool = false
 
     // Simple global in-memory store keyed by PlanDay id
     private static var store: [UUID: PlanDayEditorCache] = [:]
@@ -100,13 +101,18 @@ private extension Date {
 
 // MARK: Plans list
 struct PlansListView: View {
+    private enum SheetRoute: String, Identifiable {
+        case newPlan
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
-    @EnvironmentObject private var timerAppState: TimerAppState
+    @Environment(TimerAppState.self) private var timerAppState
     // Be explicit with SortDescriptor to help the type checker
     @Query(sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
 
-    @State private var showingNew = false
+    @State private var sheetRoute: SheetRoute?
 
     // Export / Import / Share state
     @State private var showExporter = false
@@ -125,7 +131,10 @@ struct PlansListView: View {
 
 
     var body: some View {
-        NavigationStack(path: $timerAppState.plansNavigationPath) {
+        NavigationStack(path: Binding(
+            get: { timerAppState.plansNavigationPath },
+            set: { timerAppState.plansNavigationPath = $0 }
+        )) {
             plansList
                 .listStyle(.insetGrouped)
                 .navigationTitle("TRAIN")
@@ -134,14 +143,28 @@ struct PlansListView: View {
                 .plansToolbar(
                     isDataReady: isDataReady,
                     context: context,
-                    showingNew: $showingNew,
+                    showingNew: Binding(
+                        get: { sheetRoute == .newPlan },
+                        set: { newValue in
+                            if newValue {
+                                sheetRoute = .newPlan
+                            } else if sheetRoute == .newPlan {
+                                sheetRoute = nil
+                            }
+                        }
+                    ),
                     showExporter: $showExporter,
                     exportDoc: $exportDoc,
                     showImporter: $showImporter,
                     sharePayload: $sharePayload,
                     resultMessage: $resultMessage
                 )
-                .sheet(isPresented: $showingNew) { NewPlanSheet() }
+                .sheet(item: $sheetRoute) { route in
+                    switch route {
+                    case .newPlan:
+                        NewPlanSheet()
+                    }
+                }
                 .fileExporter(
                     isPresented: $showExporter,
                     document: exportDoc,
@@ -245,7 +268,7 @@ private struct PlansDestinationsModifier: ViewModifier {
                 // Resolve plan from current list to avoid relying on PlanNavigationItem's stored property name
                 if let plan = plans.first(where: { $0.id == item.planId }) {
                     PlanDetailView(plan: plan)
-                        .environmentObject(timerAppState)
+                        .environment(timerAppState)
                 } else {
                     Text("Plan not found")
                 }
@@ -255,7 +278,7 @@ private struct PlansDestinationsModifier: ViewModifier {
                     plan.days.contains(where: { $0.id == dayItem.planDayId })
                 }) {
                     PlanDetailView(plan: plan)
-                        .environmentObject(timerAppState)
+                        .environment(timerAppState)
                 } else {
                     Text("Plan day not found")
                 }
@@ -489,8 +512,12 @@ struct NewPlanSheet: View {
 
 struct PlanDetailView: View {
     @Environment(\.modelContext) private var context
-    @EnvironmentObject private var timerAppState: TimerAppState
-    @State var plan: Plan
+    @Environment(TimerAppState.self) private var timerAppState
+    @State private var plan: Plan
+
+    init(plan: Plan) {
+        _plan = State(initialValue: plan)
+    }
 
     private enum ViewMode: Int {
         case weekly = 0
@@ -676,7 +703,7 @@ struct PlanDetailView: View {
                 groups: monthGroups,
                 calendar: cal
             )
-            .environmentObject(timerAppState)
+            .environment(timerAppState)
         }
     }
 
@@ -702,7 +729,7 @@ struct PlanDetailView: View {
             if nav.planId == plan.id,
                let idx = plan.days.firstIndex(where: { $0.id == nav.planDayId }) {
                 PlanDayEditor(day: $plan.days[idx])
-                    .environmentObject(timerAppState)
+                    .environment(timerAppState)
             } else {
                 Text("Plan day not found")
             }
@@ -736,22 +763,28 @@ private struct ExerciseSelection: Identifiable, Equatable {
 // MARK: Day editor
 
 struct PlanDayEditor: View {
+    private enum SheetRoute: String, Identifiable {
+        case catalogPicker
+        case cloneRecurring
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.editMode) private var editMode
-    @EnvironmentObject private var timerAppState: TimerAppState
+    @Environment(TimerAppState.self) private var timerAppState
     @State private var didReorder = false
     @Binding var day: PlanDay
 
     @Environment(\.modelContext) private var context
-    @StateObject private var cache: PlanDayEditorCache
+    @State private var cache: PlanDayEditorCache
     
     @Query(
         filter: #Predicate<DayTypeModel> { $0.isHidden == false },
         sort: [SortDescriptor<DayTypeModel>(\DayTypeModel.order)]
     ) private var dayTypes: [DayTypeModel]
 
-    // Catalog picker
-    @State private var showingPicker = false
+    @State private var sheetRoute: SheetRoute? = nil
 
     // Quick Log
     @State private var loggingExercise: ExerciseSelection? = nil
@@ -777,14 +810,13 @@ struct PlanDayEditor: View {
     @State private var selectedDayTypeId: UUID? = nil
     
     
-    @State private var showingCloneRecurringSheet = false
     @State private var cloneTargetDate: Date = Date()
     @State private var applyRecurringToExisting = true
     @State private var cloneMessage: String? = nil
 
     init(day: Binding<PlanDay>) {
         self._day = day
-        self._cache = StateObject(wrappedValue: PlanDayEditorCache.forDay(day.wrappedValue.id))
+        self._cache = State(initialValue: PlanDayEditorCache.forDay(day.wrappedValue.id))
     }
     
     // Helper function to check if an exercise belongs to the Bouldering activity
@@ -933,7 +965,7 @@ struct PlanDayEditor: View {
                 .labelStyle(.iconOnly)
                 .controlSize(.small)
                 .buttonStyle(.bordered)
-                .foregroundColor(isQuickLogged ? .gray : .green)
+                .foregroundStyle(isQuickLogged ? .gray : .green)
                 .disabled(isQuickLogged)
                 .accessibilityLabel(isQuickLogged ? "\(name) already logged" : "Quick log \(name)")
 
@@ -960,7 +992,7 @@ struct PlanDayEditor: View {
                     .labelStyle(.iconOnly)
                     .controlSize(.small)
                     .buttonStyle(.bordered)
-                    .foregroundColor(.pink)
+                    .foregroundStyle(.pink)
                     .accessibilityLabel("Log climb for \(name)")
                 } else if isBouldering == false {
                     Button {
@@ -1129,7 +1161,7 @@ struct PlanDayEditor: View {
             
             Button {
                 editMode?.wrappedValue = .inactive
-                showingPicker = true
+                sheetRoute = .catalogPicker
             } label: {
                 Label("Add from Catalog", systemImage: "plus")
             }
@@ -1257,7 +1289,7 @@ struct PlanDayEditor: View {
                         Button {
                             // default target = today or current day (we set it to current day so user moves it)
                             cloneTargetDate = day.date
-                            showingCloneRecurringSheet = true
+                            sheetRoute = .cloneRecurring
                         } label: {
                             Label("Clone / Recurring", systemImage: "arrow.branch")
                         }
@@ -1267,21 +1299,27 @@ struct PlanDayEditor: View {
                 }
             }
         }
-        .sheet(isPresented: $showingCloneRecurringSheet) {
-            CloneRecurringSheet(
-                sourceDay: day,
-                parentPlan: cache.parentPlan,
-                cloneTargetDate: $cloneTargetDate,
-                applyRecurringToExisting: $applyRecurringToExisting,
-                onClone: { targetDate in
-                    cloneSetupToDate(targetDate)
-                },
-                onSetRecurring: { weekdays in
-                    setRecurring(weekdays: weekdays)
-                }
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .cloneRecurring:
+                CloneRecurringSheet(
+                    sourceDay: day,
+                    parentPlan: cache.parentPlan,
+                    cloneTargetDate: $cloneTargetDate,
+                    applyRecurringToExisting: $applyRecurringToExisting,
+                    onClone: { targetDate in
+                        cloneSetupToDate(targetDate)
+                    },
+                    onSetRecurring: { weekdays in
+                        setRecurring(weekdays: weekdays)
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            case .catalogPicker:
+                CatalogExercisePicker(selected: $day.chosenExercises)
+                    .environment(\.isDataReady, isDataReady)
+            }
         }
         .alert(cloneMessage ?? "", isPresented: Binding(
             get: { cloneMessage != nil },
@@ -1300,10 +1338,6 @@ struct PlanDayEditor: View {
                         try? context.save()
                     }
                 }
-        .sheet(isPresented: $showingPicker) {
-            CatalogExercisePicker(selected: $day.chosenExercises)
-                .environment(\.isDataReady, isDataReady)
-        }
         // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in
             NavigationStack {
@@ -1479,10 +1513,10 @@ struct PlanDayEditor: View {
 
     
     private func saveLogEntry(exerciseName: String) {
-        let reps = Double(inputReps.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
-        let sets = Double(inputSets.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
-        let duration = Double(inputDuration.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
-        let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+        let reps = Double(inputReps.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
+        let sets = Double(inputSets.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
+        let duration = Double(inputDuration.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
+        let weight = Double(inputWeight.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
         let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
 
         let session = findOrCreateSession(for: day.date, in: context)
@@ -1755,10 +1789,11 @@ struct QuickExerciseProgress: View {
                         HStack {
                             Text(r.date.formatted(date: .abbreviated, time: .omitted))
                             Spacer()
-                            let repsTxt   = r.reps.map   { String(format: "%.1f", $0) }
-                            let setsTxt   = r.sets.map   { String(format: "%.1f", $0) }
-                            let weightTxt = r.weight.map { String(format: "%.1f", $0) }
-                            let durationTxt = r.duration.map { String(format: "%.1f", $0) }
+                            let oneDecimal = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(1))
+                            let repsTxt = r.reps.map { $0.formatted(oneDecimal) }
+                            let setsTxt = r.sets.map { $0.formatted(oneDecimal) }
+                            let weightTxt = r.weight.map { $0.formatted(oneDecimal) }
+                            let durationTxt = r.duration.map { $0.formatted(oneDecimal) }
 
                             Text([
                                 repsTxt.map { "\($0)x reps" },
@@ -2612,7 +2647,7 @@ private struct MonthlyGridView: View {
     let groups: [(components: DateComponents, days: [PlanDay])]
     let calendar: Calendar
 
-    @EnvironmentObject private var timerAppState: TimerAppState
+    @Environment(TimerAppState.self) private var timerAppState
     @Environment(\.modelContext) private var context
 
     // Helper to check if a day is today
@@ -2679,7 +2714,7 @@ private struct MonthlyGridView: View {
         
         ScrollViewReader { proxy in
             LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+                ForEach(groups, id: \.components) { group in
                     let monthDate = calendar.date(from: group.components) ?? Date()
                     
                     Section {
@@ -2724,7 +2759,7 @@ private struct ClimbLogMetricRow: View {
                 if let attempts = item.reps {
                     Text("\(Int(attempts)) attempts")
                         .font(.footnote)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 
                 // Grade - only show if available
@@ -2732,11 +2767,11 @@ private struct ClimbLogMetricRow: View {
                     if item.reps != nil {
                         Text("•")
                             .font(.footnote)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     Text("grade \(grade)")
                         .font(.footnote)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             
@@ -2994,7 +3029,3 @@ private struct ActivityGroupView<RowContent: View>: View {
         try? context.save()
     }
 }
-
-
-
-

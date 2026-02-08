@@ -10,11 +10,16 @@ import SwiftData
 // MARK: - Root Catalog (Categories = Activity)
 
 struct CatalogView: View {
+    private enum SheetRoute: String, Identifiable {
+        case newActivity
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Query(sort: \Activity.name) private var activities: [Activity]
 
-    @State private var showingNewActivity = false
+    @State private var sheetRoute: SheetRoute?
     @State private var draftActivityName = ""
     @State private var renamingActivity: Activity?
 
@@ -42,7 +47,7 @@ struct CatalogView: View {
                     Button {
                         guard isDataReady else { return }
                         draftActivityName = ""
-                        showingNewActivity = true
+                        sheetRoute = .newActivity
                     } label: {
                         Label("Add Category", systemImage: "plus")
                             .frame(maxWidth: .infinity)
@@ -56,12 +61,15 @@ struct CatalogView: View {
                 .padding(.vertical, 12)
             }
             // New Category
-            .sheet(isPresented: $showingNewActivity) {
+            .sheet(item: $sheetRoute) { route in
+                switch route {
+                case .newActivity:
                 NameOnlySheet(title: "New Category", placeholder: "e.g. Core, Antagonist & Stabilizer…", name: $draftActivityName) {
                     guard !draftActivityName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                     let a = Activity(name: draftActivityName.trimmingCharacters(in: .whitespaces))
                     context.insert(a)
                     try? context.save()
+                }
                 }
             }
 
@@ -113,11 +121,16 @@ struct CatalogView: View {
 // MARK: - Activity detail (Training Types)
 
 struct ActivityDetailView: View {
+    private enum SheetRoute: String, Identifiable {
+        case newType
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Bindable var activity: Activity
 
-    @State private var showingNewType = false
+    @State private var sheetRoute: SheetRoute?
     @State private var draftTypeName = ""
     @State private var draftArea = ""
     @State private var draftTypeDesc = ""
@@ -171,7 +184,7 @@ struct ActivityDetailView: View {
                 Button {
                     guard isDataReady else { return }
                     draftTypeName = ""; draftArea = ""; draftTypeDesc = ""
-                    showingNewType = true
+                    sheetRoute = .newType
                 } label: {
                     Label("Add Training Type", systemImage: "plus")
                 }
@@ -189,7 +202,9 @@ struct ActivityDetailView: View {
         }
 
         // Create Type
-        .sheet(isPresented: $showingNewType) {
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .newType:
             TrainingTypeEditSheet(
                 title: "New Training Type",
                 name: $draftTypeName,
@@ -203,6 +218,7 @@ struct ActivityDetailView: View {
                 )
                 activity.types.append(t)
                 try? context.save()
+            }
             }
         }
 
@@ -226,11 +242,18 @@ struct ActivityDetailView: View {
 // MARK: - Type detail (Exercises or Bouldering combinations)
 
 struct TrainingTypeDetailView: View {
+    private enum ModalRoute: String, Identifiable {
+        case editAbout
+        case newExercise
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Bindable var trainingType: TrainingType
     let tint: Color
 
-    @State private var showingNewExercise = false
+    @State private var modalRoute: ModalRoute?
     @State private var editingExercise: Exercise?
 
     // Drafts
@@ -242,7 +265,6 @@ struct TrainingTypeDetailView: View {
     @State private var draftRest = ""
     @State private var draftNotes = ""
     @State private var draftDescription = ""
-    @State private var showingEditAbout = false
     @State private var draftAbout = ""
 
     private var exercisesByArea: [(String, [Exercise])] {
@@ -310,9 +332,13 @@ struct TrainingTypeDetailView: View {
                 ForEach(exercisesByArea, id: \.0) { area, exercises in
                     Section(area) {
                         ForEach(exercises) { ex in
-                            ExerciseRow(ex: ex, tint: tint)
-                                .contentShape(Rectangle())
-                                .onTapGesture { openEditor(for: ex) }
+                            Button {
+                                openEditor(for: ex)
+                            } label: {
+                                ExerciseRow(ex: ex, tint: tint)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
                                         // Update UI immediately (source-of-truth is trainingType.exercises)
@@ -346,9 +372,13 @@ struct TrainingTypeDetailView: View {
             if !ungroupedExercises.isEmpty {
                 Section("Exercises") {
                     ForEach(ungroupedExercises) { ex in
-                        ExerciseRow(ex: ex, tint: tint)
-                            .contentShape(Rectangle())
-                            .onTapGesture { openEditor(for: ex) }
+                        Button {
+                            openEditor(for: ex)
+                        } label: {
+                            ExerciseRow(ex: ex, tint: tint)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     trainingType.exercises.removeAll { $0.id == ex.id }
@@ -388,48 +418,47 @@ struct TrainingTypeDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Edit About") {
                     draftAbout = trainingType.typeDescription ?? ""
-                    showingEditAbout = true
+                    modalRoute = .editAbout
                 }
             }
         }
-
-        .sheet(isPresented: $showingEditAbout) {
-            AboutEditSheet(title: "About \(trainingType.name)",
-                           text: $draftAbout) {
-                let trimmed = draftAbout.trimmingCharacters(in: .whitespacesAndNewlines)
-                trainingType.typeDescription = trimmed.isEmpty ? nil : trimmed
-                try? context.save()
-            }
-        }
-
-        // NEW exercise
-        .sheet(isPresented: $showingNewExercise) {
-            ExerciseEditSheet(
-                title: "New Exercise",
-                name: $draftExName,
-                area: $draftArea,
-                reps: $draftReps,
-                sets: $draftSets,
-                duration: $draftDuration,
-                rest: $draftRest,
-                notes: $draftNotes,
-                description: $draftDescription,
-                availableAreas: availableAreas
-            ) {
-                let nextOrder = (trainingType.exercises.map { $0.order }.max() ?? 0) + 1
-                let ex = Exercise(
-                    name: draftExName.trimmingCharacters(in: .whitespaces),
-                    area: draftArea.isEmpty ? nil : draftArea,
-                    order: nextOrder,
-                    exerciseDescription: draftDescription.isEmpty ? nil : draftDescription,
-                    repsText: draftReps.isEmpty ? nil : draftReps,
-                    durationText: draftDuration.isEmpty ? nil : draftDuration,
-                    setsText: draftSets.isEmpty ? nil : draftSets,
-                    restText: draftRest.isEmpty ? nil : draftRest,
-                    notes: draftNotes.isEmpty ? nil : draftNotes
-                )
-                trainingType.exercises.append(ex)
-                try? context.save()
+        .sheet(item: $modalRoute) { route in
+            switch route {
+            case .editAbout:
+                AboutEditSheet(title: "About \(trainingType.name)",
+                               text: $draftAbout) {
+                    let trimmed = draftAbout.trimmingCharacters(in: .whitespacesAndNewlines)
+                    trainingType.typeDescription = trimmed.isEmpty ? nil : trimmed
+                    try? context.save()
+                }
+            case .newExercise:
+                ExerciseEditSheet(
+                    title: "New Exercise",
+                    name: $draftExName,
+                    area: $draftArea,
+                    reps: $draftReps,
+                    sets: $draftSets,
+                    duration: $draftDuration,
+                    rest: $draftRest,
+                    notes: $draftNotes,
+                    description: $draftDescription,
+                    availableAreas: availableAreas
+                ) {
+                    let nextOrder = (trainingType.exercises.map { $0.order }.max() ?? 0) + 1
+                    let ex = Exercise(
+                        name: draftExName.trimmingCharacters(in: .whitespaces),
+                        area: draftArea.isEmpty ? nil : draftArea,
+                        order: nextOrder,
+                        exerciseDescription: draftDescription.isEmpty ? nil : draftDescription,
+                        repsText: draftReps.isEmpty ? nil : draftReps,
+                        durationText: draftDuration.isEmpty ? nil : draftDuration,
+                        setsText: draftSets.isEmpty ? nil : draftSets,
+                        restText: draftRest.isEmpty ? nil : draftRest,
+                        notes: draftNotes.isEmpty ? nil : draftNotes
+                    )
+                    trainingType.exercises.append(ex)
+                    try? context.save()
+                }
             }
         }
 
@@ -462,7 +491,7 @@ struct TrainingTypeDetailView: View {
 
     private func startNewExercise() {
         draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDuration = "";
-        showingNewExercise = true
+        modalRoute = .newExercise
     }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name
@@ -480,12 +509,19 @@ struct TrainingTypeDetailView: View {
 // MARK: - Combination detail (Bouldering)
 
 struct CombinationDetailView: View {
+    private enum ModalRoute: String, Identifiable {
+        case editAbout
+        case newExercise
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Bindable var combo: BoulderCombination
     let tint: Color
 
     @State private var editingExercise: Exercise?
-    @State private var showingNew = false
+    @State private var modalRoute: ModalRoute?
 
     @State private var draftExName = ""
     @State private var draftArea = ""
@@ -495,7 +531,6 @@ struct CombinationDetailView: View {
     @State private var draftRest = ""
     @State private var draftNotes = ""
     @State private var draftDesc = ""
-    @State private var showingEditAbout = false
     @State private var draftAbout = ""
 
 
@@ -506,9 +541,13 @@ struct CombinationDetailView: View {
             }
             Section("Exercises") {
                 ForEach(combo.exercises.sorted { $0.order < $1.order }) { ex in
-                    ExerciseRow(ex: ex, tint: tint)
-                        .contentShape(Rectangle())
-                        .onTapGesture { openEditor(for: ex) }
+                    Button {
+                        openEditor(for: ex)
+                    } label: {
+                        ExerciseRow(ex: ex, tint: tint)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 combo.exercises.removeAll { $0.id == ex.id }
@@ -554,48 +593,47 @@ struct CombinationDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Edit About") {
                     draftAbout = combo.comboDescription ?? ""
-                    showingEditAbout = true
+                    modalRoute = .editAbout
                 }
             }
         }
-        .sheet(isPresented: $showingEditAbout) {
-            AboutEditSheet(title: "About \(combo.name)",
-                           text: $draftAbout) {
-                let trimmed = draftAbout.trimmingCharacters(in: .whitespacesAndNewlines)
-                combo.comboDescription = trimmed.isEmpty ? nil : trimmed
-                try? context.save()
-            }
-        }
-
-
-        // New
-        .sheet(isPresented: $showingNew) {
-            ExerciseEditSheet(
-                title: "New Exercise",
-                name: $draftExName,
-                area: $draftArea,
-                reps: $draftReps,
-                sets: $draftSets,
-                duration: $draftDuration,
-                rest: $draftRest,
-                notes: $draftNotes,
-                description: $draftDesc,
-                availableAreas: []
-            ) {
-                let nextOrder = (combo.exercises.map { $0.order }.max() ?? 0) + 1
-                let ex = Exercise(
-                    name: draftExName.trimmingCharacters(in: .whitespaces),
-                    area: draftArea.isEmpty ? nil : draftArea,
-                    order: nextOrder,
-                    exerciseDescription: draftDesc.isEmpty ? nil : draftDesc,
-                    repsText: draftReps.isEmpty ? nil : draftReps,
-                    durationText: draftDuration.isEmpty ? nil : draftDuration,
-                    setsText: draftSets.isEmpty ? nil : draftSets,
-                    restText: draftRest.isEmpty ? nil : draftRest,
-                    notes: draftNotes.isEmpty ? nil : draftNotes
-                )
-                combo.exercises.append(ex)
-                try? context.save()
+        .sheet(item: $modalRoute) { route in
+            switch route {
+            case .editAbout:
+                AboutEditSheet(title: "About \(combo.name)",
+                               text: $draftAbout) {
+                    let trimmed = draftAbout.trimmingCharacters(in: .whitespacesAndNewlines)
+                    combo.comboDescription = trimmed.isEmpty ? nil : trimmed
+                    try? context.save()
+                }
+            case .newExercise:
+                ExerciseEditSheet(
+                    title: "New Exercise",
+                    name: $draftExName,
+                    area: $draftArea,
+                    reps: $draftReps,
+                    sets: $draftSets,
+                    duration: $draftDuration,
+                    rest: $draftRest,
+                    notes: $draftNotes,
+                    description: $draftDesc,
+                    availableAreas: []
+                ) {
+                    let nextOrder = (combo.exercises.map { $0.order }.max() ?? 0) + 1
+                    let ex = Exercise(
+                        name: draftExName.trimmingCharacters(in: .whitespaces),
+                        area: draftArea.isEmpty ? nil : draftArea,
+                        order: nextOrder,
+                        exerciseDescription: draftDesc.isEmpty ? nil : draftDesc,
+                        repsText: draftReps.isEmpty ? nil : draftReps,
+                        durationText: draftDuration.isEmpty ? nil : draftDuration,
+                        setsText: draftSets.isEmpty ? nil : draftSets,
+                        restText: draftRest.isEmpty ? nil : draftRest,
+                        notes: draftNotes.isEmpty ? nil : draftNotes
+                    )
+                    combo.exercises.append(ex)
+                    try? context.save()
+                }
             }
         }
 
@@ -628,7 +666,7 @@ struct CombinationDetailView: View {
 
     private func startNewExercise() {
         draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDesc = ""; draftDuration = "";
-        showingNew = true
+        modalRoute = .newExercise
     }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name

@@ -175,7 +175,7 @@ struct TB2Client {
             throw URLError(.badServerResponse)
         }
         if http.statusCode == 404 {
-            let alt = URL(string: url.absoluteString.replacingOccurrences(of: "/sync", with: "/api/v1/sync"))!
+            let alt = URL(string: url.absoluteString.replacing("/sync", with: "/api/v1/sync"))!
             var altReq = URLRequest(url: alt)
             altReq.httpMethod = "POST"
             for (k,v) in headers { altReq.setValue(v, forHTTPHeaderField: k) }

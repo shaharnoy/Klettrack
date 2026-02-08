@@ -13,17 +13,18 @@ import ActivityKit
 
 // MARK: - TimerManager
 @MainActor
-class TimerManager: ObservableObject {
+@Observable
+class TimerManager {
     // MARK: Published state (used by the UI)
-    @Published var state: TimerState = .stopped
-    @Published var currentTime: Int = 0                 // whole seconds since engine start (includes get-ready)
-    @Published var totalElapsedTime: Int = 0            // whole seconds excluding get-ready
-    @Published var currentInterval: Int = 0             // index in configuration.intervals
-    @Published var currentRepetition: Int = 0           // repetition index within the current interval
-    @Published var currentSequenceRepeat: Int = 0       // set index (0-based)
-    @Published var currentPhase: IntervalPhase = .work
-    @Published var laps: [TimerLap] = []
-    @Published private(set) var isInBetweenIntervalRest: Bool = false
+    var state: TimerState = .stopped
+    var currentTime: Int = 0                 // whole seconds since engine start (includes get-ready)
+    var totalElapsedTime: Int = 0            // whole seconds excluding get-ready
+    var currentInterval: Int = 0             // index in configuration.intervals
+    var currentRepetition: Int = 0           // repetition index within the current interval
+    var currentSequenceRepeat: Int = 0       // set index (0-based)
+    var currentPhase: IntervalPhase = .work
+    var laps: [TimerLap] = []
+    private(set) var isInBetweenIntervalRest: Bool = false
 
     // MARK: Data
     var configuration: TimerConfiguration?
@@ -54,7 +55,6 @@ class TimerManager: ObservableObject {
 
     // MARK: Init / Deinit
     init() { setupBackgroundHandling() }
-    deinit { notificationCenter.removeObserver(self); ticker?.stop() }
 
     // MARK: Flags
     var isRunning: Bool   { state == .running }
@@ -489,9 +489,9 @@ extension TimerManager {
         if minutes >= 60 {
             let hours = minutes / 60
             let remMinutes = minutes % 60
-            return String(format: "%d:%02d:%02d", hours, remMinutes, remainingSeconds)
+            return "\(hours):\(twoDigit(remMinutes)):\(twoDigit(remainingSeconds))"
         } else {
-            return String(format: "%d:%02d", minutes, remainingSeconds)
+            return "\(minutes):\(twoDigit(remainingSeconds))"
         }
     }
 
@@ -500,6 +500,10 @@ extension TimerManager {
         let m = (seconds % 3600) / 60
         let s = seconds % 60
         return (h, m, s)
+    }
+
+    private func twoDigit(_ value: Int) -> String {
+        value.formatted(.number.grouping(.never).precision(.integerLength(2)))
     }
 }
 
@@ -545,4 +549,3 @@ extension TimerManager {
         }
     }
 }
-

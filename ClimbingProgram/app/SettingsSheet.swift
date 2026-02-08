@@ -8,15 +8,20 @@ import SwiftUI
 import SwiftData
 
 struct SettingsSheet: View {
+    private enum SheetRoute: String, Identifiable {
+        case about
+        case contribute
+        var id: String { rawValue }
+    }
+
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var timerAppState: TimerAppState
+    @Environment(TimerAppState.self) private var timerAppState
     @Environment(\.modelContext) private var context
     @State private var activeBoard: TB2Client.Board? = nil
     @State private var credsUsername: String = ""
     @State private var credsPassword: String = ""
     @State private var isEditingCredentials = true
-    @State private var showingAbout = false
-    @State private var showingContribute = false
+    @State private var sheetRoute: SheetRoute?
     
     // Export state
     @State private var showExporter = false
@@ -186,7 +191,7 @@ struct SettingsSheet: View {
                     .buttonStyle(.plain)
                     // Contribute button opens AboutView.contribute
                     Button {
-                        showingContribute = true
+                        sheetRoute = .contribute
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 9) {
                             Image(systemName: "lightbulb")
@@ -201,7 +206,7 @@ struct SettingsSheet: View {
                     
                     //About button opens AboutView.klettrack
                     Button {
-                        showingAbout = true
+                        sheetRoute = .about
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "info.circle")
@@ -271,26 +276,22 @@ struct SettingsSheet: View {
                 break
             }
         }
-        // About sheet
-        .sheet(isPresented: $showingAbout) {
+        // About / Contribute sheet
+        .sheet(item: $sheetRoute) { route in
             NavigationStack {
-                AboutView.klettrack
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showingAbout = false }
-                        }
+                Group {
+                    switch route {
+                    case .about:
+                        AboutView.klettrack
+                    case .contribute:
+                        AboutView.contribute
                     }
-            }
-        }
-        // Contribute sheet
-        .sheet(isPresented: $showingContribute) {
-            NavigationStack {
-                AboutView.contribute
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showingContribute = false }
-                        }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { sheetRoute = nil }
                     }
+                }
             }
         }
     }

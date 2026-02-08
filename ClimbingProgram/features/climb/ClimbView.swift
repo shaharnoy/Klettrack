@@ -13,11 +13,16 @@ import AVFoundation
 import StoreKit
 
 struct ClimbView: View {
+    private enum AddClimbRoute: String, Identifiable {
+        case add
+        var id: String { rawValue }
+    }
+
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.modelContext) private var modelContext
     @Environment(\.undoManager) private var undoManager
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
-    @State private var showingAddClimb = false
+    @State private var addClimbRoute: AddClimbRoute? = nil
     @State private var editingClimb: ClimbEntry? = nil
     
     // Filters
@@ -40,7 +45,7 @@ struct ClimbView: View {
     @State private var pendingSyncBoard: TB2Client.Board? = nil
     
     // Shared undo components
-    @StateObject private var undoSnackbar = UndoSnackbarController()
+    @State private var undoSnackbar = UndoSnackbarController()
     @State private var deleteHandler = UndoableDeleteHandler(snapshotter: ClimbEntrySnapshotter())
     
     // In-app review guard (only once per session)
@@ -107,8 +112,7 @@ struct ClimbView: View {
         // Free-text search across main string fields
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            let q = trimmed.lowercased()
-            result = result.filter { matchesSearch($0, query: q) }
+            result = result.filter { matchesSearch($0, query: trimmed) }
         }
 
         return result
@@ -177,7 +181,7 @@ struct ClimbView: View {
                 .accessibilityLabel("Bulk add climbs")
             }
         }
-        .sheet(isPresented: $showingAddClimb) {
+        .sheet(item: $addClimbRoute) { _ in
             AddClimbView(bulkCount: pendingBulkClimbCount, onSave: { _ in
                 ensureDateRangeInitialized()
                 pendingBulkClimbCount = 1 // reset for next time
@@ -251,7 +255,7 @@ struct ClimbView: View {
             message: "How many climbs to add?"
         ) { count in
             pendingBulkClimbCount = count
-            showingAddClimb = true
+            addClimbRoute = .add
         }
         .opacity(isDataReady ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isDataReady)
@@ -422,7 +426,7 @@ struct ClimbView: View {
                 guard isDataReady else {
                     return
                 }
-                showingAddClimb = true
+                addClimbRoute = .add
             } label: {
                 Text("Log a Climb")
                     .frame(maxWidth: .infinity)
@@ -442,10 +446,10 @@ struct ClimbView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                         .font(.title2)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     Text("No climbs match filters")
                         .font(.footnote)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 24)
@@ -628,10 +632,9 @@ struct ClimbView: View {
 
     // Free-text search across key string fields
     private func matchesSearch(_ climb: ClimbEntry, query: String) -> Bool {
-        // `query` is already lowercased
         func contains(_ value: String?) -> Bool {
             guard let value = value, !value.isEmpty else { return false }
-            return value.lowercased().contains(query)
+            return value.localizedStandardContains(query)
         }
 
         // Add any other string fields you care about here
@@ -656,7 +659,7 @@ struct ClimbView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(active ? CatalogHue.climbing.color.opacity(0.2) : Color.secondary.opacity(0.12))
-            .foregroundColor(active ? CatalogHue.climbing.color : .primary)
+            .foregroundStyle(active ? CatalogHue.climbing.color : .primary)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -669,21 +672,21 @@ struct ClimbView: View {
         VStack(spacing: 16) {
             Image(systemName: "mountain.2.fill")
                 .font(.system(size: 60))
-                .foregroundColor(CatalogHue.climbing.color)
+                .foregroundStyle(CatalogHue.climbing.color)
             
             Text("Track your climbing sessions")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             
-            Button(action: { showingAddClimb = true }) {
+            Button(action: { addClimbRoute = .add }) {
                 Label("Add Your First Climb", systemImage: "plus.circle.fill")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                     .background(CatalogHue.climbing.color)
-                    .cornerRadius(8)
+                    .clipShape(.rect(cornerRadius: 8))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -749,9 +752,10 @@ struct ClimbRowCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Top row: Grade, Type, Date, WIP
-            HStack(alignment: .center) {
+        Button(action: onEdit) {
+            VStack(alignment: .leading, spacing: 6) {
+                // Top row: Grade, Type, Date, WIP
+                HStack(alignment: .center) {
                 
                 // Climb type badge
                 Text(climb.climbType.displayName + (climb.climbType == .sport && climb.ropeClimbType != nil ? " (\(climb.ropeClimbType!.displayName))" : ""))
@@ -759,8 +763,8 @@ struct ClimbRowCard: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(climbTypeColor.opacity(0.2))
-                    .foregroundColor(climbTypeColor)
-                    .cornerRadius(3)
+                    .foregroundStyle(climbTypeColor)
+                    .clipShape(.rect(cornerRadius: 3))
                 
                 // show grade only if filled, show alternative grade if grade isn't there,
                 // show grade& alterntive grade if both exist
@@ -779,7 +783,7 @@ struct ClimbRowCard: View {
 
                     Text(display)
                         .font(.body)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                 }
                 // Hold color dot - only show if not "none" and not nil
                 if let holdColor = climb.holdColor, holdColor != .none {
@@ -802,58 +806,60 @@ struct ClimbRowCard: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.yellow.opacity(0.3))
-                        .foregroundColor(.orange)
-                        .cornerRadius(3)
+                        .foregroundStyle(.orange)
+                        .clipShape(.rect(cornerRadius: 3))
                 }
                 if climb.isPreviouslyClimbed == true {
                         Image(systemName: "arrow.uturn.backward.circle")
-                            .foregroundColor(.orange)
+                            .foregroundStyle(.orange)
                             .font(.caption)
                     }
                   
                 // Date
                 Text(climb.dateLogged.formatted(.dateTime.year().month().day()))
                     .font(.body)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             
-            // Bottom row: Style, Gym, and optional details - only show if populated
-            let hasStyle = climb.style != "Unknown" && !climb.style.isEmpty
-            let hasGym = climb.gym != "Unknown" && !climb.gym.isEmpty
-            let hasAngle = climb.angleDegrees != nil
-            
-            if hasStyle || hasGym || hasAngle {
-                HStack(spacing: 4) {
-                    if hasStyle {
-                        Text(climb.style)
-                            .font(.body)
-                            .foregroundColor(.primary)
-                    }
-                    
-                    if hasAngle {
+                // Bottom row: Style, Gym, and optional details - only show if populated
+                let hasStyle = climb.style != "Unknown" && !climb.style.isEmpty
+                let hasGym = climb.gym != "Unknown" && !climb.gym.isEmpty
+                let hasAngle = climb.angleDegrees != nil
+
+                if hasStyle || hasGym || hasAngle {
+                    HStack(spacing: 4) {
                         if hasStyle {
-                            Text("•")
+                            Text(climb.style)
                                 .font(.body)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.primary)
                         }
-                        Text("\(climb.angleDegrees!)°")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    if hasGym {
-                        if hasStyle || hasAngle {
-                            Text("•")
+
+                        if hasAngle {
+                            if hasStyle {
+                                Text("•")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(climb.angleDegrees!)°")
                                 .font(.body)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
-                        Text("\(climb.gym)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+
+                        if hasGym {
+                            if hasStyle || hasAngle {
+                                Text("•")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("\(climb.gym)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
         }
+        .buttonStyle(.plain)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(.ultraThinMaterial)
@@ -868,9 +874,6 @@ struct ClimbRowCard: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
-        }
-        .onTapGesture {
-            onEdit()
         }
     }
 }
@@ -1031,19 +1034,13 @@ struct MediaFullScreenView: View {
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
 
-        let bounds = UIScreen.main.bounds
-        let targetSize = CGSize(
-            width: bounds.width * UIScreen.main.scale,
-            height: bounds.height * UIScreen.main.scale
-        )
-
         PHImageManager.default().requestImage(
             for: asset,
-            targetSize: targetSize,
+            targetSize: PHImageManagerMaximumSize,
             contentMode: .aspectFit,
             options: options
         ) { image, _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let image {
                     self.loadedImage = image
                 } else {
@@ -1067,7 +1064,7 @@ struct MediaFullScreenView: View {
             forVideo: asset,
             options: options
         ) { playerItem, _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let playerItem {
                     self.player = AVPlayer(playerItem: playerItem)
                 } else {

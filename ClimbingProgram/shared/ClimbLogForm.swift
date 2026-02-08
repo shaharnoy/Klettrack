@@ -184,372 +184,24 @@ struct ClimbLogForm: View {
             }
         )
     }
-    
+
+    private static let fieldLabelWidth: CGFloat = 80
+    private static let fieldControlWidth: CGFloat = 70
+    private static let fieldSpacing: CGFloat = 8
+
     var body: some View {
         NavigationStack {
             ZStack {
                 Form {
-                    // Climb Type Picker - changed to dropdown menu
-                    Picker("Type", selection: $selectedClimbType) {
-                        ForEach(ClimbType.allCases, id: \.self) { type in
-                            Text(type.displayName).tag(type)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    
-                    // Gym picker with add button
-                    HStack {
-                        Picker("Gym", selection: $selectedGym) {
-                            Text("select...").tag("")
-                                .font(.subheadline)
-                            ForEach(availableGyms, id: \.self) { gym in
-                                Text(gym).tag(gym)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .contentShape(Rectangle())
-                        Button {
-                            showingGymAlert = true
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.accentColor)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    // Style picker with add button
-                    HStack {
-                        Picker("Style", selection: $selectedStyle) {
-                            Text("select...").tag("")
-                                .font(.subheadline)
-                            ForEach(availableStyles, id: \.self) { style in
-                                Text(style).tag(style)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        Button {
-                            showingStyleAlert = true
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.accentColor)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Section {
-                        // Shared layout constants
-                        let labelWidth: CGFloat = 80
-                        let controlWidth: CGFloat = 70
-                        let labelToControlSpacing: CGFloat = 8
-                        
-                        // ROW 1 — Grade | My Grade
-                        HStack {
-                            HStack {
-                                Text("Grade")
-                                    .font(.subheadline)
-                                    .lineLimit(1)
-                                    .frame(width: labelWidth, alignment: .leading)
-
-                                Spacer(minLength: labelToControlSpacing)
-
-                                TextField("V5", text: $grade)
-                                    .multilineTextAlignment(.trailing)
-                                    .keyboardType(.numbersAndPunctuation)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled(true)
-                                    .focused($focusedField, equals: .grade)
-                                    .submitLabel(.done)
-                                    .frame(width: controlWidth, alignment: .trailing)
-                                    .contentShape(Rectangle())
-                                    .simultaneousGesture(
-                                        TapGesture().onEnded {
-                                            // mark that the user intentionally tapped grade
-                                            gradeFocusWasUserInitiated = true
-                                            // if we were already focused, onChange won't fire → clear immediately here
-                                            if focusedField == .grade {
-                                                if !didAutoClearGrade && !grade.isEmpty {
-                                                    grade = ""
-                                                    didAutoClearGrade = true
-                                                }
-                                                gradeFocusWasUserInitiated = false
-                                            } else {
-                                                // cause focus change so the onChange handler below can clear
-                                                focusedField = .grade
-                                            }
-                                        }
-                                    )
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            HStack {
-                                InfoLabel(
-                                    text: "My Grade",
-                                    helpMessage: "Use My Grade for mismatched gym grades, sandbagged climbs, or noting how the climb really felt.",
-                                    labelWidth: labelWidth
-                                )
-
-                                Spacer(minLength: labelToControlSpacing)
-
-                                TextField("7a+", text: $feelsLikeGrade)
-                                    .multilineTextAlignment(.trailing)
-                                    .keyboardType(.numbersAndPunctuation)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled(true)
-                                    .focused($focusedField, equals: .feelsLikeGrade)
-                                    .submitLabel(.done)
-                                    .onSubmit { focusedField = nil }
-                                    .frame(width: controlWidth, alignment: .trailing)
-                                    .contentShape(Rectangle())
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-
-                        // ROW 2 — Angle | Attempts
-                        HStack {
-                            HStack {
-                                Text("Angle")
-                                    .font(.subheadline)
-                                    .frame(width: labelWidth, alignment: .leading)
-
-                                Spacer(minLength: labelToControlSpacing)
-
-                                HStack(spacing: 4) {
-                                    if angleDegrees.isEmpty {
-                                        Text("")
-                                            .font(.body)
-                                            .foregroundStyle(.secondary)
-                                    } else {
-                                        Text("\(angleDegrees)°")
-                                            .font(.body)
-                                    }
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(width: controlWidth, alignment: .trailing)
-                                .contentShape(Rectangle())              // tap area = full frame
-                                .onTapGesture {
-                                    showAnglePickerSheet = true
-                                }
-
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .sheet(isPresented: $showAnglePickerSheet) {
-                                VStack {
-                                    Text("Angle")
-                                        .font(.headline)
-                                        .padding(.top, 16)
-
-                                    Picker("Angle", selection: angleOptionalBinding) {
-                                        Text("None").tag(nil as Int?)
-
-                                        ForEach(Array(stride(from: 0, through: 90, by: 5)), id: \.self) { n in
-                                            Text("\(n)°").tag(Optional(n))
-                                        }
-                                    }
-                                    .pickerStyle(.wheel)
-                                    .labelsHidden()
-                                    .frame(maxHeight: 250)
-
-                                    Button("Done") {
-                                        showAnglePickerSheet = false
-                                    }
-                                    .padding(.top, 8)
-                                }
-                                .presentationDetents([.fraction(0.4), .medium])
-                            }
-
-                            HStack {
-                                Text("Attempts")
-                                    .font(.subheadline)
-                                    .frame(width: labelWidth, alignment: .leading)
-
-                                Spacer(minLength: labelToControlSpacing)
-
-                                HStack(spacing: 4) {
-                                    Text("\(attemptsIntBinding.wrappedValue)")
-                                        .font(.body)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(width: controlWidth, alignment: .trailing)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    showAttemptsPickerSheet = true
-                                }
-
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .sheet(isPresented: $showAttemptsPickerSheet) {
-                                VStack {
-                                    Text("Attempts")
-                                        .font(.headline)
-                                        .padding(.top, 16)
-
-                                    Picker("Attempts", selection: attemptsIntBinding) {
-                                        ForEach(1..<100, id: \.self) { n in
-                                            Text("\(n)").tag(n)
-                                        }
-                                    }
-                                    .pickerStyle(.wheel)
-                                    .labelsHidden()
-                                    .frame(maxHeight: 250)
-
-                                    Button("Done") {
-                                        showAttemptsPickerSheet = false
-                                    }
-                                    .padding(.top, 8)
-                                }
-                                .presentationDetents([.fraction(0.4), .medium])
-                            }
-
-                        }
-
-                        // ROW 3 — WIP | Reclimb
-                        HStack {
-                            HStack {
-                                Text("WIP?")
-                                    .font(.subheadline)
-                                    .frame(width: labelWidth, alignment: .leading)
-
-                                Spacer(minLength: labelToControlSpacing)
-
-                                Toggle("", isOn: $isWorkInProgress)
-                                    .labelsHidden()
-                                    .frame(width: controlWidth, alignment: .center) // same column/right edge
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            HStack {
-                                Text("Resend?")
-                                    .font(.subheadline)
-                                    .frame(width: labelWidth, alignment: .leading)
-
-                                Spacer(minLength: labelToControlSpacing)
-
-                                Toggle("", isOn: $isPreviouslyClimbed)
-                                    .labelsHidden()
-                                    .frame(width: controlWidth, alignment: .center)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        // Rope type (sport only)
-                        if selectedClimbType == .sport {
-                            Picker("Rope", selection: $selectedRopeClimbType) {
-                                ForEach(RopeClimbType.allCases, id: \.self) { ropeType in
-                                    Text(ropeType.displayName).tag(ropeType)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
-
-                        // Notes
-                        TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
-                    }
-
-                    // Hold color picker (compact) using JugHoldShape
-                    Section("Hold Color") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            LazyVGrid(
-                                columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7),
-                                spacing: 8
-                            ) {
-                                ForEach(HoldColor.allCases, id: \.self) { color in
-                                    Button {
-                                        selectedHoldColor = color
-                                    } label: {
-                                        HoldColorChip(color: color, isSelected: selectedHoldColor == color)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                    }
-                //Media picker + strip
-                Section {
-                    PhotosPicker(
-                        selection: $mediaPickerItems,
-                        maxSelectionCount: 10,
-                        matching: .any(of: [.images, .videos]),
-                        photoLibrary: .shared()
-                    ) {
-                        HStack {
-                            Image(systemName: "photo.on.rectangle.angled")
-                            Text("Add media")
-                            Spacer()
-                        }
-                    }
-                    if !mediaPreviews.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(mediaPreviews) { preview in
-                                    ZStack(alignment: .topTrailing) {
-                                        ClimbLogMediaThumbnailView(preview: preview)
-                                            .onTapGesture {
-                                                if isDeletingMedia {
-                                                    deletePreview(preview)
-                                                } else {
-                                                    previewToViewFullScreen = preview
-                                                }
-                                            }
-                                        
-                                        if isDeletingMedia {
-                                            Button {
-                                                deletePreview(preview)
-                                            } label: {
-                                                Image(systemName: "minus.circle.fill")
-                                                    .font(.system(size: 18, weight: .bold))
-                                                    .symbolRenderingMode(.palette)
-                                                    .foregroundStyle(.white, .red)
-                                                    .shadow(radius: 2)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .offset(x: 4, y: -4)
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                } header: {
-                    HStack {
-                        if !mediaPreviews.isEmpty {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    isDeletingMedia.toggle()
-                                }
-                            } label: {
-                                Label(
-                                    isDeletingMedia ? "Done" : "Delete",
-                                    systemImage: isDeletingMedia ? "checkmark.circle" : "trash"
-                                )
-                                .labelStyle(.iconOnly)
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(isDeletingMedia ? .green : .red)
-                        }
-                    }
+                    climbTypePicker
+                    gymPicker
+                    stylePicker
+                    climbDetailsSection
+                    holdColorSection
+                    mediaSection
                 }
+                loadingOverlay
             }
-             if isSaving || isLoadingMedia {
-                             ZStack {
-                                 Color.black.opacity(0.25)
-                                     .ignoresSafeArea()
-
-                                 VStack(spacing: 8) {
-                                     ProgressView()
-                                     Text(isSaving ? "Saving climb…" : "Uploading…")
-                                         .font(.footnote)
-                                         .foregroundStyle(.secondary)
-                                 }
-                                 .padding(16)
-                                 .background(.ultraThinMaterial)
-                                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                 .shadow(radius: 10)
-                             }
-                             .transition(.opacity)
-                         }
-                     }
             //.navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -665,7 +317,419 @@ struct ClimbLogForm: View {
             }
         }
     }
-    
+
+    @ViewBuilder
+    private var climbTypePicker: some View {
+        Picker("Type", selection: $selectedClimbType) {
+            ForEach(ClimbType.allCases, id: \.self) { type in
+                Text(type.displayName).tag(type)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+
+    @ViewBuilder
+    private var gymPicker: some View {
+        HStack {
+            Picker("Gym", selection: $selectedGym) {
+                Text("select...").tag("")
+                    .font(.subheadline)
+                ForEach(availableGyms, id: \.self) { gym in
+                    Text(gym).tag(gym)
+                }
+            }
+            .pickerStyle(.menu)
+            .contentShape(Rectangle())
+            Button {
+                showingGymAlert = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(.tint)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var stylePicker: some View {
+        HStack {
+            Picker("Style", selection: $selectedStyle) {
+                Text("select...").tag("")
+                    .font(.subheadline)
+                ForEach(availableStyles, id: \.self) { style in
+                    Text(style).tag(style)
+                }
+            }
+            .pickerStyle(.menu)
+            Button {
+                showingStyleAlert = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(.tint)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var climbDetailsSection: some View {
+        Section {
+            gradeAndFeelsLikeRow
+            angleAndAttemptsRow
+            wipAndResendRow
+
+            if selectedClimbType == .sport {
+                ropeTypePicker
+            }
+
+            TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
+        }
+    }
+
+    @ViewBuilder
+    private var gradeAndFeelsLikeRow: some View {
+        HStack {
+            HStack {
+                Text("Grade")
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .frame(width: Self.fieldLabelWidth, alignment: .leading)
+
+                Spacer(minLength: Self.fieldSpacing)
+
+                TextField("V5", text: $grade)
+                    .multilineTextAlignment(.trailing)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .focused($focusedField, equals: .grade)
+                    .submitLabel(.done)
+                    .frame(width: Self.fieldControlWidth, alignment: .trailing)
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            handleGradeFieldTap()
+                        }
+                    )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+
+            HStack {
+                InfoLabel(
+                    text: "My Grade",
+                    helpMessage: "Use My Grade for mismatched gym grades, sandbagged climbs, or noting how the climb really felt.",
+                    labelWidth: Self.fieldLabelWidth
+                )
+
+                Spacer(minLength: Self.fieldSpacing)
+
+                TextField("7a+", text: $feelsLikeGrade)
+                    .multilineTextAlignment(.trailing)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .focused($focusedField, equals: .feelsLikeGrade)
+                    .submitLabel(.done)
+                    .onSubmit { focusedField = nil }
+                    .frame(width: Self.fieldControlWidth, alignment: .trailing)
+                    .contentShape(Rectangle())
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var angleAndAttemptsRow: some View {
+        HStack {
+            HStack {
+                Text("Angle")
+                    .font(.subheadline)
+                    .frame(width: Self.fieldLabelWidth, alignment: .leading)
+
+                Spacer(minLength: Self.fieldSpacing)
+
+                anglePickerButton(controlWidth: Self.fieldControlWidth)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(isPresented: $showAnglePickerSheet) {
+                angleSheetContent
+            }
+
+            HStack {
+                Text("Attempts")
+                    .font(.subheadline)
+                    .frame(width: Self.fieldLabelWidth, alignment: .leading)
+
+                Spacer(minLength: Self.fieldSpacing)
+
+                attemptsPickerButton(controlWidth: Self.fieldControlWidth)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(isPresented: $showAttemptsPickerSheet) {
+                attemptsSheetContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var wipAndResendRow: some View {
+        HStack {
+            HStack {
+                Text("WIP?")
+                    .font(.subheadline)
+                    .frame(width: Self.fieldLabelWidth, alignment: .leading)
+
+                Spacer(minLength: Self.fieldSpacing)
+
+                Toggle("", isOn: $isWorkInProgress)
+                    .labelsHidden()
+                    .frame(width: Self.fieldControlWidth, alignment: .center)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack {
+                Text("Resend?")
+                    .font(.subheadline)
+                    .frame(width: Self.fieldLabelWidth, alignment: .leading)
+
+                Spacer(minLength: Self.fieldSpacing)
+
+                Toggle("", isOn: $isPreviouslyClimbed)
+                    .labelsHidden()
+                    .frame(width: Self.fieldControlWidth, alignment: .center)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var ropeTypePicker: some View {
+        Picker("Rope", selection: $selectedRopeClimbType) {
+            ForEach(RopeClimbType.allCases, id: \.self) { ropeType in
+                Text(ropeType.displayName).tag(ropeType)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+
+    @ViewBuilder
+    private var angleSheetContent: some View {
+        VStack {
+            Text("Angle")
+                .font(.headline)
+                .padding(.top, 16)
+
+            Picker("Angle", selection: angleOptionalBinding) {
+                Text("None").tag(nil as Int?)
+                ForEach(Array(stride(from: 0, through: 90, by: 5)), id: \.self) { n in
+                    Text("\(n)°").tag(Optional(n))
+                }
+            }
+            .pickerStyle(.wheel)
+            .labelsHidden()
+            .frame(maxHeight: 250)
+
+            Button("Done") {
+                showAnglePickerSheet = false
+            }
+            .padding(.top, 8)
+        }
+        .presentationDetents([.fraction(0.4), .medium])
+    }
+
+    @ViewBuilder
+    private var attemptsSheetContent: some View {
+        VStack {
+            Text("Attempts")
+                .font(.headline)
+                .padding(.top, 16)
+
+            Picker("Attempts", selection: attemptsIntBinding) {
+                ForEach(1..<100, id: \.self) { n in
+                    Text("\(n)").tag(n)
+                }
+            }
+            .pickerStyle(.wheel)
+            .labelsHidden()
+            .frame(maxHeight: 250)
+
+            Button("Done") {
+                showAttemptsPickerSheet = false
+            }
+            .padding(.top, 8)
+        }
+        .presentationDetents([.fraction(0.4), .medium])
+    }
+
+    @ViewBuilder
+    private var holdColorSection: some View {
+        Section("Hold Color") {
+            VStack(alignment: .leading, spacing: 4) {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7),
+                    spacing: 8
+                ) {
+                    ForEach(HoldColor.allCases, id: \.self) { color in
+                        Button {
+                            selectedHoldColor = color
+                        } label: {
+                            HoldColorChip(color: color, isSelected: selectedHoldColor == color)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var mediaSection: some View {
+        Section {
+            PhotosPicker(
+                selection: $mediaPickerItems,
+                maxSelectionCount: 10,
+                matching: .any(of: [.images, .videos]),
+                photoLibrary: .shared()
+            ) {
+                HStack {
+                    Image(systemName: "photo.on.rectangle.angled")
+                    Text("Add media")
+                    Spacer()
+                }
+            }
+            if !mediaPreviews.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(mediaPreviews) { preview in
+                            mediaPreviewTile(preview)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .scrollIndicators(.hidden)
+            }
+        } header: {
+            HStack {
+                if !mediaPreviews.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isDeletingMedia.toggle()
+                        }
+                    } label: {
+                        Label(
+                            isDeletingMedia ? "Done" : "Delete",
+                            systemImage: isDeletingMedia ? "checkmark.circle" : "trash"
+                        )
+                        .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(isDeletingMedia ? .green : .red)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var loadingOverlay: some View {
+        if isSaving || isLoadingMedia {
+            ZStack {
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text(isSaving ? "Saving climb…" : "Uploading…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(16)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(radius: 10)
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private func handleGradeFieldTap() {
+        gradeFocusWasUserInitiated = true
+        if focusedField == .grade {
+            if !didAutoClearGrade && !grade.isEmpty {
+                grade = ""
+                didAutoClearGrade = true
+            }
+            gradeFocusWasUserInitiated = false
+        } else {
+            focusedField = .grade
+        }
+    }
+
+    @ViewBuilder
+    private func anglePickerButton(controlWidth: CGFloat) -> some View {
+        Button {
+            showAnglePickerSheet = true
+        } label: {
+            HStack(spacing: 4) {
+                if angleDegrees.isEmpty {
+                    Text("")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(angleDegrees)°")
+                        .font(.body)
+                }
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: controlWidth, alignment: .trailing)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func attemptsPickerButton(controlWidth: CGFloat) -> some View {
+        Button {
+            showAttemptsPickerSheet = true
+        } label: {
+            HStack(spacing: 4) {
+                Text("\(attemptsIntBinding.wrappedValue)")
+                    .font(.body)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: controlWidth, alignment: .trailing)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func mediaPreviewTile(_ preview: ClimbLogMediaPreview) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Button {
+                if isDeletingMedia {
+                    deletePreview(preview)
+                } else {
+                    previewToViewFullScreen = preview
+                }
+            } label: {
+                ClimbLogMediaThumbnailView(preview: preview)
+            }
+            .buttonStyle(.plain)
+
+            if isDeletingMedia {
+                Image(systemName: "minus.circle.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .red)
+                    .shadow(radius: 2)
+                    .offset(x: 4, y: -4)
+            }
+        }
+    }
+
     @MainActor
     private func saveClimb(bulkCount: Int = 1) async {
         guard !isSaving else { return }
@@ -842,7 +906,7 @@ struct ClimbLogForm: View {
                     color == .none ?
                     Image(systemName: "xmark")
                         .font(.caption2)
-                        .foregroundColor(.black)
+                        .foregroundStyle(.black)
                     : nil
                 )
         }
@@ -1080,19 +1144,13 @@ struct ClimbLogMediaFullScreenView: View {
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
 
-        let bounds = UIScreen.main.bounds
-        let targetSize = CGSize(
-            width: bounds.width * UIScreen.main.scale,
-            height: bounds.height * UIScreen.main.scale
-        )
-
         PHImageManager.default().requestImage(
             for: asset,
-            targetSize: targetSize,
+            targetSize: PHImageManagerMaximumSize,
             contentMode: .aspectFit,
             options: options
         ) { image, _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let image {
                     self.loadedImage = image
                 } else {
@@ -1116,7 +1174,7 @@ struct ClimbLogMediaFullScreenView: View {
             forVideo: asset,
             options: options
         ) { playerItem, _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let playerItem {
                     self.player = AVPlayer(playerItem: playerItem)
                 } else {
