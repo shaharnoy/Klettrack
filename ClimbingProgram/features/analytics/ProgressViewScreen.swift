@@ -1097,6 +1097,7 @@ fileprivate struct ClimbStatsView: View {
     @Bindable var vm: ClimbStatsVM
     @State private var pickerRoute: PickerRoute?
     @State private var showFilters = false
+    @AppStorage(FeatureFlags.forcePreferMyGradeInProgress) private var forcePreferMyGradeInProgress = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: LayoutGrid.sectionSpacing) {
@@ -1274,9 +1275,21 @@ fileprivate struct ClimbStatsView: View {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
             }
+            .onChange(of: forcePreferMyGradeInProgress) { _, isEnabled in
+                if isEnabled {
+                    vm.preferFeelsLikeGrade = true
+                }
+                vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
+            }
             .onChange(of: vm.searchQuery) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+            }
+            .onAppear {
+                if forcePreferMyGradeInProgress {
+                    vm.preferFeelsLikeGrade = true
+                }
             }
         }
 

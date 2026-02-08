@@ -66,6 +66,22 @@ struct SettingsSheet: View {
                         }
                         .padding(.vertical, 1)
                     }
+                    NavigationLink {
+                        FeatureFlagsView()
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "switch.2")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Feature Flags")
+                                    .font(.body)
+                                Text("Enable or disable experimental behavior")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 1)
+                    }
                     //Media Manager
                     NavigationLink {
                         MediaManagerView()
@@ -151,7 +167,7 @@ struct SettingsSheet: View {
                     }
                     .buttonStyle(.plain)
                 }
-                
+
                 // About section (subtle separation)
                 Section {
                     //rate the app
