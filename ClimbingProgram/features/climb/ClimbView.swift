@@ -741,7 +741,6 @@ struct ClimbRowCard: View {
     let climb: ClimbEntry
     let onDelete: () -> Void
     let onEdit: () -> Void
-    @AppStorage(FeatureFlags.showNotesWhenGymMissing) private var showNotesWhenGymMissing = false
     
     private var climbTypeColor: Color {
         switch climb.climbType {
@@ -824,15 +823,10 @@ struct ClimbRowCard: View {
             
                 // Bottom row: Style, Gym, and optional details - only show if populated
                 let hasStyle = climb.style != "Unknown" && !climb.style.isEmpty
+                let hasGym = climb.gym != "Unknown" && !climb.gym.isEmpty
                 let hasAngle = climb.angleDegrees != nil
-                let gymOrNotesText = FeatureFlagRules.rowDetailText(
-                    gym: climb.gym,
-                    notes: climb.notes,
-                    showNotesWhenGymMissing: showNotesWhenGymMissing
-                )
-                let hasGymOrNotes = gymOrNotesText != nil
 
-                if hasStyle || hasGymOrNotes || hasAngle {
+                if hasStyle || hasGym || hasAngle {
                     HStack(spacing: 4) {
                         if hasStyle {
                             Text(climb.style)
@@ -851,16 +845,15 @@ struct ClimbRowCard: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        if let gymOrNotesText {
+                        if hasGym {
                             if hasStyle || hasAngle {
                                 Text("•")
                                     .font(.body)
                                     .foregroundStyle(.secondary)
                             }
-                            Text(gymOrNotesText)
+                            Text("\(climb.gym)")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(showNotesWhenGymMissing ? 1 : nil)
                         }
                     }
                 }
