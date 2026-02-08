@@ -16,7 +16,10 @@ import UIKit
 struct ClimbLogForm: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Query private var climbStyles: [ClimbStyle]
+    @Query(
+        filter: #Predicate<ClimbStyle> { $0.isHidden == false },
+        sort: [SortDescriptor(\ClimbStyle.name, order: .forward)]
+    ) private var climbStyles: [ClimbStyle]
     @Query private var climbGyms: [ClimbGym]
     
     // Configuration
