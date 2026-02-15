@@ -1,0 +1,37 @@
+name: Supabase Healthcheck Ping
+
+on:
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required secret
+        env:
+          HEALTHCHECK_URL: ${{ secrets.SUPABASE_HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$HEALTHCHECK_URL" ]; then
+            echo "Missing required secret: SUPABASE_HEALTHCHECK_URL"
+            exit 1
+          fi
+
+      - name: Ping Supabase healthcheck
+        shell: bash
+        env:
+          HEALTHCHECK_URL: ${{ secrets.SUPABASE_HEALTHCHECK_URL }}
+          HEALTHCHECK_TOKEN: ${{ secrets.SUPABASE_HEALTHCHECK_TOKEN }}
+        run: |
+          HEADER_ARGS=()
+          if [ -n "$HEALTHCHECK_TOKEN" ]; then
+            HEADER_ARGS+=(-H "x-healthcheck-token: $HEALTHCHECK_TOKEN")
+          fi
+
+          curl --fail --show-error --silent \
+            --max-time 30 \
+            --retry 2 \
+            --retry-delay 5 \
+            "${HEADER_ARGS[@]}" \
+            "$HEALTHCHECK_URL"
