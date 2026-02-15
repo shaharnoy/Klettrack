@@ -110,7 +110,10 @@ struct PlansListView: View {
     @Environment(\.isDataReady) private var isDataReady
     @Environment(TimerAppState.self) private var timerAppState
     // Be explicit with SortDescriptor to help the type checker
-    @Query(sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
+    @Query(
+        filter: #Predicate<Plan> { !$0.isDeleted },
+        sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]
+    ) private var plans: [Plan]
 
     @State private var sheetRoute: SheetRoute?
 
@@ -212,7 +215,7 @@ struct PlansListView: View {
             }
             .onDelete { idx in
                 guard isDataReady else { return }
-                idx.map { plans[$0] }.forEach(context.delete)
+                idx.map { plans[$0] }.forEach { SyncLocalMutation.softDelete($0) }
                 try? context.save()
             }
         }
@@ -423,7 +426,10 @@ struct NewPlanSheet: View {
     @Environment(\.modelContext) private var context
 
     // SwiftData: keep sort descriptors simple
-    @Query(sort: [SortDescriptor(\PlanKindModel.order)]) private var kinds: [PlanKindModel]
+    @Query(
+        filter: #Predicate<PlanKindModel> { !$0.isDeleted },
+        sort: [SortDescriptor(\PlanKindModel.order)]
+    ) private var kinds: [PlanKindModel]
 
     @State private var name = ""
     @State private var selectedKind: PlanKindModel? = nil
@@ -495,10 +501,12 @@ struct NewPlanSheet: View {
 
         let plan = Plan(name: name, kind:nil, startDate: startDay)
         context.insert(plan)
+        SyncLocalMutation.touch(plan)
 
         var d = startDay
         while d <= endDay {
             let day = PlanDay(date: d)
+            SyncLocalMutation.touch(day)
             plan.days.append(day)
             d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86_400)
         }
@@ -780,7 +788,7 @@ struct PlanDayEditor: View {
     @State private var cache: PlanDayEditorCache
     
     @Query(
-        filter: #Predicate<DayTypeModel> { $0.isHidden == false },
+        filter: #Predicate<DayTypeModel> { !$0.isDeleted && $0.isHidden == false },
         sort: [SortDescriptor<DayTypeModel>(\DayTypeModel.order)]
     ) private var dayTypes: [DayTypeModel]
 
@@ -1199,7 +1207,7 @@ struct PlanDayEditor: View {
                                     }
                                 } else {
                                     // Fallback if no back-reference
-                                    context.delete(item)
+                                    SyncLocalMutation.softDelete(item)
                                     try? context.save()
                                 }
 
@@ -1236,6 +1244,7 @@ struct PlanDayEditor: View {
                     // Save the notes to the model
                     let trimmed = dailyNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
                     day.dailyNotes = trimmed.isEmpty ? nil : trimmed
+                    SyncLocalMutation.touch(day)
                     try? context.save()
                 }
         }
@@ -1258,6 +1267,7 @@ struct PlanDayEditor: View {
                 // Resolve selected id to model instance; assign (or nil) safely
                 let resolved = dayTypes.first(where: { $0.id == newId })
                 day.type = resolved
+                SyncLocalMutation.touch(day)
                 try? context.save()
             }
             
@@ -1329,12 +1339,14 @@ struct PlanDayEditor: View {
         .onChange(of: editMode?.wrappedValue) { _, newValue in
                     if newValue == .inactive, didReorder {
                         didReorder = false
+                        SyncLocalMutation.touch(day)
                         try? context.save() // single save after drag session
                     }
                 }
                 .onDisappear {
                     if didReorder {
                         didReorder = false
+                        SyncLocalMutation.touch(day)
                         try? context.save()
                     }
                 }
@@ -1404,6 +1416,7 @@ struct PlanDayEditor: View {
         targetDay.chosenExercises = day.chosenExercises
         targetDay.exerciseOrder = day.exerciseOrder
         targetDay.type = day.type
+        SyncLocalMutation.touch(targetDay)
 
         try? context.save()
         cloneMessage = "Cloned to \(targetStart.formatted(date: .abbreviated, time: .omitted))"
@@ -1443,10 +1456,12 @@ struct PlanDayEditor: View {
                 d.chosenExercises = day.chosenExercises
                 d.exerciseOrder = day.exerciseOrder
                 d.type = day.type
+                SyncLocalMutation.touch(d)
             }
         }
 
 
+        SyncLocalMutation.touch(plan)
         try? context.save()
         cloneMessage = "Success"
     }
@@ -1505,7 +1520,7 @@ struct PlanDayEditor: View {
 
         let planId = cache.parentPlan?.id
         let allItems = sessions.flatMap(\.items)
-        let filtered = allItems.filter { $0.planSourceId == planId }
+        let filtered = allItems.filter { $0.planSourceId == planId && !$0.isDeleted }
 
         cache.loggedItemsForDay = filtered
     }
@@ -1528,7 +1543,7 @@ struct PlanDayEditor: View {
         
         let p = cache.parentPlan
         
-        session.items.append(SessionItem(
+        let item = SessionItem(
             exerciseName: exerciseName,
             planSourceId: p?.id,
             planName: p?.name,
@@ -1538,7 +1553,10 @@ struct PlanDayEditor: View {
             grade: grade,
             notes: inputNotes.isEmpty ? nil : inputNotes,
             duration: duration
-        ))
+        )
+        SyncLocalMutation.touch(item)
+        session.items.append(item)
+        SyncLocalMutation.touch(session)
         try? context.save()
         saveTick.toggle()
         loggingExercise = nil
@@ -1551,7 +1569,7 @@ struct PlanDayEditor: View {
         let p = cache.parentPlan
         
         // Create a simple log entry without metrics - just capture that it was done
-        session.items.append(SessionItem(
+        let item = SessionItem(
             exerciseName: name,
             planSourceId: p?.id,
             planName: p?.name,
@@ -1561,7 +1579,10 @@ struct PlanDayEditor: View {
             grade: nil,
             notes: "Quick logged",
             duration: nil
-        ))
+        )
+        SyncLocalMutation.touch(item)
+        session.items.append(item)
+        SyncLocalMutation.touch(session)
         try? context.save()
         saveTick.toggle()
     }
@@ -1920,7 +1941,7 @@ struct CatalogExercisePicker: View {
     @Binding var selected: [String]
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isDeleted }, sort: \Activity.name) private var activities: [Activity]
     @State private var searchText: String = ""
     @State private var isSearchPresented: Bool = false
     
@@ -2106,7 +2127,7 @@ struct TypesList: View {
     @Binding var isSearchPresented: Bool
     // Provider to compute flattened hits for the whole catalog (same as root)
     let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isDeleted }, sort: \Activity.name) private var activities: [Activity]
     
     private var allHits: [ExerciseHit] {
         allHitsProvider(activities)
@@ -2216,7 +2237,7 @@ struct CombosList: View {
     @Binding var searchText: String
     @Binding var isSearchPresented: Bool
     let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isDeleted }, sort: \Activity.name) private var activities: [Activity]
     
     private var allHits: [ExerciseHit] {
         allHitsProvider(activities)
@@ -2314,7 +2335,7 @@ struct ComboExercisesList: View {
     @Binding var searchText: String
     @Binding var isSearchPresented: Bool
     let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isDeleted }, sort: \Activity.name) private var activities: [Activity]
     
     private var allHits: [ExerciseHit] {
         allHitsProvider(activities)
@@ -2403,7 +2424,7 @@ struct ExercisesList: View {
     @Binding var searchText: String
     @Binding var isSearchPresented: Bool
     let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isDeleted }, sort: \Activity.name) private var activities: [Activity]
     
     private var allHits: [ExerciseHit] {
         allHitsProvider(activities)
@@ -2639,6 +2660,7 @@ private func findOrCreateSession(for date: Date, in context: ModelContext) -> Se
 
     let newSession = Session(date: date)
     context.insert(newSession)
+    SyncLocalMutation.touch(newSession)
     return newSession
 }
 

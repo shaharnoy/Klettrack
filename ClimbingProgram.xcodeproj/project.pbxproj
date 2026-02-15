@@ -275,6 +275,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = klettrack;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "klettrack ask access to your photo library to attach photos and videos to your climbs";
+				INFOPLIST_KEY_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_vXrs-zZLDbueKaDw5_ZmLA_71YwRedt";
+				INFOPLIST_KEY_SUPABASE_URL = "https://iyeftdnenkzdjwfmkulm.supabase.co";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -321,6 +323,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = klettrack;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "klettrack ask access to your photo library to attach photos and videos to your climbs";
+				INFOPLIST_KEY_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_vXrs-zZLDbueKaDw5_ZmLA_71YwRedt";
+				INFOPLIST_KEY_SUPABASE_URL = "https://iyeftdnenkzdjwfmkulm.supabase.co";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

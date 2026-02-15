@@ -19,11 +19,13 @@ extension Session {
             items.remove(at: idx)
         } else {
             // Fallback: if the item isn't in this session array (shouldn't happen), try deleting it directly
-            context.delete(item)
+            SyncLocalMutation.softDelete(item)
         }
+        SyncLocalMutation.softDelete(item)
+        SyncLocalMutation.touch(self)
 
         if deleteEmptySession && items.isEmpty {
-            context.delete(self)
+            SyncLocalMutation.softDelete(self)
         }
 
         do {
@@ -50,8 +52,14 @@ struct LogView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
-    @Query(sort: [SortDescriptor(\Session.date, order: .reverse)]) private var sessions: [Session]
-    @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
+    @Query(
+        filter: #Predicate<Session> { !$0.isDeleted },
+        sort: [SortDescriptor(\Session.date, order: .reverse)]
+    ) private var sessions: [Session]
+    @Query(
+        filter: #Predicate<ClimbEntry> { !$0.isDeleted },
+        sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]
+    ) private var climbEntries: [ClimbEntry]
 
     @State private var modalRoute: ModalRoute?
     @State private var navigationPath = NavigationPath()
@@ -279,7 +287,7 @@ private struct SessionsList: View {
     }
 
     private func delete(_ offsets: IndexSet) {
-        for i in offsets { context.delete(sessions[i]) }
+        for i in offsets { SyncLocalMutation.softDelete(sessions[i]) }
         try? context.save()
     }
 }
@@ -290,7 +298,8 @@ private struct SessionRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(session.date.formatted(date: .abbreviated, time: .omitted))
                 .font(.headline)
-            Text("\(session.items.count) exercise\(session.items.count == 1 ? "" : "s")")
+            let activeCount = SyncLocalMutation.active(session.items).count
+            Text("\(activeCount) exercise\(activeCount == 1 ? "" : "s")")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -458,8 +467,14 @@ struct AddSessionItemSheet: View {
     @Environment(\.modelContext) private var context
     @Bindable var session: Session
 
-    @Query(sort: [SortDescriptor(\Exercise.name)]) private var allExercises: [Exercise]
-    @Query(sort: [SortDescriptor(\Plan.startDate)]) private var plans: [Plan]
+    @Query(
+        filter: #Predicate<Exercise> { !$0.isDeleted },
+        sort: [SortDescriptor(\Exercise.name)]
+    ) private var allExercises: [Exercise]
+    @Query(
+        filter: #Predicate<Plan> { !$0.isDeleted },
+        sort: [SortDescriptor(\Plan.startDate)]
+    ) private var plans: [Plan]
 
     @State private var sheetRoute: SheetRoute?
     @State private var selectedCatalogName: String? = nil
@@ -539,7 +554,9 @@ struct AddSessionItemSheet: View {
                             duration: duration
                         )
                         item.sort = (session.items.map(\.sort).max() ?? -1) + 1
+                        SyncLocalMutation.touch(item)
                         session.items.append(item)
+                        SyncLocalMutation.touch(session)
                         try? context.save()
                         dismiss()
                     }
@@ -627,6 +644,7 @@ struct NewSessionSheet: View {
                         let dayKey = Calendar.current.startOfDay(for: date)
 
                         let session = Session(date: date)
+                        SyncLocalMutation.touch(session)
 
                         if !selectedExercises.isEmpty {
                             for (idx, name) in selectedExercises.enumerated() {
@@ -642,6 +660,7 @@ struct NewSessionSheet: View {
                                     duration: nil
                                 )
                                 item.sort = idx
+                                SyncLocalMutation.touch(item)
                                 session.items.append(item)
                             }
                         }
@@ -693,7 +712,7 @@ struct SessionDetailView: View {
     var body: some View {
         List {
             Section("Exercises") {
-                ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
+                ForEach(SyncLocalMutation.active(session.items).sorted(by: { $0.sort < $1.sort })) { item in
                     Button {
                         editingItem = item
                     } label: {
@@ -788,7 +807,7 @@ struct SessionDetailView: View {
         guard isDataReady else { return }
 
         // Reorder a working copy
-        var working = session.items.sorted(by: { $0.sort < $1.sort })
+        var working = SyncLocalMutation.active(session.items).sorted(by: { $0.sort < $1.sort })
         working.move(fromOffsets: source, toOffset: destination)
 
         // Reassign contiguous sort indices
@@ -814,7 +833,10 @@ struct EditSessionItemView: View {
     @Environment(\.isDataReady) private var isDataReady
     @Bindable var item: SessionItem
 
-    @Query(sort: [SortDescriptor(\Plan.startDate)]) private var plans: [Plan]
+    @Query(
+        filter: #Predicate<Plan> { !$0.isDeleted },
+        sort: [SortDescriptor(\Plan.startDate)]
+    ) private var plans: [Plan]
     @State private var sheetRoute: SheetRoute?
     @State private var selectedCatalogName: String? = nil
     @State private var selectedPlan: Plan? = nil
@@ -994,7 +1016,7 @@ private struct CombinedLogList: View {
             if grouped[dateKey] == nil {
                 grouped[dateKey] = (exercises: 0, climbs: 0, session: nil, climbEntries: [])
             }
-            grouped[dateKey]?.exercises = Array(session.items).count
+            grouped[dateKey]?.exercises = SyncLocalMutation.active(Array(session.items)).count
             grouped[dateKey]?.session = session
         }
         
@@ -1052,15 +1074,15 @@ private struct CombinedLogList: View {
 
                 //If there's a Session, remove its items first
                 if let session = dayData.session {
-                    for item in Array(session.items) {
-                        context.delete(item)
+                    for item in SyncLocalMutation.active(Array(session.items)) {
+                        SyncLocalMutation.softDelete(item)
                     }
-                    context.delete(session)
+                    SyncLocalMutation.softDelete(session)
                 }
 
                 // 2) Delete all climbs for that day
                 for climb in dayData.climbEntries {
-                    context.delete(climb)
+                    SyncLocalMutation.softDelete(climb)
                 }
             }
             try? context.save()
@@ -1162,7 +1184,7 @@ private struct CombinedDayDetailView: View {
             // Exercises section
             if let session = session, !session.items.isEmpty {
                 Section("Exercises") {
-                    ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
+                    ForEach(SyncLocalMutation.active(session.items).sorted(by: { $0.sort < $1.sort })) { item in
                         Button {
                             editingItem = item
                         } label: {
@@ -1382,7 +1404,7 @@ private struct CombinedDayDetailView: View {
     private func moveItems(in session: Session, from source: IndexSet, to destination: Int) {
         guard isDataReady else { return }
 
-        var working = session.items.sorted(by: { $0.sort < $1.sort })
+        var working = SyncLocalMutation.active(session.items).sorted(by: { $0.sort < $1.sort })
         working.move(fromOffsets: source, toOffset: destination)
 
         for (idx, item) in working.enumerated() {
@@ -1398,7 +1420,7 @@ private struct CombinedDayDetailView: View {
         context.undoManager = nil
         defer { context.undoManager = previousUndoManager }
 
-        context.delete(climb)
+        SyncLocalMutation.softDelete(climb)
         try? context.save()
     }
 }

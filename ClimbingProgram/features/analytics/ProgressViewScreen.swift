@@ -25,9 +25,18 @@ fileprivate enum LayoutGrid {
 // MARK: - Entry (keeps your existing type name)
 public struct ProgressViewScreen: View {
     // Live data via SwiftData
-    @Query(sort: \Session.date) private var allSessions: [Session]
-    @Query(sort: \ClimbEntry.dateLogged) private var allClimbEntries: [ClimbEntry]
-    @Query(sort: \Plan.startDate) private var allPlans: [Plan]
+    @Query(
+        filter: #Predicate<Session> { !$0.isDeleted },
+        sort: \Session.date
+    ) private var allSessions: [Session]
+    @Query(
+        filter: #Predicate<ClimbEntry> { !$0.isDeleted },
+        sort: \ClimbEntry.dateLogged
+    ) private var allClimbEntries: [ClimbEntry]
+    @Query(
+        filter: #Predicate<Plan> { !$0.isDeleted },
+        sort: \Plan.startDate
+    ) private var allPlans: [Plan]
     
     @State private var tab: Tab = .climb
     @State private var climbVM  = ClimbStatsVM(input: .init(sessions: [], climbs: [], plans: []))

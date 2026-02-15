@@ -18,7 +18,10 @@ struct TimerTemplatesListView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isDataReady) private var isDataReady
 
-    @Query(sort: [SortDescriptor(\TimerTemplate.name, order: .forward)]) private var templates: [TimerTemplate]
+    @Query(
+        filter: #Predicate<TimerTemplate> { !$0.isDeleted },
+        sort: [SortDescriptor(\TimerTemplate.name, order: .forward)]
+    ) private var templates: [TimerTemplate]
     
     @State private var sheetRoute: SheetRoute?
     @State private var editingTemplate: TimerTemplate? = nil
@@ -80,7 +83,7 @@ struct TimerTemplatesListView: View {
     
     
     private func delete(_ template: TimerTemplate) {
-        context.delete(template)
+        SyncLocalMutation.softDelete(template)
         try? context.save()
     }
     // Touching relationships to ensure SwiftData realizes them before presenting the editor

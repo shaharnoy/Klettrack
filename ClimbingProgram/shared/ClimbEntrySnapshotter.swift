@@ -67,6 +67,7 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             tb2ClimbUUID: s.tb2ClimbUUID
         )
         context.insert(restored)
+        SyncLocalMutation.touch(restored)
 
         // 2) Restore associated media and re-link to this climb
         for m in s.media {
@@ -80,6 +81,7 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
                 climb: restored
             )
             context.insert(media)
+            SyncLocalMutation.touch(media)
         }
     }
 

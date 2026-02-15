@@ -20,6 +20,10 @@ final class PlanKindModel {
     var isRepeating: Bool
     // Sort order for pickers
     var order: Int
+    // Sync metadata
+    var syncVersion: Int = 0
+    var updatedAtClient: Date = Date.now
+    var isDeleted: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -48,6 +52,10 @@ final class DayTypeModel {
     var colorKey: String  // Persisted key of a standard iOS Color (e.g., "green", "blue", "orange", etc.)
     var isdefault: Bool = false // for seed data
     var isHidden: Bool = false // Soft-delete / visibility flag
+    // Sync metadata
+    var syncVersion: Int = 0
+    var updatedAtClient: Date = Date.now
+    var isDeleted: Bool = false
 
     // Allowed built-in color keys
     static let allowedColorKeys: Set<String> = [
@@ -118,6 +126,10 @@ final class Plan {
     var recurringChosenExercisesByWeekday: [Int: [String]] = [:]
     var recurringExerciseOrderByWeekday: [Int: [String: Int]] = [:]
     var recurringDayTypeIdByWeekday: [Int: UUID] = [:]
+    // Sync metadata
+    var syncVersion: Int = 0
+    var updatedAtClient: Date = Date.now
+    var isDeleted: Bool = false
 
     init(id: UUID = UUID(), name: String, kind: PlanKindModel?, startDate: Date) {
         self.id = id
@@ -134,9 +146,17 @@ final class PlanDay {
     var date: Date
     // Relationship to DayTypeModel (replaces enum/raw storage)
     @Relationship(deleteRule: .nullify) var type: DayTypeModel?
+    // Stable ID-based fields for sync.
+    var chosenExerciseIDs: [UUID] = []
+    var exerciseOrderByID: [String:Int] = [:] // key = exercise UUID string
+    // Legacy name-based fields kept for compatibility during migration window.
     var chosenExercises: [String] = []
     var exerciseOrder: [String:Int] = [:]
     var dailyNotes: String? = nil
+    // Sync metadata
+    var syncVersion: Int = 0
+    var updatedAtClient: Date = Date.now
+    var isDeleted: Bool = false
 
     init(id: UUID = UUID(), date: Date, type: DayTypeModel? = nil) {
         self.id = id
@@ -144,3 +164,8 @@ final class PlanDay {
         self.type = type
     }
 }
+
+extension PlanKindModel: SyncLocallyMutable {}
+extension DayTypeModel: SyncLocallyMutable {}
+extension Plan: SyncLocallyMutable {}
+extension PlanDay: SyncLocallyMutable {}
