@@ -1,3 +1,9 @@
+//
+//  TestSupport.swift
+//  Klettrack tests
+//  Created by Shahar Noy on 17.02.26.
+//
+
 import XCTest
 import SwiftData
 @testable import klettrack

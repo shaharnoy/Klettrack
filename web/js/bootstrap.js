@@ -62,6 +62,8 @@ const defaultSelections = () => ({
   planCloneOpen: false,
   planCloneName: "",
   planCloneStartDate: "",
+  planImportOpen: false,
+  planImportBusy: false,
   planSetupOpen: false,
   planSetupMode: "create",
   planAddDayOpen: false,
@@ -431,6 +433,21 @@ async function render() {
       },
       onOpenPlan: (planId) => {
         navigate(`/plans/${planId}`);
+      },
+      onImportPlanCsvConfirm: async ({ mutations }) => {
+        try {
+          await runMutationsBatch({ mutations });
+          await render();
+          return { ok: true };
+        } catch (error) {
+          const raw = error instanceof Error ? error.message : "unknown_error";
+          const reason = raw.startsWith("Push failed: ") ? raw.slice("Push failed: ".length) : raw;
+          return {
+            ok: false,
+            reason,
+            message: friendlySyncErrorMessage(error)
+          };
+        }
       }
     });
     setStatus("Training plans ready", "ready");

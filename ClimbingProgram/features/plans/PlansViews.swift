@@ -123,6 +123,7 @@ struct PlansListView: View {
 
     // Import (async with progress)
     @State private var showImporter = false
+    @State private var showPlanImporter = false
     @State private var importing = false
     @State private var importProgress: Double = 0
 
@@ -140,6 +141,21 @@ struct PlansListView: View {
         )) {
             plansList
                 .listStyle(.insetGrouped)
+                .overlay(alignment: .bottom) {
+                    if importing {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Importing CSV…")
+                                .font(.footnote)
+                                .fontWeight(.medium)
+                            ProgressView(value: importProgress)
+                                .progressViewStyle(.linear)
+                        }
+                        .padding(12)
+                        .background(.ultraThinMaterial, in: .rect(cornerRadius: 12))
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 10)
+                    }
+                }
                 .navigationTitle("TRAIN")
                 .navigationBarTitleDisplayMode(.large)
                 .plansDestinations(plans: plans, timerAppState: timerAppState)
@@ -159,6 +175,7 @@ struct PlansListView: View {
                     showExporter: $showExporter,
                     exportDoc: $exportDoc,
                     showImporter: $showImporter,
+                    showPlanImporter: $showPlanImporter,
                     sharePayload: $sharePayload,
                     resultMessage: $resultMessage
                 )
@@ -187,6 +204,13 @@ struct PlansListView: View {
                     allowsMultipleSelection: false
                 ) { result in
                     handleImportResult(result)
+                }
+                .fileImporter(
+                    isPresented: $showPlanImporter,
+                    allowedContentTypes: [.commaSeparatedText],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handlePlanImportResult(result)
                 }
                 .sheet(item: $sharePayload) { payload in
                     ShareSheet(items: [payload.url]) {
@@ -259,6 +283,45 @@ struct PlansListView: View {
             resultMessage = "Import failed: \(error.localizedDescription)"
         }
     }
+
+    private func handlePlanImportResult(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            importing = true
+            importProgress = 0
+
+            Task {
+                do {
+                    let summary = try await PlanCSV.importPlanCSVAsync(
+                        from: url,
+                        into: context,
+                        progress: { value in
+                            Task { @MainActor in
+                                importProgress = value
+                            }
+                        }
+                    )
+                    await MainActor.run {
+                        importing = false
+                        resultMessage = """
+                        Imported plan: \(summary.createdPlanName)
+                        Days: \(summary.importedDays)
+                        Exercises linked: \(summary.linkedExercises)
+                        Placeholders created: \(summary.totalPlaceholders)
+                        Skipped rows: \(summary.skippedRows)
+                        """
+                    }
+                } catch {
+                    await MainActor.run {
+                        importing = false
+                        resultMessage = "Plan import failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+        } catch {
+            resultMessage = "Plan import failed: \(error.localizedDescription)"
+        }
+    }
 }
 
 private struct PlansDestinationsModifier: ViewModifier {
@@ -303,6 +366,7 @@ private struct PlansToolbarModifier: ViewModifier {
     @Binding var showExporter: Bool
     @Binding var exportDoc: LogCSVDocument?
     @Binding var showImporter: Bool
+    @Binding var showPlanImporter: Bool
     @Binding var sharePayload: SharePayload?
     @Binding var resultMessage: String?
 
@@ -344,6 +408,13 @@ private struct PlansToolbarModifier: ViewModifier {
                     } label: {
                         Label("Import logs from CSV", systemImage: "square.and.arrow.down")
                     }
+
+                    Button {
+                        guard isDataReady else { return }
+                        showPlanImporter = true
+                    } label: {
+                        Label("Import plan from CSV", systemImage: "calendar.badge.plus")
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -371,6 +442,7 @@ private extension View {
         showExporter: Binding<Bool>,
         exportDoc: Binding<LogCSVDocument?>,
         showImporter: Binding<Bool>,
+        showPlanImporter: Binding<Bool>,
         sharePayload: Binding<SharePayload?>,
         resultMessage: Binding<String?>
     ) -> some View {
@@ -381,6 +453,7 @@ private extension View {
             showExporter: showExporter,
             exportDoc: exportDoc,
             showImporter: showImporter,
+            showPlanImporter: showPlanImporter,
             sharePayload: sharePayload,
             resultMessage: resultMessage
         ))

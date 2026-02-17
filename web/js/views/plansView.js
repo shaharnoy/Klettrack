@@ -1,6 +1,7 @@
 import { showToast } from "../components/toasts.js";
 import { renderWorkspaceShell } from "../components/workspaceLayout.js";
 import { buildCSV, downloadCSV } from "../utils/csvExport.js";
+import { buildPlanImportMutations, parsePlanCsv } from "../utils/planCsvImport.js";
 
 const MAX_TEXT_LENGTH = 120;
 const DELETE_ICON = `<span class="icon-trash" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></span>`;
@@ -70,8 +71,19 @@ let planDayAutosaveInFlight = false;
 let planDayAutosaveQueued = false;
 const planDayExerciseDrafts = new Map();
 const planDayTypeDrafts = new Map();
+let pendingPlanImport = null;
 
-export function renderPlansView({ store, selection, onSelect, onSave, onSaveMany, onSaveWithOutcome, onDelete, onOpenPlan }) {
+export function renderPlansView({
+  store,
+  selection,
+  onSelect,
+  onSave,
+  onSaveMany,
+  onSaveWithOutcome,
+  onDelete,
+  onOpenPlan,
+  onImportPlanCsvConfirm
+}) {
   const root = document.getElementById("app-view");
   if (!root) {
     return;
@@ -112,7 +124,7 @@ export function renderPlansView({ store, selection, onSelect, onSave, onSaveMany
     title: "Training Plans",
     description: "Plan by calendar, then refine each training day with fast catalog selection.",
     bodyHTML: `
-      <div class="plans-workspace ${selection.planCloneBusy ? "is-busy" : ""}">
+      <div class="plans-workspace ${selection.planCloneBusy || selection.planImportBusy ? "is-busy" : ""}">
       <section class="pane plans-topbar">
         <div class="plans-topbar-row">
           <div class="plans-topbar-main">
@@ -133,10 +145,13 @@ export function renderPlansView({ store, selection, onSelect, onSave, onSaveMany
               <button id="plan-clone-open" class="btn btn-compact" type="button" ${selectedPlan ? "" : "disabled"}>${CLONE_ICON}<span>Clone Plan</span></button>
               <button id="plan-delete-top" class="btn btn-compact destructive" type="button" ${selectedPlan ? "" : "disabled"}>${DELETE_ICON}<span>Delete Plan</span></button>
               <button id="plan-export-csv" class="btn btn-compact" type="button" ${selectedPlan ? "" : "disabled"}>${EXPORT_ICON}<span>Export CSV</span></button>
+              <button id="plan-import-csv" class="btn btn-compact" type="button">Import CSV</button>
+              <input id="plan-import-file" type="file" accept=".csv,text/csv" hidden />
             </div>
           </div>
           ${renderPlanSetupPanel({ selectedPlan, selection, planKinds })}
           ${renderClonePlanPanel(selectedPlan, selection)}
+          ${renderPlanImportPanel(selection, store)}
         </div>
       </section>
 
@@ -168,7 +183,13 @@ export function renderPlansView({ store, selection, onSelect, onSave, onSaveMany
           planDays
         })}
       </section>
-      ${selection.planCloneBusy ? `<div class="plans-busy-overlay" role="status" aria-live="polite">Cloning plan...</div>` : ""}
+      ${
+        selection.planCloneBusy
+          ? `<div class="plans-busy-overlay" role="status" aria-live="polite">Cloning plan...</div>`
+          : selection.planImportBusy
+            ? `<div class="plans-busy-overlay" role="status" aria-live="polite">Importing plan...</div>`
+            : ""
+      }
       </div>
     `
   });
@@ -185,6 +206,7 @@ export function renderPlansView({ store, selection, onSelect, onSave, onSaveMany
     onSaveWithOutcome,
     onDelete,
     onOpenPlan,
+    onImportPlanCsvConfirm,
     planDays,
     selectedPlan,
     planKinds,
@@ -206,6 +228,7 @@ function bindEvents({
   onSaveWithOutcome,
   onDelete,
   onOpenPlan,
+  onImportPlanCsvConfirm,
   planDays,
   selectedPlan,
   planKinds,
@@ -488,6 +511,111 @@ function bindEvents({
     }
     exportPlanCSV({ selectedPlan, planDays, planKinds, dayTypes, exercises, trainingTypes, activities });
     showToast("Training plan CSV exported", "success");
+  });
+
+  document.getElementById("plan-import-csv")?.addEventListener("click", () => {
+    const fileInput = document.getElementById("plan-import-file");
+    if (!(fileInput instanceof HTMLInputElement)) {
+      return;
+    }
+    fileInput.value = "";
+    fileInput.click();
+  });
+
+  document.getElementById("plan-import-file")?.addEventListener("change", async (event) => {
+    const fileInput = event.currentTarget;
+    if (!(fileInput instanceof HTMLInputElement) || !fileInput.files?.length) {
+      return;
+    }
+    const file = fileInput.files[0];
+    try {
+      const text = await file.text();
+      const parsed = parsePlanCsv(text);
+      if (parsed.errors.length > 0) {
+        pendingPlanImport = null;
+        showToast(parsed.errors[0], "error");
+        return;
+      }
+      if (!parsed.planGroups.length) {
+        pendingPlanImport = null;
+        showToast("No importable plan rows found in CSV", "error");
+        return;
+      }
+      pendingPlanImport = {
+        filename: file.name,
+        parsed,
+        selectedGroupKey: parsed.planGroups[0].key
+      };
+      onSelect({ planImportOpen: true });
+      if (parsed.warnings.length > 0) {
+        showToast(`CSV parsed with ${parsed.warnings.length} warning(s)`, "info");
+      }
+    } catch (error) {
+      pendingPlanImport = null;
+      const message = error instanceof Error ? error.message : "Failed to read CSV file";
+      showToast(message, "error");
+    }
+  });
+
+  document.getElementById("plan-import-cancel")?.addEventListener("click", () => {
+    pendingPlanImport = null;
+    onSelect({ planImportOpen: false, planImportBusy: false });
+  });
+
+  document.getElementById("plan-import-group")?.addEventListener("change", (event) => {
+    if (!pendingPlanImport) {
+      return;
+    }
+    pendingPlanImport.selectedGroupKey = String(event.target?.value || "");
+    onSelect({ planImportOpen: true });
+  });
+
+  document.getElementById("plan-import-confirm")?.addEventListener("click", async () => {
+    if (!pendingPlanImport) {
+      return;
+    }
+    const selectedGroup = pendingPlanImport.parsed.planGroups.find((group) => group.key === pendingPlanImport.selectedGroupKey);
+    if (!selectedGroup) {
+      showToast("No plan group selected for import", "error");
+      return;
+    }
+
+    await flushPlanDayAutosave();
+    onSelect({ planImportBusy: true });
+    try {
+      const payload = buildPlanImportMutations({ group: selectedGroup, store });
+      if (typeof onImportPlanCsvConfirm === "function") {
+        const outcome = await onImportPlanCsvConfirm(payload);
+        if (!outcome?.ok) {
+          const reason = String(outcome?.message || outcome?.reason || "Import failed");
+          showToast(reason, "error");
+          return;
+        }
+      } else if (typeof onSaveMany === "function") {
+        await onSaveMany({ mutations: payload.mutations });
+      } else {
+        for (const mutation of payload.mutations) {
+          await onSave(mutation);
+        }
+      }
+
+      pendingPlanImport = null;
+      onSelect({ planImportOpen: false, planImportBusy: false });
+      onOpenPlan(payload.planId);
+      showToast(
+        `Imported ${payload.summary.dayCount} day(s), ${payload.summary.exerciseCount} exercise row(s)${
+          totalPlaceholders(payload.summary.placeholders) > 0
+            ? `, ${totalPlaceholders(payload.summary.placeholders)} placeholder(s)`
+            : ""
+        }`,
+        "success"
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Import failed";
+      showToast(message, "error");
+    } finally {
+      onSelect({ planImportBusy: false });
+    }
   });
 
   document.getElementById("plan-clone-open")?.addEventListener("click", () => {
@@ -989,6 +1117,92 @@ function renderClonePlanPanel(selectedPlan, selection) {
       </form>
     </section>
   `;
+}
+
+function renderPlanImportPanel(selection, store) {
+  if (!selection.planImportOpen || !pendingPlanImport) {
+    return "";
+  }
+
+  const parsed = pendingPlanImport.parsed;
+  const groups = parsed.planGroups;
+  const selectedGroup = groups.find((group) => group.key === pendingPlanImport.selectedGroupKey) || groups[0];
+  const preview = buildImportPreview(selectedGroup, store);
+  if (!selectedGroup) {
+    return "";
+  }
+
+  return `
+    <section class="inline-panel plans-import-panel" aria-label="Import plan panel">
+      <h4>Import Plan CSV</h4>
+      <p class="muted">File: ${escapeHTML(pendingPlanImport.filename || "plan.csv")}</p>
+      ${
+        groups.length > 1
+          ? `<label>Plan group
+               <select id="plan-import-group" class="input">
+                 ${groups
+                   .map((group) => {
+                     const start = group.planStartDate || group.earliestDayDate || "unknown";
+                     return `<option value="${group.key}" ${group.key === selectedGroup.key ? "selected" : ""}>${escapeHTML(
+                       `${group.planName} (${start})`
+                     )}</option>`;
+                   })
+                   .join("")}
+               </select>
+             </label>`
+          : ""
+      }
+      <div class="plans-import-preview">
+        <p><strong>Plan:</strong> ${escapeHTML(preview.planName)}</p>
+        <p><strong>Start:</strong> ${escapeHTML(preview.planStartDate)}</p>
+        <p><strong>Days:</strong> ${preview.dayCount}</p>
+        <p><strong>Exercise rows:</strong> ${preview.exerciseCount}</p>
+        <p><strong>Placeholders:</strong> ${preview.placeholderText}</p>
+        ${
+          preview.warningCount > 0
+            ? `<p class="plans-import-warning">${preview.warningCount} warning(s) will be carried with this import.</p>`
+            : ""
+        }
+      </div>
+      <div class="actions">
+        <button id="plan-import-confirm" class="btn primary" type="button" ${selection.planImportBusy ? "disabled" : ""}>Import</button>
+        <button id="plan-import-cancel" class="btn" type="button" ${selection.planImportBusy ? "disabled" : ""}>Cancel</button>
+      </div>
+    </section>
+  `;
+}
+
+function buildImportPreview(group, store) {
+  const exerciseCount = group.days.reduce((total, day) => {
+    return total + day.exerciseRows.filter((row) => row.exerciseName || row.exerciseIdRaw || row.trainingTypeName || row.activityName).length;
+  }, 0);
+  const warnings = Array.isArray(group.warnings) ? group.warnings.length : 0;
+  let placeholderText = "0";
+  try {
+    const dryRun = buildPlanImportMutations({ group, store });
+    const placeholders = dryRun.summary.placeholders || {};
+    const placeholderParts = Object.entries(placeholders)
+      .filter(([, count]) => Number(count || 0) > 0)
+      .map(([name, count]) => `${name}: ${count}`);
+    placeholderText = placeholderParts.length ? placeholderParts.join(", ") : "0";
+  } catch {
+    placeholderText = "Unable to calculate";
+  }
+  return {
+    planName: `${group.planName || "Imported Plan"} (Imported)`,
+    planStartDate: group.planStartDate || group.earliestDayDate || "Fallback from day rows",
+    dayCount: group.days.length,
+    exerciseCount,
+    placeholderText,
+    warningCount: warnings
+  };
+}
+
+function totalPlaceholders(placeholders) {
+  if (!placeholders || typeof placeholders !== "object") {
+    return 0;
+  }
+  return Object.values(placeholders).reduce((total, value) => total + Number(value || 0), 0);
 }
 
 function renderPlanSetupPanel({ selectedPlan, selection, planKinds }) {

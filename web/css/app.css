@@ -800,6 +800,19 @@
   font-weight: var(--font-semibold);
 }
 
+.plans-import-panel .muted {
+  margin: 0 0 8px;
+}
+
+.plans-import-preview p {
+  margin: 0 0 4px;
+}
+
+.plans-import-warning {
+  color: var(--tone-warning-text);
+  font-size: 13px;
+}
+
 .weekday-grid {
   display: grid;
   gap: 8px;
