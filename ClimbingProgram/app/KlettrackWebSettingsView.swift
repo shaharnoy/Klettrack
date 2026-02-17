@@ -10,6 +10,7 @@ struct KlettrackWebSettingsView: View {
     @State private var supabaseIdentifier = ""
     @State private var supabasePassword = ""
     @State private var authManager = AuthManager.shared
+    @State private var showSignOutConfirmation = false
 
     var body: some View {
         List {
@@ -48,20 +49,15 @@ struct KlettrackWebSettingsView: View {
                     Text(lastSyncText(authManager.lastSyncAt))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-
-                    Button("Sync Now") {
-                        Task {
-                            await authManager.triggerSyncNow()
-                        }
-                    }
-                    .buttonStyle(.bordered)
                 }
 
                 if !authManager.isSignedIn {
                     TextField("Email or username", text: $supabaseIdentifier)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .textContentType(.username)
                     SecureField("Password", text: $supabasePassword)
+                        .textContentType(.password)
                     Button("Sign In") {
                         Task {
                             _ = await authManager.signIn(
@@ -76,13 +72,6 @@ struct KlettrackWebSettingsView: View {
                         supabaseIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             || supabasePassword.isEmpty
                     )
-                } else {
-                    Button("Sign Out") {
-                        Task {
-                            await authManager.signOut()
-                        }
-                    }
-                    .buttonStyle(.bordered)
                 }
             } header: {
                 Text("Cloud Sync")
@@ -109,23 +98,62 @@ struct KlettrackWebSettingsView: View {
             }
 
             Section {
-                Text("Use klettrack web for easier training plan setup and sync your logged data")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if let websiteURL = URL(string: "https://klettrack.com/app.html#/login") {
-                    Link("klettrack web", destination: websiteURL)
-                        .font(.footnote.weight(.semibold))
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Klettrack Web")
+                        .font(.title3.weight(.semibold))
+                    Text("Plan sessions faster on the web and keep your climbing logs synced across devices.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    if let websiteURL = URL(string: "https://klettrack.com/app.html#/login") {
+                        Link("Open Klettrack Web", destination: websiteURL)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                        .buttonStyle(.borderedProminent)
+                    }
+                    if let registerURL = URL(string: "https://klettrack.com/app.html#/register") {
+                        Link("Create New Account", destination: registerURL)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                        .buttonStyle(.bordered)
+                    }
                 }
-                if let registerURL = URL(string: "https://klettrack.com/app.html#/register") {
-                    Link("New user? Register here!", destination: registerURL)
-                        .font(.footnote.weight(.semibold))
-                }
+                .padding(.vertical, 4)
             } header: {
                 Text("klettrack web")
             }
         }
         .navigationTitle("klettrack web")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if authManager.isSignedIn {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        Task {
+                            await authManager.triggerSyncNow()
+                        }
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                    }
+                    .accessibilityLabel("Sync now")
+
+                    Button(role: .destructive) {
+                        showSignOutConfirmation = true
+                    } label: {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                    }
+                    .accessibilityLabel("Sign out")
+                }
+            }
+        }
+        .alert("Sign out?", isPresented: $showSignOutConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Sign Out", role: .destructive) {
+                Task {
+                    await authManager.signOut()
+                }
+            }
+        } message: {
+            Text("You’ll need to sign in again to sync with Klettrack Web.")
+        }
     }
 
     private func syncStatusText(_ state: SyncManager.State) -> String {

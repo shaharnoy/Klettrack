@@ -18,7 +18,7 @@ struct CatalogView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Query(
-        filter: #Predicate<Activity> { !$0.isDeleted },
+        filter: #Predicate<Activity> { !$0.isSoftDeleted },
         sort: \Activity.name
     ) private var activities: [Activity]
 

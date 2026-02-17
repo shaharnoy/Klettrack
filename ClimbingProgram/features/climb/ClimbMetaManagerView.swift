@@ -20,16 +20,16 @@ struct ClimbMetaManagerView: View {
 
     // Fetch all styles, gyms, days
     @Query(
-        filter: #Predicate<ClimbStyle> { !$0.isDeleted && $0.isHidden == false },
+        filter: #Predicate<ClimbStyle> { !$0.isSoftDeleted && $0.isHidden == false },
         sort: [SortDescriptor(\ClimbStyle.name, order: .forward)]
     ) private var styles: [ClimbStyle]
     @Query(
-        filter: #Predicate<ClimbGym> { !$0.isDeleted },
+        filter: #Predicate<ClimbGym> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\ClimbGym.name, order: .forward)]
     ) private var gyms: [ClimbGym]
     // Exclude hidden (soft-deleted) day types from UI lists
     @Query(
-        filter: #Predicate<DayTypeModel> { !$0.isDeleted && $0.isHidden == false },
+        filter: #Predicate<DayTypeModel> { !$0.isSoftDeleted && $0.isHidden == false },
         sort: [SortDescriptor(\DayTypeModel.name, order: .forward)]
     ) private var days: [DayTypeModel]
     

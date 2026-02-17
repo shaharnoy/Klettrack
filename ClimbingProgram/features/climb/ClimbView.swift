@@ -22,7 +22,7 @@ struct ClimbView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.undoManager) private var undoManager
     @Query(
-        filter: #Predicate<ClimbEntry> { !$0.isDeleted },
+        filter: #Predicate<ClimbEntry> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]
     ) private var climbEntries: [ClimbEntry]
     @State private var addClimbRoute: AddClimbRoute? = nil

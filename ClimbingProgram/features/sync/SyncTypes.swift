@@ -26,7 +26,6 @@ enum SyncEntityName: String, CaseIterable, Codable, Sendable {
     case climbEntries = "climb_entries"
     case climbStyles = "climb_styles"
     case climbGyms = "climb_gyms"
-    case climbMedia = "climb_media"
 }
 
 enum SyncMutationType: String, Codable, Sendable {
@@ -259,21 +258,21 @@ struct PendingSyncMutation: Sendable {
 
 protocol SyncLocallyMutable: AnyObject {
     var updatedAtClient: Date { get set }
-    var isDeleted: Bool { get set }
+    var isSoftDeleted: Bool { get set }
 }
 
 enum SyncLocalMutation {
-    static func touch(_ model: any SyncLocallyMutable) {
+    static func touch<T: SyncLocallyMutable>(_ model: T) {
         model.updatedAtClient = .now
     }
 
-    static func softDelete(_ model: any SyncLocallyMutable) {
-        model.isDeleted = true
+    static func softDelete<T: SyncLocallyMutable>(_ model: T) {
+        model.isSoftDeleted = true
         model.updatedAtClient = .now
     }
 
     static func active<T: SyncLocallyMutable>(_ items: [T]) -> [T] {
-        items.filter { !$0.isDeleted }
+        items.filter { !$0.isSoftDeleted }
     }
 
     static func boulderCombinationExerciseLinkID(combinationID: UUID, exerciseID: UUID) -> UUID {

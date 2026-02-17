@@ -434,6 +434,9 @@ async function render() {
       onOpenPlan: (planId) => {
         navigate(`/plans/${planId}`);
       },
+      onOpenPlans: () => {
+        navigate("/plans");
+      },
       onImportPlanCsvConfirm: async ({ mutations }) => {
         try {
           await runMutationsBatch({ mutations });

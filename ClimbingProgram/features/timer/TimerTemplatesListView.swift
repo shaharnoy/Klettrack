@@ -19,7 +19,7 @@ struct TimerTemplatesListView: View {
     @Environment(\.isDataReady) private var isDataReady
 
     @Query(
-        filter: #Predicate<TimerTemplate> { !$0.isDeleted },
+        filter: #Predicate<TimerTemplate> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\TimerTemplate.name, order: .forward)]
     ) private var templates: [TimerTemplate]
     

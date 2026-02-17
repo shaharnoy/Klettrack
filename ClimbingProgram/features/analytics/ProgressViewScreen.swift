@@ -26,15 +26,15 @@ fileprivate enum LayoutGrid {
 public struct ProgressViewScreen: View {
     // Live data via SwiftData
     @Query(
-        filter: #Predicate<Session> { !$0.isDeleted },
+        filter: #Predicate<Session> { !$0.isSoftDeleted },
         sort: \Session.date
     ) private var allSessions: [Session]
     @Query(
-        filter: #Predicate<ClimbEntry> { !$0.isDeleted },
+        filter: #Predicate<ClimbEntry> { !$0.isSoftDeleted },
         sort: \ClimbEntry.dateLogged
     ) private var allClimbEntries: [ClimbEntry]
     @Query(
-        filter: #Predicate<Plan> { !$0.isDeleted },
+        filter: #Predicate<Plan> { !$0.isSoftDeleted },
         sort: \Plan.startDate
     ) private var allPlans: [Plan]
     

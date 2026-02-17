@@ -35,6 +35,7 @@ enum SyncStoreError: Error, Sendable, LocalizedError {
 @ModelActor
 actor SyncStoreActor {
     private let tombstoneRetentionDays = 30
+    private var pendingPlanLinksByDayID: [UUID: UUID] = [:]
 
     func loadOrCreateSyncState() throws -> SyncStateSnapshot {
         let state = try ensureSyncStateModel()
@@ -86,6 +87,7 @@ actor SyncStoreActor {
         guard state.isSyncEnabled else { return false }
         let isFullBootstrap = !state.didBootstrapLocalSnapshot
         let watermark = state.lastSuccessfulSyncAt
+        let snapshotContext = ModelContext(modelContainer)
 
         let existingMutations = try modelContext.fetch(FetchDescriptor<SyncMutation>())
         var pendingKeys = Set(existingMutations.map {
@@ -100,7 +102,7 @@ actor SyncStoreActor {
             if syncVersion == 0 {
                 return true
             }
-            guard let watermark else { return false }
+            guard let watermark else { return true }
             return updatedAtClient > watermark
         }
 
@@ -117,7 +119,9 @@ actor SyncStoreActor {
             }
 
             let pendingKey = "\(entity.rawValue)|\(entityId.uuidString.lowercased())"
-            guard !pendingKeys.contains(pendingKey) else { return }
+            if pendingKeys.contains(pendingKey), mutationType != .delete {
+                return
+            }
 
             _ = try enqueueMutation(
                 entity: entity,
@@ -132,24 +136,23 @@ actor SyncStoreActor {
             didEnqueue = true
         }
 
-        let plans = try modelContext.fetch(FetchDescriptor<Plan>())
-        let planKinds = try modelContext.fetch(FetchDescriptor<PlanKindModel>())
-        let dayTypes = try modelContext.fetch(FetchDescriptor<DayTypeModel>())
-        let planDays = try modelContext.fetch(FetchDescriptor<PlanDay>())
-        let activities = try modelContext.fetch(FetchDescriptor<Activity>())
-        let trainingTypes = try modelContext.fetch(FetchDescriptor<TrainingType>())
-        let exercises = try modelContext.fetch(FetchDescriptor<Exercise>())
-        let combinations = try modelContext.fetch(FetchDescriptor<BoulderCombination>())
-        let sessions = try modelContext.fetch(FetchDescriptor<Session>())
-        let sessionItems = try modelContext.fetch(FetchDescriptor<SessionItem>())
-        let timerTemplates = try modelContext.fetch(FetchDescriptor<TimerTemplate>())
-        let timerIntervals = try modelContext.fetch(FetchDescriptor<TimerInterval>())
-        let timerSessions = try modelContext.fetch(FetchDescriptor<TimerSession>())
-        let timerLaps = try modelContext.fetch(FetchDescriptor<TimerLap>())
-        let climbEntries = try modelContext.fetch(FetchDescriptor<ClimbEntry>())
-        let climbStyles = try modelContext.fetch(FetchDescriptor<ClimbStyle>())
-        let climbGyms = try modelContext.fetch(FetchDescriptor<ClimbGym>())
-        let climbMedia = try modelContext.fetch(FetchDescriptor<ClimbMedia>())
+        let plans = try snapshotContext.fetch(FetchDescriptor<Plan>())
+        let planKinds = try snapshotContext.fetch(FetchDescriptor<PlanKindModel>())
+        let dayTypes = try snapshotContext.fetch(FetchDescriptor<DayTypeModel>())
+        let planDays = try snapshotContext.fetch(FetchDescriptor<PlanDay>())
+        let activities = try snapshotContext.fetch(FetchDescriptor<Activity>())
+        let trainingTypes = try snapshotContext.fetch(FetchDescriptor<TrainingType>())
+        let exercises = try snapshotContext.fetch(FetchDescriptor<Exercise>())
+        let combinations = try snapshotContext.fetch(FetchDescriptor<BoulderCombination>())
+        let sessions = try snapshotContext.fetch(FetchDescriptor<Session>())
+        let sessionItems = try snapshotContext.fetch(FetchDescriptor<SessionItem>())
+        let timerTemplates = try snapshotContext.fetch(FetchDescriptor<TimerTemplate>())
+        let timerIntervals = try snapshotContext.fetch(FetchDescriptor<TimerInterval>())
+        let timerSessions = try snapshotContext.fetch(FetchDescriptor<TimerSession>())
+        let timerLaps = try snapshotContext.fetch(FetchDescriptor<TimerLap>())
+        let climbEntries = try snapshotContext.fetch(FetchDescriptor<ClimbEntry>())
+        let climbStyles = try snapshotContext.fetch(FetchDescriptor<ClimbStyle>())
+        let climbGyms = try snapshotContext.fetch(FetchDescriptor<ClimbGym>())
 
         let planByDayID = Dictionary(
             uniqueKeysWithValues: plans.flatMap { plan in
@@ -186,17 +189,12 @@ actor SyncStoreActor {
                 session.laps.map { lap in (lap.id, session.id) }
             }
         )
-        let climbEntryByMediaID = Dictionary(
-            uniqueKeysWithValues: climbEntries.flatMap { entry in
-                entry.media.map { media in (media.id, entry.id) }
-            }
-        )
 
         for model in planKinds {
             try enqueueIfNeeded(
                 entity: .planKinds,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "key": .string(model.key),
@@ -213,7 +211,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .dayTypes,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "key": .string(model.key),
@@ -231,7 +229,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .plans,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "name": .string(model.name),
@@ -249,7 +247,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .planDays,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "plan_id": planByDayID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
@@ -269,7 +267,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .activities,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: ["name": .string(model.name)],
                 updatedAtClient: model.updatedAtClient
@@ -280,7 +278,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .trainingTypes,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "activity_id": activityByTrainingTypeID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
@@ -296,7 +294,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .exercises,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "training_type_id": trainingTypeByExerciseID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
@@ -318,7 +316,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .boulderCombinations,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "training_type_id": trainingTypeByCombinationID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
@@ -333,7 +331,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .sessions,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "session_date": .string(model.date.iso8601WithFractionalSeconds)
@@ -346,7 +344,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .sessionItems,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "session_id": sessionByItemID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
@@ -370,7 +368,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .timerTemplates,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "name": .string(model.name),
@@ -391,7 +389,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .timerIntervals,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "timer_template_id": templateByIntervalID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
@@ -409,7 +407,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .timerSessions,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "start_date": .string(model.startDate.iso8601WithFractionalSeconds),
@@ -430,7 +428,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .timerLaps,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "timer_session_id": timerSessionByLapID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
@@ -447,7 +445,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .climbEntries,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "climb_type": .string(model.climbType.rawValue),
@@ -473,7 +471,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .climbStyles,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "name": .string(model.name),
@@ -488,7 +486,7 @@ actor SyncStoreActor {
             try enqueueIfNeeded(
                 entity: .climbGyms,
                 entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
+                mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
                     "name": .string(model.name),
@@ -498,23 +496,6 @@ actor SyncStoreActor {
             )
         }
 
-        for model in climbMedia {
-            try enqueueIfNeeded(
-                entity: .climbMedia,
-                entityId: model.id,
-                mutationType: model.isDeleted ? .delete : .upsert,
-                baseVersion: model.syncVersion,
-                payload: [
-                    "climb_entry_id": climbEntryByMediaID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
-                    "type": .string(model.typeRaw),
-                    "created_at": .string(model.createdAt.iso8601WithFractionalSeconds),
-                    "storage_bucket": model.storageBucket.map(JSONValue.string) ?? .null,
-                    "storage_path": model.storagePath.map(JSONValue.string) ?? .null,
-                    "thumbnail_storage_path": model.thumbnailStoragePath.map(JSONValue.string) ?? .null
-                ],
-                updatedAtClient: model.updatedAtClient
-            )
-        }
 
         for combination in combinations {
             for (index, exercise) in combination.exercises.enumerated() {
@@ -572,6 +553,18 @@ actor SyncStoreActor {
         updatedAtClient: Date? = .now,
         shouldSave: Bool
     ) throws -> UUID {
+        // Keep only the newest pending mutation per entity+entity id.
+        // This prevents stale upserts from reviving rows after a local delete.
+        let existingDescriptor = FetchDescriptor<SyncMutation>(
+            predicate: #Predicate {
+                $0.entityName == entity.rawValue && $0.entityId == entityId
+            }
+        )
+        let existingRows = try modelContext.fetch(existingDescriptor)
+        for row in existingRows {
+            modelContext.delete(row)
+        }
+
         let mutation = SyncMutation()
         mutation.opId = UUID()
         mutation.entityName = entity.rawValue
@@ -591,12 +584,20 @@ actor SyncStoreActor {
     }
 
     func fetchPendingMutations(limit: Int) throws -> [PendingSyncMutation] {
-        var descriptor = FetchDescriptor<SyncMutation>(
-            sortBy: [SortDescriptor(\SyncMutation.createdAt, order: .forward)]
-        )
-        descriptor.fetchLimit = max(1, limit)
-        let rows = try modelContext.fetch(descriptor)
-        return try rows.map { row in
+        let rows = try modelContext.fetch(FetchDescriptor<SyncMutation>())
+        let sortedRows = rows.sorted { lhs, rhs in
+            let lhsIsDelete = lhs.mutationType == SyncMutationType.delete.rawValue
+            let rhsIsDelete = rhs.mutationType == SyncMutationType.delete.rawValue
+            if lhsIsDelete != rhsIsDelete {
+                return lhsIsDelete && !rhsIsDelete
+            }
+            if lhs.attempts != rhs.attempts {
+                return lhs.attempts < rhs.attempts
+            }
+            return lhs.createdAt < rhs.createdAt
+        }
+
+        return try sortedRows.prefix(max(1, limit)).map { row in
             guard let entity = SyncEntityName(rawValue: row.entityName) else {
                 throw SyncStoreError.invalidEntity(row.entityName)
             }
@@ -642,6 +643,7 @@ actor SyncStoreActor {
             guard let opId = failed.opId?.lowercased(), let row = rowsByID[opId] else { continue }
             row.attempts += 1
             row.lastError = failed.reason
+            row.createdAt = .now
             failureCount += 1
         }
 
@@ -649,6 +651,7 @@ actor SyncStoreActor {
             guard let row = rowsByID[conflict.opId.lowercased()] else { continue }
             row.attempts += 1
             row.lastError = conflict.reason
+            row.createdAt = .now
             conflictCount += 1
         }
 
@@ -707,11 +710,11 @@ actor SyncStoreActor {
         try saveIfNeeded()
     }
 
-    func activityState(id: UUID) throws -> (isDeleted: Bool, version: Int)? {
+    func activityState(id: UUID) throws -> (isSoftDeleted: Bool, version: Int)? {
         guard let activity = try modelContext.fetch(FetchDescriptor<Activity>()).first(where: { $0.id == id }) else {
             return nil
         }
-        return (activity.isDeleted, activity.syncVersion)
+        return (activity.isSoftDeleted, activity.syncVersion)
     }
 
     private func findMutationRow(opId: String) throws -> SyncMutation? {
@@ -782,8 +785,6 @@ actor SyncStoreActor {
             try applyClimbStyle(document: document)
         case .climbGyms:
             try applyClimbGym(document: document)
-        case .climbMedia:
-            try applyClimbMedia(document: document)
         }
     }
 
@@ -795,95 +796,90 @@ actor SyncStoreActor {
         switch entity {
         case .planKinds:
             if let model = try modelContext.fetch(FetchDescriptor<PlanKindModel>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .dayTypes:
             if let model = try modelContext.fetch(FetchDescriptor<DayTypeModel>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .plans:
             if let model = try modelContext.fetch(FetchDescriptor<Plan>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .planDays:
             if let model = try modelContext.fetch(FetchDescriptor<PlanDay>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .activities:
             if let model = try modelContext.fetch(FetchDescriptor<Activity>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .trainingTypes:
             if let model = try modelContext.fetch(FetchDescriptor<TrainingType>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .exercises:
             if let model = try modelContext.fetch(FetchDescriptor<Exercise>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .boulderCombinations:
             if let model = try modelContext.fetch(FetchDescriptor<BoulderCombination>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .boulderCombinationExercises:
             try removeBoulderCombinationExercise(linkID: id)
         case .sessions:
             if let model = try modelContext.fetch(FetchDescriptor<Session>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .sessionItems:
             if let model = try modelContext.fetch(FetchDescriptor<SessionItem>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .timerTemplates:
             if let model = try modelContext.fetch(FetchDescriptor<TimerTemplate>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .timerIntervals:
             if let model = try modelContext.fetch(FetchDescriptor<TimerInterval>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .timerSessions:
             if let model = try modelContext.fetch(FetchDescriptor<TimerSession>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .timerLaps:
             if let model = try modelContext.fetch(FetchDescriptor<TimerLap>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .climbEntries:
             if let model = try modelContext.fetch(FetchDescriptor<ClimbEntry>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .climbStyles:
             if let model = try modelContext.fetch(FetchDescriptor<ClimbStyle>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
         case .climbGyms:
             if let model = try modelContext.fetch(FetchDescriptor<ClimbGym>()).first(where: { $0.id == id }) {
-                model.isDeleted = true
+                model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
-            }
-        case .climbMedia:
-            if let existing = try modelContext.fetch(FetchDescriptor<ClimbMedia>()).first(where: { $0.id == id }) {
-                existing.isDeleted = true
-                existing.syncVersion = version ?? existing.syncVersion
             }
         }
     }
@@ -931,6 +927,7 @@ actor SyncStoreActor {
         model.recurringExerciseOrderByWeekday = decodeWeekdayOrderMap(document["recurring_exercise_order_by_weekday"])
         model.recurringDayTypeIdByWeekday = decodeWeekdayUUIDMap(document["recurring_day_type_id_by_weekday"])
         applyCommonMetadata(to: model, document: document)
+        try attachDeferredPlanDaysIfNeeded(to: model)
     }
 
     private func applyPlanDay(document: [String: JSONValue]) throws {
@@ -947,14 +944,26 @@ actor SyncStoreActor {
         }
 
         if let planID = parseUUID(document["plan_id"]) {
-            let plan = try fetchOrCreatePlan(id: planID)
-            if !plan.days.contains(where: { $0.id == model.id }) {
-                plan.days.append(model)
+            pendingPlanLinksByDayID[model.id] = planID
+            if let plan = try fetchPlan(id: planID), !plan.isSoftDeleted {
+                if !plan.days.contains(where: { $0.id == model.id }) {
+                    plan.days.append(model)
+                }
+                pendingPlanLinksByDayID.removeValue(forKey: model.id)
             }
+        } else {
+            pendingPlanLinksByDayID.removeValue(forKey: model.id)
         }
 
-        model.chosenExerciseIDs = decodeUUIDArray(document["chosen_exercise_ids"])
-        model.exerciseOrderByID = decodeStringIntMap(document["exercise_order_by_id"])
+        model.chosenExerciseIDs = deduplicatedUUIDsPreservingOrder(
+            decodeUUIDArray(document["chosen_exercise_ids"])
+        )
+        let chosenExerciseIDSet = Set(model.chosenExerciseIDs.map { $0.uuidString.lowercased() })
+        model.exerciseOrderByID = decodeStringIntMap(document["exercise_order_by_id"]).reduce(into: [:]) { result, item in
+            let normalizedID = item.key.lowercased()
+            guard chosenExerciseIDSet.contains(normalizedID), result[normalizedID] == nil else { return }
+            result[normalizedID] = item.value
+        }
         model.dailyNotes = document["daily_notes"]?.stringValue
 
         // Keep legacy name-based fields in sync during migration window.
@@ -1202,134 +1211,106 @@ actor SyncStoreActor {
         applyCommonMetadata(to: model, document: document)
     }
 
-    private func applyClimbMedia(document: [String: JSONValue]) throws {
-        let id = try requiredUUID("id", in: document)
-        guard let climbEntryID = parseUUID(document["climb_entry_id"]) else {
-            return
-        }
-        let climbEntry = try fetchOrCreateClimbEntry(id: climbEntryID)
-        let model = try fetchOrCreateClimbMedia(id: id, climb: climbEntry)
-        if let typeRaw = document["type"]?.stringValue {
-            model.typeRaw = typeRaw
-        }
-        if let createdAt = parseDate(document["created_at"]) {
-            model.createdAt = createdAt
-        }
-        model.storageBucket = document["storage_bucket"]?.stringValue
-        model.storagePath = document["storage_path"]?.stringValue
-        model.thumbnailStoragePath = document["thumbnail_storage_path"]?.stringValue
-        if !climbEntry.media.contains(where: { $0.id == model.id }) {
-            climbEntry.media.append(model)
-        }
-        applyCommonMetadata(to: model, document: document)
-    }
-
     private func applyCommonMetadata(to model: PlanKindModel, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: DayTypeModel, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: Plan, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: PlanDay, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: Activity, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: TrainingType, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: Exercise, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: BoulderCombination, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: Session, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: SessionItem, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: TimerTemplate, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: TimerInterval, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: TimerSession, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: TimerLap, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: ClimbEntry, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: ClimbStyle, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func applyCommonMetadata(to model: ClimbGym, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
-    }
-
-    private func applyCommonMetadata(to model: ClimbMedia, document: [String: JSONValue]) {
-        model.syncVersion = document["version"]?.intValue ?? model.syncVersion
-        model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isDeleted = document["is_deleted"]?.boolValue ?? model.isDeleted
+        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
     }
 
     private func fetchExercises(ids: [UUID]) throws -> [Exercise] {
@@ -1341,12 +1322,24 @@ actor SyncStoreActor {
     }
 
     private func decodeLegacyOrder(orderByID: [String: Int], exercises: [Exercise]) -> [String: Int] {
-        let namesByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id.uuidString, $0.name) })
+        var namesByID: [String: String] = [:]
+        for exercise in exercises {
+            namesByID[exercise.id.uuidString.lowercased()] = exercise.name
+        }
         var result: [String: Int] = [:]
         for (id, index) in orderByID {
-            if let name = namesByID[id] {
+            if let name = namesByID[id.lowercased()] {
                 result[name] = index
             }
+        }
+        return result
+    }
+
+    private func deduplicatedUUIDsPreservingOrder(_ ids: [UUID]) -> [UUID] {
+        var seen: Set<UUID> = []
+        var result: [UUID] = []
+        for id in ids where seen.insert(id).inserted {
+            result.append(id)
         }
         return result
     }
@@ -1466,12 +1459,37 @@ actor SyncStoreActor {
     }
 
     private func fetchOrCreatePlan(id: UUID) throws -> Plan {
-        if let existing = try modelContext.fetch(FetchDescriptor<Plan>()).first(where: { $0.id == id }) {
+        if let existing = try fetchPlan(id: id) {
             return existing
         }
         let created = Plan(id: id, name: "", kind: nil, startDate: .now)
         modelContext.insert(created)
         return created
+    }
+
+    private func fetchPlan(id: UUID) throws -> Plan? {
+        try modelContext.fetch(FetchDescriptor<Plan>()).first(where: { $0.id == id })
+    }
+
+    private func attachDeferredPlanDaysIfNeeded(to plan: Plan) throws {
+        guard !plan.isSoftDeleted else { return }
+        let dayIDs = pendingPlanLinksByDayID.compactMap { (dayID, planID) in
+            planID == plan.id ? dayID : nil
+        }
+        guard !dayIDs.isEmpty else { return }
+
+        let planDays = try modelContext.fetch(FetchDescriptor<PlanDay>())
+        let planDaysByID = Dictionary(uniqueKeysWithValues: planDays.map { ($0.id, $0) })
+        for dayID in dayIDs {
+            guard let day = planDaysByID[dayID] else {
+                pendingPlanLinksByDayID.removeValue(forKey: dayID)
+                continue
+            }
+            if !plan.days.contains(where: { $0.id == dayID }) {
+                plan.days.append(day)
+            }
+            pendingPlanLinksByDayID.removeValue(forKey: dayID)
+        }
     }
 
     private func fetchOrCreatePlanDay(id: UUID) throws -> PlanDay {
@@ -1600,18 +1618,6 @@ actor SyncStoreActor {
         return created
     }
 
-    private func fetchOrCreateClimbMedia(id: UUID, climb: ClimbEntry) throws -> ClimbMedia {
-        if let existing = try modelContext.fetch(FetchDescriptor<ClimbMedia>()).first(where: { $0.id == id }) {
-            if existing.climb.id != climb.id {
-                existing.climb = climb
-            }
-            return existing
-        }
-        let created = ClimbMedia(id: id, assetLocalIdentifier: "", type: .photo, climb: climb)
-        modelContext.insert(created)
-        return created
-    }
-
     private func removeTrainingType(_ trainingTypeID: UUID, fromAllExcept activityID: UUID) throws {
         let activities = try modelContext.fetch(FetchDescriptor<Activity>())
         for activity in activities where activity.id != activityID {
@@ -1695,24 +1701,23 @@ actor SyncStoreActor {
             }
         }
 
-        try deleteTombstones(of: PlanKindModel.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: DayTypeModel.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: Plan.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: PlanDay.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: Activity.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: TrainingType.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: Exercise.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: BoulderCombination.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: Session.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: SessionItem.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: TimerTemplate.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: TimerInterval.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: TimerSession.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: TimerLap.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: ClimbEntry.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: ClimbStyle.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: ClimbGym.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: ClimbMedia.self) { $0.isDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: PlanKindModel.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: DayTypeModel.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: Plan.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: PlanDay.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: Activity.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: TrainingType.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: Exercise.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: BoulderCombination.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: Session.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: SessionItem.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: TimerTemplate.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: TimerInterval.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: TimerSession.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: TimerLap.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: ClimbEntry.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: ClimbStyle.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
+        try deleteTombstones(of: ClimbGym.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
     }
 
     private func ensureSyncStateModel() throws -> SyncState {

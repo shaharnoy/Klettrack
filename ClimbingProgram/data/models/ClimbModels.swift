@@ -30,7 +30,7 @@ final class ClimbEntry {
     var tb2ClimbUUID: String?
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
     
     //support multiple media files per climb
         @Relationship(deleteRule: .cascade, inverse: \ClimbMedia.climb)
@@ -205,7 +205,7 @@ final class ClimbStyle {
     var isHidden: Bool = false
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
     
     init(id: UUID = UUID(), name: String, isDefault: Bool = false) {
         self.id = id
@@ -221,7 +221,7 @@ final class ClimbGym {
     var isDefault: Bool
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
     
     init(id: UUID = UUID(), name: String, isDefault: Bool = false) {
         self.id = id
@@ -248,7 +248,7 @@ final class ClimbMedia {
     var thumbnailStoragePath: String?
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     @Relationship var climb: ClimbEntry
 

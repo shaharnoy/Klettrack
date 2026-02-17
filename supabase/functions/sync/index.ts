@@ -19,8 +19,7 @@ type EntityName =
   | "timer_laps"
   | "climb_entries"
   | "climb_styles"
-  | "climb_gyms"
-  | "climb_media";
+  | "climb_gyms";
 
 type MutationType = "upsert" | "delete";
 
@@ -63,8 +62,7 @@ const ENTITY_TABLES: ReadonlySet<string> = new Set([
   "timer_laps",
   "climb_entries",
   "climb_styles",
-  "climb_gyms",
-  "climb_media"
+  "climb_gyms"
 ]);
 
 const MAX_MUTATIONS_PER_PUSH = 200;
@@ -365,8 +363,7 @@ const ENTITY_FIELD_ALLOWLIST: Record<EntityName, readonly string[]> = {
     "tb2_climb_uuid"
   ],
   climb_styles: ["name", "is_default", "is_hidden"],
-  climb_gyms: ["name", "is_default"],
-  climb_media: ["climb_entry_id", "type", "created_at", "storage_bucket", "storage_path", "thumbnail_storage_path"]
+  climb_gyms: ["name", "is_default"]
 };
 
 const REQUIRED_UPSERT_FIELDS: Partial<Record<EntityName, readonly string[]>> = {
@@ -387,8 +384,7 @@ const REQUIRED_UPSERT_FIELDS: Partial<Record<EntityName, readonly string[]>> = {
   timer_laps: ["lap_number", "timestamp", "elapsed_seconds"],
   climb_entries: ["climb_type", "grade", "style", "gym", "date_logged", "is_work_in_progress"],
   climb_styles: ["name", "is_default"],
-  climb_gyms: ["name", "is_default"],
-  climb_media: ["climb_entry_id", "type", "created_at"]
+  climb_gyms: ["name", "is_default"]
 };
 
 function validateMutation(mutation: PushMutation): MutationValidationResult {
@@ -503,9 +499,6 @@ async function validateParentReferences(args: {
       break;
     case "timer_laps":
       pushCheck("timer_sessions", payload.timer_session_id);
-      break;
-    case "climb_media":
-      pushCheck("climb_entries", payload.climb_entry_id);
       break;
     default:
       break;

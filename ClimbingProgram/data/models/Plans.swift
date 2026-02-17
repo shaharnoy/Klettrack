@@ -23,7 +23,7 @@ final class PlanKindModel {
     // Sync metadata
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -55,7 +55,7 @@ final class DayTypeModel {
     // Sync metadata
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     // Allowed built-in color keys
     static let allowedColorKeys: Set<String> = [
@@ -129,7 +129,7 @@ final class Plan {
     // Sync metadata
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     init(id: UUID = UUID(), name: String, kind: PlanKindModel?, startDate: Date) {
         self.id = id
@@ -156,7 +156,7 @@ final class PlanDay {
     // Sync metadata
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     init(id: UUID = UUID(), date: Date, type: DayTypeModel? = nil) {
         self.id = id

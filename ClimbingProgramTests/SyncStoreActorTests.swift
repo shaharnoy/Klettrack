@@ -192,44 +192,6 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
         XCTAssertEqual(pending.first?.baseVersion, 0)
     }
 
-    func testResolveConflictKeepServerForClimbMediaMutationDropsOutboxRow() async throws {
-        let store = SyncStoreActor(modelContainer: container)
-        let opID = try await store.enqueueMutation(
-            entity: .climbMedia,
-            entityId: UUID(),
-            mutationType: .upsert,
-            baseVersion: 3,
-            payload: [
-                "climb_entry_id": .string(UUID().uuidString.lowercased()),
-                "type": .string("photo"),
-                "created_at": .string("2026-02-14T10:00:00.000Z")
-            ]
-        )
-
-        let response = SyncPushResponse(
-            acknowledgedOpIds: [],
-            conflicts: [
-                SyncPushConflict(
-                    opId: opID.uuidString.lowercased(),
-                    entity: .climbMedia,
-                    entityId: UUID().uuidString.lowercased(),
-                    reason: "version_mismatch",
-                    serverVersion: 4,
-                    serverDoc: nil
-                )
-            ],
-            failed: [],
-            newCursor: "2026-02-14T10:10:00.000Z"
-        )
-
-        _ = try await store.processPushResponse(response)
-        let resolved = try await store.resolveConflictKeepServer(opId: opID.uuidString.lowercased())
-        XCTAssertTrue(resolved)
-
-        let pending = try await store.fetchPendingMutations(limit: 10)
-        XCTAssertTrue(pending.isEmpty)
-    }
-
     func testSetSyncEnabledSwitchingUserResetsCursorAndClearsOutbox() async throws {
         let store = SyncStoreActor(modelContainer: container)
 
@@ -296,7 +258,7 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
         ).first
         XCTAssertEqual(inserted?.name, "Power")
         XCTAssertEqual(inserted?.syncVersion, 3)
-        XCTAssertEqual(inserted?.isDeleted, false)
+        XCTAssertEqual(inserted?.isSoftDeleted, false)
 
         let delete = SyncPullResponse(
             changes: [
@@ -423,10 +385,9 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
         XCTAssertEqual(templates.first?.intervals.first?.name, "40/20")
     }
 
-    func testApplyPullResponseUpsertsClimbEntryAndMedia() async throws {
+    func testApplyPullResponseUpsertsClimbEntry() async throws {
         let store = SyncStoreActor(modelContainer: container)
         let climbID = UUID()
-        let mediaID = UUID()
 
         let response = SyncPullResponse(
             changes: [
@@ -446,25 +407,9 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
                         "version": .number(2),
                         "is_deleted": .bool(false)
                     ]
-                ),
-                SyncPullChange(
-                    entity: .climbMedia,
-                    type: .upsert,
-                    entityId: nil,
-                    version: nil,
-                    doc: [
-                        "id": .string(mediaID.uuidString.lowercased()),
-                        "climb_entry_id": .string(climbID.uuidString.lowercased()),
-                        "type": .string("photo"),
-                        "created_at": .string("2026-02-14T10:00:00.000Z"),
-                        "storage_bucket": .string("climb-media"),
-                        "storage_path": .string("users/u1/climbs/\(mediaID.uuidString).jpg"),
-                        "version": .number(1),
-                        "is_deleted": .bool(false)
-                    ]
                 )
             ],
-            nextCursor: "2026-02-14T10:00:00.000Z|climb_media|\(mediaID.uuidString.lowercased())",
+            nextCursor: "2026-02-14T10:00:00.000Z|climb_entries|\(climbID.uuidString.lowercased())",
             hasMore: false
         )
 
@@ -474,8 +419,7 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
         let climbs = try verificationContext.fetch(FetchDescriptor<ClimbEntry>())
         XCTAssertEqual(climbs.count, 1)
         XCTAssertEqual(climbs.first?.grade, "V5")
-        XCTAssertEqual(climbs.first?.media.count, 1)
-        XCTAssertEqual(climbs.first?.media.first?.storageBucket, "climb-media")
+        XCTAssertTrue(climbs.first?.media.isEmpty ?? true)
     }
 
     func testPendingMutationPreservesUpdatedAtClientTimestamp() async throws {
@@ -729,5 +673,172 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
         XCTAssertEqual(combinations.count, 1)
         XCTAssertEqual(combinations[0].exercises.count, 1)
         XCTAssertEqual(combinations[0].exercises[0].id, exerciseID)
+    }
+
+    func testApplyPullPlanDayUpsertDoesNotCreateMissingPlan() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let planID = UUID()
+        let dayID = UUID()
+
+        let response = SyncPullResponse(
+            changes: [
+                SyncPullChange(
+                    entity: .planDays,
+                    type: .upsert,
+                    entityId: nil,
+                    version: nil,
+                    doc: [
+                        "id": .string(dayID.uuidString.lowercased()),
+                        "plan_id": .string(planID.uuidString.lowercased()),
+                        "day_date": .string("2026-02-17T20:00:00.000Z"),
+                        "is_deleted": .bool(false),
+                        "version": .number(3)
+                    ]
+                )
+            ],
+            nextCursor: "2026-02-17T20:00:00.000Z|plan_days|\(dayID.uuidString.lowercased())",
+            hasMore: false
+        )
+
+        try await store.applyPullResponse(response)
+
+        let verifyContext = ModelContext(container)
+        let plans = try verifyContext.fetch(FetchDescriptor<Plan>())
+        XCTAssertTrue(plans.isEmpty)
+
+        let days = try verifyContext.fetch(FetchDescriptor<PlanDay>())
+        XCTAssertEqual(days.count, 1)
+        XCTAssertEqual(days[0].id, dayID)
+    }
+
+    func testEnqueueSnapshotAfterPlanDeleteEmitsDeleteForPlanAndDays() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let context = ModelContext(container)
+        let plan = Plan(name: "Delete Me", kind: nil, startDate: .now)
+        let dayOne = PlanDay(date: .now)
+        let dayTwo = PlanDay(date: .now.addingTimeInterval(86_400))
+        plan.days = [dayOne, dayTwo]
+        context.insert(plan)
+        context.insert(dayOne)
+        context.insert(dayTwo)
+        try context.save()
+
+        try await store.setSyncEnabled(true, userId: "user-a")
+
+        let planID = plan.id
+        let editablePlan = try context.fetch(
+            FetchDescriptor<Plan>(predicate: #Predicate { $0.id == planID })
+        ).first
+        XCTAssertNotNil(editablePlan)
+        guard let editablePlan else {
+            XCTFail("Expected plan to exist before delete.")
+            return
+        }
+
+        SyncLocalMutation.softDelete(editablePlan)
+        for day in editablePlan.days {
+            SyncLocalMutation.softDelete(day)
+        }
+        XCTAssertEqual(editablePlan.isSoftDeleted, true)
+        try context.save()
+
+        let sameContextPlan = try context.fetch(
+            FetchDescriptor<Plan>(predicate: #Predicate { $0.id == planID })
+        ).first
+        XCTAssertEqual(sameContextPlan?.isSoftDeleted, true)
+
+        let verificationContext = ModelContext(container)
+        let allPersistedPlans = try verificationContext.fetch(FetchDescriptor<Plan>())
+        XCTAssertEqual(allPersistedPlans.count, 1)
+        let persistedPlan = try verificationContext.fetch(
+            FetchDescriptor<Plan>(predicate: #Predicate { $0.id == planID })
+        ).first
+        XCTAssertEqual(persistedPlan?.isSoftDeleted, true)
+
+        _ = try await store.enqueueLocalSnapshotIfNeeded()
+        let pending = try await store.fetchPendingMutations(limit: 20)
+        let planDelete = pending.first(where: { $0.entity == .plans && $0.entityId == plan.id })
+        XCTAssertEqual(planDelete?.mutationType, .delete)
+
+        let dayMutations = pending.filter {
+            $0.entity == .planDays && ($0.entityId == dayOne.id || $0.entityId == dayTwo.id)
+        }
+        XCTAssertEqual(dayMutations.count, 2)
+        XCTAssertTrue(dayMutations.allSatisfy { $0.mutationType == .delete })
+    }
+
+    func testEnqueueSnapshotIncludesDeleteWhenWatermarkMissing() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let context = ModelContext(container)
+        let plan = Plan(name: "Watermark Case", kind: nil, startDate: .now)
+        plan.syncVersion = 4
+        context.insert(plan)
+        try context.save()
+
+        try await store.setSyncEnabled(true, userId: "user-a")
+
+        let state = try context.fetch(FetchDescriptor<SyncState>()).first
+        XCTAssertNotNil(state)
+        state?.didBootstrapLocalSnapshot = true
+        state?.lastSuccessfulSyncAt = nil
+        try context.save()
+
+        let planID = plan.id
+        let editablePlan = try context.fetch(
+            FetchDescriptor<Plan>(predicate: #Predicate { $0.id == planID })
+        ).first
+        XCTAssertNotNil(editablePlan)
+        guard let editablePlan else {
+            XCTFail("Expected plan to exist before delete.")
+            return
+        }
+
+        SyncLocalMutation.softDelete(editablePlan)
+        XCTAssertEqual(editablePlan.isSoftDeleted, true)
+        try context.save()
+
+        let sameContextPlan = try context.fetch(
+            FetchDescriptor<Plan>(predicate: #Predicate { $0.id == planID })
+        ).first
+        XCTAssertEqual(sameContextPlan?.isSoftDeleted, true)
+
+        let verificationContext = ModelContext(container)
+        let allPersistedPlans = try verificationContext.fetch(FetchDescriptor<Plan>())
+        XCTAssertEqual(allPersistedPlans.count, 1)
+        let persistedPlan = try verificationContext.fetch(
+            FetchDescriptor<Plan>(predicate: #Predicate { $0.id == planID })
+        ).first
+        XCTAssertEqual(persistedPlan?.isSoftDeleted, true)
+
+        _ = try await store.enqueueLocalSnapshotIfNeeded()
+        let pending = try await store.fetchPendingMutations(limit: 10)
+        let mutation = pending.first(where: { $0.entity == .plans && $0.entityId == plan.id })
+        XCTAssertEqual(mutation?.mutationType, .delete)
+    }
+
+    func testFetchPendingMutationsPrioritizesDeleteOverOlderUpsert() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let upsertId = UUID()
+        let deleteId = UUID()
+
+        _ = try await store.enqueueMutation(
+            entity: .plans,
+            entityId: upsertId,
+            mutationType: .upsert,
+            baseVersion: 1,
+            payload: ["name": .string("Older Upsert")]
+        )
+        _ = try await store.enqueueMutation(
+            entity: .plans,
+            entityId: deleteId,
+            mutationType: .delete,
+            baseVersion: 1,
+            payload: [:]
+        )
+
+        let pending = try await store.fetchPendingMutations(limit: 1)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending[0].entityId, deleteId)
+        XCTAssertEqual(pending[0].mutationType, .delete)
     }
 }

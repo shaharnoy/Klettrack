@@ -5,7 +5,6 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct SettingsSheet: View {
     private enum SheetRoute: String, Identifiable {
@@ -14,12 +13,8 @@ struct SettingsSheet: View {
         var id: String { rawValue }
     }
 
-    @Environment(\.modelContext) private var context
     @State private var sheetRoute: SheetRoute?
-    
-    // Export state
-    @State private var showExporter = false
-    @State private var exportDoc: LogCSVDocument? = nil
+
     @State private var hasRequestedReviewThisSession = false
     
     var body: some View {
@@ -126,25 +121,6 @@ struct SettingsSheet: View {
                         }
                         .padding(.vertical, 1)
                     }
-                    // Export CSV button (trigger export without navigation)
-                    Button {
-                        exportDoc = LogCSV.makeExportCSV(context: context)
-                        showExporter = true
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Image(systemName: "square.and.arrow.up")
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Export Logs")
-                                    .font(.body)
-                                Text("Export your climbs and sessions")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    }
-                    .buttonStyle(.plain)
                 }
 
                 Section {
@@ -217,20 +193,6 @@ struct SettingsSheet: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-        }
-        // Exporter
-        .fileExporter(
-            isPresented: $showExporter,
-            document: exportDoc,
-            contentType: .commaSeparatedText,
-            defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
-        ) { result in
-            switch result {
-            case .success:
-                break
-            case .failure:
-                break
-            }
         }
         // About / Contribute sheet
         .sheet(item: $sheetRoute) { route in

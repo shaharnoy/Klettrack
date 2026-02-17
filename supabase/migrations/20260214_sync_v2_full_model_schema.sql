@@ -175,23 +175,6 @@ create table if not exists public.climb_gyms (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.climb_media (
-  id uuid primary key,
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  climb_entry_id uuid references public.climb_entries(id) on delete set null,
-  type text not null,
-  created_at timestamptz not null,
-  storage_bucket text,
-  storage_path text,
-  thumbnail_storage_path text,
-  version integer not null default 1,
-  updated_at_server timestamptz not null default now(),
-  updated_at_client timestamptz,
-  last_op_id uuid,
-  is_deleted boolean not null default false,
-  row_created_at timestamptz not null default now()
-);
-
 create index if not exists sessions_owner_updated_idx on public.sessions (owner_id, updated_at_server);
 create index if not exists session_items_owner_updated_idx on public.session_items (owner_id, updated_at_server);
 create index if not exists timer_templates_owner_updated_idx on public.timer_templates (owner_id, updated_at_server);
@@ -201,14 +184,12 @@ create index if not exists timer_laps_owner_updated_idx on public.timer_laps (ow
 create index if not exists climb_entries_owner_updated_idx on public.climb_entries (owner_id, updated_at_server);
 create index if not exists climb_styles_owner_updated_idx on public.climb_styles (owner_id, updated_at_server);
 create index if not exists climb_gyms_owner_updated_idx on public.climb_gyms (owner_id, updated_at_server);
-create index if not exists climb_media_owner_updated_idx on public.climb_media (owner_id, updated_at_server);
 
 create index if not exists session_items_session_id_idx on public.session_items (session_id);
 create index if not exists timer_intervals_template_id_idx on public.timer_intervals (timer_template_id);
 create index if not exists timer_sessions_template_id_idx on public.timer_sessions (timer_template_id);
 create index if not exists timer_sessions_plan_day_id_idx on public.timer_sessions (plan_day_id);
 create index if not exists timer_laps_session_id_idx on public.timer_laps (timer_session_id);
-create index if not exists climb_media_entry_id_idx on public.climb_media (climb_entry_id);
 
 drop trigger if exists sessions_sync_metadata on public.sessions;
 create trigger sessions_sync_metadata before insert or update on public.sessions
@@ -246,9 +227,6 @@ drop trigger if exists climb_gyms_sync_metadata on public.climb_gyms;
 create trigger climb_gyms_sync_metadata before insert or update on public.climb_gyms
 for each row execute function public.apply_sync_metadata();
 
-drop trigger if exists climb_media_sync_metadata on public.climb_media;
-create trigger climb_media_sync_metadata before insert or update on public.climb_media
-for each row execute function public.apply_sync_metadata();
 
 alter table public.sessions enable row level security;
 alter table public.session_items enable row level security;
@@ -259,7 +237,6 @@ alter table public.timer_laps enable row level security;
 alter table public.climb_entries enable row level security;
 alter table public.climb_styles enable row level security;
 alter table public.climb_gyms enable row level security;
-alter table public.climb_media enable row level security;
 
 drop policy if exists sessions_owner_select on public.sessions;
 create policy sessions_owner_select on public.sessions
@@ -420,24 +397,6 @@ using (owner_id = auth.uid())
 with check (owner_id = auth.uid());
 drop policy if exists climb_gyms_owner_delete on public.climb_gyms;
 create policy climb_gyms_owner_delete on public.climb_gyms
-for delete to authenticated
-using (owner_id = auth.uid());
-
-drop policy if exists climb_media_owner_select on public.climb_media;
-create policy climb_media_owner_select on public.climb_media
-for select to authenticated
-using (owner_id = auth.uid());
-drop policy if exists climb_media_owner_insert on public.climb_media;
-create policy climb_media_owner_insert on public.climb_media
-for insert to authenticated
-with check (owner_id = auth.uid());
-drop policy if exists climb_media_owner_update on public.climb_media;
-create policy climb_media_owner_update on public.climb_media
-for update to authenticated
-using (owner_id = auth.uid())
-with check (owner_id = auth.uid());
-drop policy if exists climb_media_owner_delete on public.climb_media;
-create policy climb_media_owner_delete on public.climb_media
 for delete to authenticated
 using (owner_id = auth.uid());
 

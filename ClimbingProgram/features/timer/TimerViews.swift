@@ -767,7 +767,7 @@ struct TimerSetupView: View {
 struct TimerTemplateSelectionTab: View {
     @Environment(\.modelContext) private var context
     @Query(
-        filter: #Predicate<TimerTemplate> { !$0.isDeleted },
+        filter: #Predicate<TimerTemplate> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\TimerTemplate.lastUsedDate, order: .reverse)]
     ) private var templates: [TimerTemplate]
     

@@ -355,10 +355,21 @@ final class SyncManager {
         pending: PendingSyncMutation,
         deviceId: String
     ) -> AutoConflictResolution {
+        if Self.shouldPreferServerTombstone(serverDoc: conflict.serverDoc) {
+            // Tombstones should dominate stale local upserts to avoid row resurrection.
+            return .keepServer
+        }
+
+        if pending.mutationType == .delete {
+            // For existing rows, keep local delete intent and rebase to server version.
+            // If server row is already missing, dropping local delete is safe.
+            return conflict.serverVersion == nil ? .keepServer : .keepMine
+        }
+
         if conflict.serverVersion == nil {
             // Missing server row on first-account/bootstrap sync:
-            // local upserts should create it; local deletes can safely be dropped.
-            return pending.mutationType == .delete ? .keepServer : .keepMine
+            // local upserts should create it.
+            return .keepMine
         }
 
         let serverUpdatedAt = Self.extractServerUpdatedAt(serverDoc: conflict.serverDoc)
@@ -525,6 +536,10 @@ final class SyncManager {
         }
 
         return localTieBreaker.localizedCompare(serverTieBreaker) == .orderedDescending
+    }
+
+    nonisolated static func shouldPreferServerTombstone(serverDoc: [String: JSONValue]?) -> Bool {
+        serverDoc?["is_deleted"]?.boolValue ?? false
     }
 
     private nonisolated static func isLongTextValue(_ value: JSONValue) -> Bool {

@@ -3,7 +3,6 @@
 ## Scope
 - Plans + catalog + sessions/timers/climbs sync (`sync` function)
 - iOS and web clients using push/pull contract
-- Climb media metadata sync (`climb_media` rows; binary objects remain in Storage)
 
 ## Signals to watch
 - iOS trigger metrics: total triggers, failures
@@ -31,13 +30,6 @@
 2. Pull latest cursor window and inspect entity rows only.
 3. If needed, soft-delete and re-upsert affected rows through push contract.
 4. Re-enable writes and validate bidirectional sync.
-
-## Runbook: Climb media incident (metadata drift or missing blob)
-1. Confirm the `climb_media` row exists and is owned by the user (`owner_id` + `id`).
-2. Check `storage_bucket` and `storage_path` values and verify object existence in Storage.
-3. If metadata exists but object is missing, keep row and mark media unavailable in UI; do not delete climb entry automatically.
-4. If object exists but metadata is stale, issue `upsert` mutation for `climb_media` with corrected storage fields.
-5. Re-run pull from latest cursor and verify the client resolves to a stable single media row.
 
 ## Runbook: Parent-link validation failures
 1. Capture failed mutation payload and `reason` (expect `invalid_parent_reference`).

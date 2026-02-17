@@ -14,6 +14,7 @@ const CHEVRON_RIGHT_ICON = `<svg viewBox="0 0 20 20" width="14" height="14" fill
 const PLUS_SMALL_ICON = `<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4.5v11"/><path d="M4.5 10h11"/></svg>`;
 const PENCIL_ICON = `<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 3.5l3 3"/><path d="M4 16l3.5-.8 8-8-2.7-2.7-8 8L4 16z"/></svg>`;
 const EXPORT_ICON = `<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12V3"/><path d="M6.5 6.5L10 3l3.5 3.5"/><path d="M4 12.5v3h12v-3"/></svg>`;
+const IMPORT_ICON = `<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v9"/><path d="M6.5 8.5L10 12l3.5-3.5"/><path d="M4 13.5v3h12v-3"/></svg>`;
 const CLONE_ICON = `<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="9" height="9" rx="2"/><rect x="8" y="3" width="9" height="9" rx="2"/></svg>`;
 
 const DAY_TYPE_COLORS = {
@@ -82,6 +83,7 @@ export function renderPlansView({
   onSaveWithOutcome,
   onDelete,
   onOpenPlan,
+  onOpenPlans,
   onImportPlanCsvConfirm
 }) {
   const root = document.getElementById("app-view");
@@ -90,6 +92,7 @@ export function renderPlansView({
   }
 
   const plans = store.active("plans");
+  const activePlanByID = new Map(plans.map((plan) => [plan.id, plan]));
   const dayTypes = store.active("day_types");
   const planKinds = store.active("plan_kinds");
   const activities = store.active("activities");
@@ -97,6 +100,17 @@ export function renderPlansView({
   const exercises = store.active("exercises");
   const boulderCombinations = store.active("boulder_combinations");
   const boulderCombinationExercises = store.active("boulder_combination_exercises");
+
+  if (selection.planId && !activePlanByID.has(selection.planId)) {
+    const fallbackPlan = plans[0] || null;
+    onSelect({ planId: fallbackPlan?.id || null, planDayId: null });
+    if (fallbackPlan?.id) {
+      onOpenPlan(fallbackPlan.id);
+    } else if (typeof onOpenPlans === "function") {
+      onOpenPlans();
+    }
+    return;
+  }
 
   if (!selection.planId && plans.length > 0) {
     onSelect({ planId: plans[0].id, planDayId: null });
@@ -143,9 +157,9 @@ export function renderPlansView({
               <button id="plan-setup-create" class="btn btn-compact" type="button">${PLUS_SMALL_ICON}<span>Create Plan</span></button>
               <button id="plan-setup-edit" class="btn btn-compact" type="button" ${selectedPlan ? "" : "disabled"}>${PENCIL_ICON}<span>Edit Plan</span></button>
               <button id="plan-clone-open" class="btn btn-compact" type="button" ${selectedPlan ? "" : "disabled"}>${CLONE_ICON}<span>Clone Plan</span></button>
+              <button id="plan-export-csv" class="btn btn-compact" type="button" ${selectedPlan ? "" : "disabled"}>${EXPORT_ICON}<span>Export Plan</span></button>
+              <button id="plan-import-csv" class="btn btn-compact" type="button">${IMPORT_ICON}<span>Import Plan</span></button>
               <button id="plan-delete-top" class="btn btn-compact destructive" type="button" ${selectedPlan ? "" : "disabled"}>${DELETE_ICON}<span>Delete Plan</span></button>
-              <button id="plan-export-csv" class="btn btn-compact" type="button" ${selectedPlan ? "" : "disabled"}>${EXPORT_ICON}<span>Export CSV</span></button>
-              <button id="plan-import-csv" class="btn btn-compact" type="button">Import CSV</button>
               <input id="plan-import-file" type="file" accept=".csv,text/csv" hidden />
             </div>
           </div>
@@ -206,6 +220,7 @@ export function renderPlansView({
     onSaveWithOutcome,
     onDelete,
     onOpenPlan,
+    onOpenPlans,
     onImportPlanCsvConfirm,
     planDays,
     selectedPlan,
@@ -228,6 +243,7 @@ function bindEvents({
   onSaveWithOutcome,
   onDelete,
   onOpenPlan,
+  onOpenPlans,
   onImportPlanCsvConfirm,
   planDays,
   selectedPlan,
@@ -359,7 +375,16 @@ function bindEvents({
       return;
     }
     await onDelete({ entity: "plans", id: selectedPlan.id });
-    onSelect({ planId: null, planDayId: null, planSetupOpen: false });
+    const nextPlan = store
+      .active("plans")
+      .filter((plan) => plan.id !== selectedPlan.id)
+      .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), undefined, { sensitivity: "base" }))[0];
+    onSelect({ planId: nextPlan?.id || null, planDayId: null, planSetupOpen: false });
+    if (nextPlan?.id) {
+      onOpenPlan(nextPlan.id);
+    } else if (typeof onOpenPlans === "function") {
+      onOpenPlans();
+    }
     showToast("Plan deleted", "info");
   });
 
@@ -371,7 +396,16 @@ function bindEvents({
       return;
     }
     await onDelete({ entity: "plans", id: selectedPlan.id });
-    onSelect({ planId: null, planDayId: null, planSetupOpen: false });
+    const nextPlan = store
+      .active("plans")
+      .filter((plan) => plan.id !== selectedPlan.id)
+      .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), undefined, { sensitivity: "base" }))[0];
+    onSelect({ planId: nextPlan?.id || null, planDayId: null, planSetupOpen: false });
+    if (nextPlan?.id) {
+      onOpenPlan(nextPlan.id);
+    } else if (typeof onOpenPlans === "function") {
+      onOpenPlans();
+    }
     showToast("Plan deleted", "info");
   });
 
@@ -544,7 +578,10 @@ function bindEvents({
       pendingPlanImport = {
         filename: file.name,
         parsed,
-        selectedGroupKey: parsed.planGroups[0].key
+        selectedGroupKey: parsed.planGroups[0].key,
+        draftsByGroupKey: Object.fromEntries(
+          parsed.planGroups.map((group) => [group.key, createPlanImportDraft(group)])
+        )
       };
       onSelect({ planImportOpen: true });
       if (parsed.warnings.length > 0) {
@@ -566,8 +603,36 @@ function bindEvents({
     if (!pendingPlanImport) {
       return;
     }
+    const currentGroup = pendingPlanImport.parsed.planGroups.find((group) => group.key === pendingPlanImport.selectedGroupKey);
+    if (currentGroup) {
+      pendingPlanImport.draftsByGroupKey[currentGroup.key] = readPlanImportDraftFromForm(currentGroup);
+    }
     pendingPlanImport.selectedGroupKey = String(event.target?.value || "");
     onSelect({ planImportOpen: true });
+  });
+
+  document.getElementById("plan-import-name")?.addEventListener("input", () => {
+    const selectedGroup = pendingPlanImport?.parsed?.planGroups?.find((group) => group.key === pendingPlanImport?.selectedGroupKey);
+    if (!selectedGroup) {
+      return;
+    }
+    pendingPlanImport.draftsByGroupKey[selectedGroup.key] = readPlanImportDraftFromForm(selectedGroup);
+  });
+
+  document.getElementById("plan-import-start")?.addEventListener("change", () => {
+    const selectedGroup = pendingPlanImport?.parsed?.planGroups?.find((group) => group.key === pendingPlanImport?.selectedGroupKey);
+    if (!selectedGroup) {
+      return;
+    }
+    pendingPlanImport.draftsByGroupKey[selectedGroup.key] = readPlanImportDraftFromForm(selectedGroup);
+  });
+
+  document.getElementById("plan-import-kind")?.addEventListener("change", () => {
+    const selectedGroup = pendingPlanImport?.parsed?.planGroups?.find((group) => group.key === pendingPlanImport?.selectedGroupKey);
+    if (!selectedGroup) {
+      return;
+    }
+    pendingPlanImport.draftsByGroupKey[selectedGroup.key] = readPlanImportDraftFromForm(selectedGroup);
   });
 
   document.getElementById("plan-import-confirm")?.addEventListener("click", async () => {
@@ -579,11 +644,13 @@ function bindEvents({
       showToast("No plan group selected for import", "error");
       return;
     }
+    const draft = readPlanImportDraftFromForm(selectedGroup);
+    pendingPlanImport.draftsByGroupKey[selectedGroup.key] = draft;
 
     await flushPlanDayAutosave();
     onSelect({ planImportBusy: true });
     try {
-      const payload = buildPlanImportMutations({ group: selectedGroup, store });
+      const payload = buildPlanImportMutations({ group: selectedGroup, store, overrides: draft });
       if (typeof onImportPlanCsvConfirm === "function") {
         const outcome = await onImportPlanCsvConfirm(payload);
         if (!outcome?.ok) {
@@ -1127,7 +1194,9 @@ function renderPlanImportPanel(selection, store) {
   const parsed = pendingPlanImport.parsed;
   const groups = parsed.planGroups;
   const selectedGroup = groups.find((group) => group.key === pendingPlanImport.selectedGroupKey) || groups[0];
-  const preview = buildImportPreview(selectedGroup, store);
+  const draft = getPlanImportDraft(selectedGroup);
+  const preview = buildImportPreview(selectedGroup, draft, store);
+  const planKinds = store.active("plan_kinds");
   if (!selectedGroup) {
     return "";
   }
@@ -1153,8 +1222,25 @@ function renderPlanImportPanel(selection, store) {
           : ""
       }
       <div class="plans-import-preview">
-        <p><strong>Plan:</strong> ${escapeHTML(preview.planName)}</p>
-        <p><strong>Start:</strong> ${escapeHTML(preview.planStartDate)}</p>
+        <label>Plan name
+          <input id="plan-import-name" class="input" type="text" maxlength="${MAX_TEXT_LENGTH}" value="${escapeHTML(draft.planName)}" />
+        </label>
+        <label>Start date
+          <input id="plan-import-start" class="input" type="date" value="${escapeHTML(draft.planStartDate)}" />
+        </label>
+        <label>Plan kind
+          <select id="plan-import-kind" class="input">
+            <option value="__auto__" ${draft.planKindSelection === "__auto__" ? "selected" : ""}>${
+              selectedGroup.planKindName
+                ? `Auto from CSV (${escapeHTML(selectedGroup.planKindName)})`
+                : "Auto from CSV (none)"
+            }</option>
+            <option value="" ${draft.planKindSelection === "" ? "selected" : ""}>None</option>
+            ${planKinds
+              .map((kind) => `<option value="${kind.id}" ${kind.id === draft.planKindSelection ? "selected" : ""}>${escapeHTML(kind.name)}</option>`)
+              .join("")}
+          </select>
+        </label>
         <p><strong>Days:</strong> ${preview.dayCount}</p>
         <p><strong>Exercise rows:</strong> ${preview.exerciseCount}</p>
         <p><strong>Placeholders:</strong> ${preview.placeholderText}</p>
@@ -1165,21 +1251,25 @@ function renderPlanImportPanel(selection, store) {
         }
       </div>
       <div class="actions">
-        <button id="plan-import-confirm" class="btn primary" type="button" ${selection.planImportBusy ? "disabled" : ""}>Import</button>
+        <button id="plan-import-confirm" class="btn primary" type="button" ${selection.planImportBusy ? "disabled" : ""}>
+          ${selection.planImportBusy ? `<span class="btn-spinner" aria-hidden="true"></span><span>Importing...</span>` : "Import"}
+        </button>
         <button id="plan-import-cancel" class="btn" type="button" ${selection.planImportBusy ? "disabled" : ""}>Cancel</button>
       </div>
+      ${selection.planImportBusy ? `<p class="plans-import-processing" role="status" aria-live="polite">Processing import. Please wait…</p>` : ""}
     </section>
   `;
 }
 
-function buildImportPreview(group, store) {
+function buildImportPreview(group, draft, store) {
   const exerciseCount = group.days.reduce((total, day) => {
     return total + day.exerciseRows.filter((row) => row.exerciseName || row.exerciseIdRaw || row.trainingTypeName || row.activityName).length;
   }, 0);
   const warnings = Array.isArray(group.warnings) ? group.warnings.length : 0;
+  const groupForPreview = applyGroupImportOverrides(group, draft);
   let placeholderText = "0";
   try {
-    const dryRun = buildPlanImportMutations({ group, store });
+    const dryRun = buildPlanImportMutations({ group: groupForPreview, store, overrides: draft });
     const placeholders = dryRun.summary.placeholders || {};
     const placeholderParts = Object.entries(placeholders)
       .filter(([, count]) => Number(count || 0) > 0)
@@ -1189,13 +1279,57 @@ function buildImportPreview(group, store) {
     placeholderText = "Unable to calculate";
   }
   return {
-    planName: `${group.planName || "Imported Plan"} (Imported)`,
-    planStartDate: group.planStartDate || group.earliestDayDate || "Fallback from day rows",
+    planName: `${groupForPreview.planName || "Imported Plan"} (Imported)`,
+    planStartDate: groupForPreview.planStartDate || groupForPreview.earliestDayDate || "Fallback from day rows",
     dayCount: group.days.length,
     exerciseCount,
     placeholderText,
     warningCount: warnings
   };
+}
+
+function createPlanImportDraft(group) {
+  return {
+    planName: String(group?.planName || "Imported Plan"),
+    planStartDate: normalizePlanImportDate(String(group?.planStartDate || group?.earliestDayDate || "")),
+    planKindName: String(group?.planKindName || ""),
+    planKindSelection: "__auto__"
+  };
+}
+
+function getPlanImportDraft(group) {
+  if (!group || !pendingPlanImport) {
+    return createPlanImportDraft(group);
+  }
+  const existing = pendingPlanImport.draftsByGroupKey?.[group.key];
+  return existing ? { ...existing } : createPlanImportDraft(group);
+}
+
+function readPlanImportDraftFromForm(group) {
+  const fallback = getPlanImportDraft(group);
+  const planName = sanitizeText(String(document.getElementById("plan-import-name")?.value || "")) || fallback.planName;
+  const planStartDate = normalizePlanImportDate(String(document.getElementById("plan-import-start")?.value || "")) || fallback.planStartDate;
+  const planKindSelection = String(document.getElementById("plan-import-kind")?.value || fallback.planKindSelection || "__auto__");
+  return {
+    planName,
+    planStartDate,
+    planKindName: fallback.planKindName,
+    planKindSelection
+  };
+}
+
+function applyGroupImportOverrides(group, draft) {
+  return {
+    ...group,
+    planName: String(draft?.planName || group?.planName || "Imported Plan"),
+    planStartDate: String(draft?.planStartDate || group?.planStartDate || group?.earliestDayDate || ""),
+    planKindName: String(draft?.planKindName || group?.planKindName || "")
+  };
+}
+
+function normalizePlanImportDate(value) {
+  const raw = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
 }
 
 function totalPlaceholders(placeholders) {

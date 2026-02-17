@@ -16,7 +16,6 @@ Current `INFO` findings are `unused_index` lints on:
 - `public.timer_sessions.timer_sessions_template_id_idx`
 - `public.timer_sessions.timer_sessions_plan_day_id_idx`
 - `public.timer_laps.timer_laps_session_id_idx`
-- `public.climb_media.climb_media_entry_id_idx`
 - `public.plan_days.plan_days_day_type_id_idx`
 - `public.plans.plans_kind_id_idx`
 - `public.plan_days.plan_days_plan_id_idx`
@@ -38,4 +37,3 @@ Current `INFO` findings are `unused_index` lints on:
 - This gate verifies every sync table has:
   - `alter table public.<table> enable row level security;`
   - at least one `create policy ... on public.<table>`
-

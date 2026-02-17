@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://esm.sh; base-uri 'self'; form-action 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://esm.sh; base-uri 'self'; form-action 'self'" />
   <title>klettrack Web App</title>
   <meta name="description" content="klettrack authenticated workspace" />
   <style>
@@ -177,6 +177,29 @@
     .hidden {
       display: none;
     }
+    .site-footer {
+      border-top: 1px solid var(--border);
+      margin-top: 24px;
+      padding: 20px 24px 28px;
+      color: var(--muted);
+      background: var(--panel);
+    }
+    .site-footer-inner {
+      max-width: 2040px;
+      margin: 0 auto;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .site-footer-links {
+      margin-top: 8px;
+    }
+    .site-footer-links a {
+      color: var(--brand);
+      text-decoration: none;
+    }
+    .site-footer-links a:hover {
+      text-decoration: underline;
+    }
     .main-nav {
       display: flex;
       flex-wrap: wrap;
@@ -258,6 +281,16 @@
     <section id="conflict-panel" class="card hidden"></section>
     <section id="app-view" class="card"></section>
   </main>
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <strong>klettrack</strong> — Train smarter. Climb stronger.<br />
+      <span class="muted">© 2026 klettrack.</span>
+      <div class="site-footer-links">
+        <a href="/privacy.html">Privacy Policy</a> ·
+        <a href="/terms.html">Terms &amp; Conditions</a>
+      </div>
+    </div>
+  </footer>
   <nav class="mobile-nav" aria-label="Mobile Primary">
     <a class="nav-link" data-route="/catalog" href="#/catalog"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span><span>Catalog</span></a>
     <a class="nav-link" data-route="/data-manager" href="#/data-manager"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></span><span>Data</span></a>
@@ -266,44 +299,7 @@
     <a class="nav-link" data-route="/account" href="#/account"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.5 1.5 0 1 1-2.1 2.1l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.5 1.5 0 1 1-3 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.5 1.5 0 1 1-2.1-2.1l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H5a1.5 1.5 0 1 1 0-3h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1.5 1.5 0 1 1 2.1-2.1l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V5a1.5 1.5 0 1 1 3 0v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.5 1.5 0 1 1 2.1 2.1l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6H19a1.5 1.5 0 1 1 0 3h-.2a1 1 0 0 0-.9.6z"/></svg></span><span>Account</span></a>
   </nav>
 
-  <script>
-    const THEME_STORAGE_KEY = "WEB_THEME";
-    const rootElement = document.documentElement;
-    const themeButton = document.getElementById("theme-btn");
-    const themeIcon = document.getElementById("theme-icon");
-
-    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-    const initialTheme =
-      storedTheme === "light" || storedTheme === "dark"
-        ? storedTheme
-        : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    applyTheme(initialTheme);
-
-    themeButton?.addEventListener("click", () => {
-      const nextTheme = rootElement.dataset.theme === "dark" ? "light" : "dark";
-      applyTheme(nextTheme);
-      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-    });
-
-    function applyTheme(theme) {
-      rootElement.dataset.theme = theme;
-      if (!themeIcon || !themeButton) {
-        return;
-      }
-      const isDark = theme === "dark";
-      themeIcon.innerHTML = isDark
-        ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2"/><path d="M12 19.8V22"/><path d="M4.9 4.9l1.6 1.6"/><path d="M17.5 17.5l1.6 1.6"/><path d="M2 12h2.2"/><path d="M19.8 12H22"/><path d="M4.9 19.1l1.6-1.6"/><path d="M17.5 6.5l1.6-1.6"/></svg>'
-        : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.2A8 8 0 1 1 9.8 4a7 7 0 1 0 10.2 10.2z"/></svg>';
-      const nextLabel = isDark ? "Switch to light theme" : "Switch to dark theme";
-      themeButton.setAttribute("aria-label", nextLabel);
-      themeButton.setAttribute("title", nextLabel);
-    }
-
-    window.__SUPABASE_URL__ = window.__SUPABASE_URL__ || localStorage.getItem("SUPABASE_URL") || "";
-    window.__SUPABASE_PUBLISHABLE_KEY__ = window.__SUPABASE_PUBLISHABLE_KEY__ || localStorage.getItem("SUPABASE_PUBLISHABLE_KEY") || "";
-    window.__USERNAME_RESOLVER_URL__ = window.__USERNAME_RESOLVER_URL__ || localStorage.getItem("SUPABASE_USERNAME_RESOLVER_URL") || "";
-    window.__SYNC_REALTIME_ENABLED__ = window.__SYNC_REALTIME_ENABLED__ || localStorage.getItem("SYNC_REALTIME_ENABLED") === "true";
-  </script>
+  <script defer src="/web/js/appInit.js"></script>
   <script type="module" src="/web/js/bootstrap.js"></script>
 </body>
 </html>

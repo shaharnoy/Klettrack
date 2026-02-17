@@ -30,8 +30,7 @@ declare
     'timer_laps',
     'climb_entries',
     'climb_styles',
-    'climb_gyms',
-    'climb_media'
+    'climb_gyms'
   ];
   per_table jsonb := '{}'::jsonb;
 begin
@@ -56,4 +55,7 @@ begin
 end;
 $$;
 
-grant execute on function public.sync_compact_tombstones(interval) to authenticated;
+revoke all on function public.sync_compact_tombstones(interval) from public;
+revoke all on function public.sync_compact_tombstones(interval) from anon;
+revoke all on function public.sync_compact_tombstones(interval) from authenticated;
+grant execute on function public.sync_compact_tombstones(interval) to service_role;

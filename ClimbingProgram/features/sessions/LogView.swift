@@ -53,11 +53,11 @@ struct LogView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Query(
-        filter: #Predicate<Session> { !$0.isDeleted },
+        filter: #Predicate<Session> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\Session.date, order: .reverse)]
     ) private var sessions: [Session]
     @Query(
-        filter: #Predicate<ClimbEntry> { !$0.isDeleted },
+        filter: #Predicate<ClimbEntry> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]
     ) private var climbEntries: [ClimbEntry]
 
@@ -468,11 +468,11 @@ struct AddSessionItemSheet: View {
     @Bindable var session: Session
 
     @Query(
-        filter: #Predicate<Exercise> { !$0.isDeleted },
+        filter: #Predicate<Exercise> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\Exercise.name)]
     ) private var allExercises: [Exercise]
     @Query(
-        filter: #Predicate<Plan> { !$0.isDeleted },
+        filter: #Predicate<Plan> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\Plan.startDate)]
     ) private var plans: [Plan]
 
@@ -834,7 +834,7 @@ struct EditSessionItemView: View {
     @Bindable var item: SessionItem
 
     @Query(
-        filter: #Predicate<Plan> { !$0.isDeleted },
+        filter: #Predicate<Plan> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\Plan.startDate)]
     ) private var plans: [Plan]
     @State private var sheetRoute: SheetRoute?

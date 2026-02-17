@@ -5,7 +5,9 @@
 //
 
 import Foundation
+import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct PlanCSVImportSummary: Sendable {
     let createdPlanName: String
@@ -21,6 +23,31 @@ struct PlanCSVImportSummary: Sendable {
 
     var totalPlaceholders: Int {
         placeholderPlanKinds + placeholderDayTypes + placeholderActivities + placeholderTrainingTypes + placeholderExercises
+    }
+}
+
+struct PlanCSVDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.commaSeparatedText] }
+    static var writableContentTypes: [UTType] { [.commaSeparatedText] }
+
+    var csv: String
+
+    init(csv: String = "") {
+        self.csv = csv
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard
+            let data = configuration.file.regularFileContents,
+            let string = String(data: data, encoding: .utf8)
+        else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.csv = string
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(csv.utf8))
     }
 }
 
@@ -44,10 +71,96 @@ enum PlanCSV {
     private static let placeholderTrainingTypeName = "Imported Training Type"
 
     @MainActor
+    static func makeExportCSV(for plan: Plan, in context: ModelContext) -> PlanCSVDocument {
+        let dateFormatter = DateFormatter()
+        dateFormatter.calendar = Calendar(identifier: .gregorian)
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.timeZone = TimeZone.current
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+
+        let exercises = (try? context.fetch(FetchDescriptor<Exercise>()))?.filter { !$0.isSoftDeleted } ?? []
+        var exerciseByID = makeDictionaryKeepingFirstValue(exercises.map { ($0.id, $0) })
+        var exerciseByName = makeDictionaryKeepingFirstValue(exercises.map { (normalizeName($0.name), $0) })
+        var exerciseContextByID: [UUID: (activityName: String, trainingTypeName: String)] = [:]
+
+        let activeActivities = (try? context.fetch(FetchDescriptor<Activity>()))?.filter { !$0.isSoftDeleted } ?? []
+        for activity in activeActivities {
+            for trainingType in activity.types where !trainingType.isSoftDeleted {
+                for exercise in trainingType.exercises where !exercise.isSoftDeleted {
+                    exerciseContextByID[exercise.id] = (activity.name, trainingType.name)
+                    exerciseByID[exercise.id] = exercise
+                    exerciseByName[normalizeName(exercise.name)] = exercise
+                }
+            }
+        }
+
+        var rows: [String] = [requiredHeaders.joined(separator: ",")]
+        let planName = plan.name
+        let planKind = plan.kind?.name ?? ""
+        let planStartDate = dateFormatter.string(from: plan.startDate)
+        let weekdayFormatter = Date.FormatStyle().weekday(.wide)
+        let sortedDays = plan.days.sorted { $0.date < $1.date }
+
+        for day in sortedDays {
+            let dayDateText = dateFormatter.string(from: day.date)
+            let weekdayText = day.date.formatted(weekdayFormatter)
+            let dayType = day.type?.name ?? ""
+            let dayNotes = day.dailyNotes ?? ""
+
+            let orderedRows = orderedExerciseRows(
+                for: day,
+                exerciseByID: exerciseByID,
+                exerciseByName: exerciseByName,
+                exerciseContextByID: exerciseContextByID
+            )
+
+            if orderedRows.isEmpty {
+                rows.append([
+                    planCSVEscape(planName),
+                    planCSVEscape(planKind),
+                    planStartDate,
+                    dayDateText,
+                    planCSVEscape(weekdayText),
+                    planCSVEscape(dayType),
+                    planCSVEscape(dayNotes),
+                    "",
+                    "",
+                    "",
+                    "",
+                    ""
+                ].joined(separator: ","))
+                continue
+            }
+
+            for row in orderedRows {
+                rows.append([
+                    planCSVEscape(planName),
+                    planCSVEscape(planKind),
+                    planStartDate,
+                    dayDateText,
+                    planCSVEscape(weekdayText),
+                    planCSVEscape(dayType),
+                    planCSVEscape(dayNotes),
+                    String(row.order),
+                    planCSVEscape(row.exerciseName),
+                    planCSVEscape(row.activityName),
+                    planCSVEscape(row.trainingTypeName),
+                    row.exerciseID
+                ].joined(separator: ","))
+            }
+        }
+
+        return PlanCSVDocument(csv: rows.joined(separator: "\n"))
+    }
+
+    @MainActor
     static func importPlanCSVAsync(
         from url: URL,
         into context: ModelContext,
-        progress: ((Double) -> Void)? = nil
+        progress: ((Double) -> Void)? = nil,
+        importedPlanName: String? = nil,
+        importedPlanKind: PlanKindModel? = nil,
+        importedPlanStartDate: Date? = nil
     ) async throws -> PlanCSVImportSummary {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
@@ -68,18 +181,18 @@ enum PlanCSV {
 
         progress?(0.2)
 
-        let activePlans = (try? context.fetch(FetchDescriptor<Plan>()))?.filter { !$0.isDeleted } ?? []
-        let activePlanKinds = (try? context.fetch(FetchDescriptor<PlanKindModel>()))?.filter { !$0.isDeleted } ?? []
-        let activeDayTypes = (try? context.fetch(FetchDescriptor<DayTypeModel>()))?.filter { !$0.isDeleted } ?? []
-        let activeActivities = (try? context.fetch(FetchDescriptor<Activity>()))?.filter { !$0.isDeleted } ?? []
-        let activeTrainingTypes = (try? context.fetch(FetchDescriptor<TrainingType>()))?.filter { !$0.isDeleted } ?? []
-        let activeExercises = (try? context.fetch(FetchDescriptor<Exercise>()))?.filter { !$0.isDeleted } ?? []
+        let activePlans = (try? context.fetch(FetchDescriptor<Plan>()))?.filter { !$0.isSoftDeleted } ?? []
+        let activePlanKinds = (try? context.fetch(FetchDescriptor<PlanKindModel>()))?.filter { !$0.isSoftDeleted } ?? []
+        let activeDayTypes = (try? context.fetch(FetchDescriptor<DayTypeModel>()))?.filter { !$0.isSoftDeleted } ?? []
+        let activeActivities = (try? context.fetch(FetchDescriptor<Activity>()))?.filter { !$0.isSoftDeleted } ?? []
+        let activeTrainingTypes = (try? context.fetch(FetchDescriptor<TrainingType>()))?.filter { !$0.isSoftDeleted } ?? []
+        let activeExercises = (try? context.fetch(FetchDescriptor<Exercise>()))?.filter { !$0.isSoftDeleted } ?? []
 
-        var planKindByName = Dictionary(uniqueKeysWithValues: activePlanKinds.map { (normalizeName($0.name), $0) })
-        var dayTypeByName = Dictionary(uniqueKeysWithValues: activeDayTypes.map { (normalizeName($0.name), $0) })
-        var activityByName = Dictionary(uniqueKeysWithValues: activeActivities.map { (normalizeName($0.name), $0) })
-        var exerciseByID = Dictionary(uniqueKeysWithValues: activeExercises.map { ($0.id, $0) })
-        var exerciseByName = Dictionary(uniqueKeysWithValues: activeExercises.map { (normalizeName($0.name), $0) })
+        var planKindByName = makeDictionaryKeepingFirstValue(activePlanKinds.map { (normalizeName($0.name), $0) })
+        var dayTypeByName = makeDictionaryKeepingFirstValue(activeDayTypes.map { (normalizeName($0.name), $0) })
+        var activityByName = makeDictionaryKeepingFirstValue(activeActivities.map { (normalizeName($0.name), $0) })
+        var exerciseByID = makeDictionaryKeepingFirstValue(activeExercises.map { ($0.id, $0) })
+        var exerciseByName = makeDictionaryKeepingFirstValue(activeExercises.map { (normalizeName($0.name), $0) })
 
         var createdTrainingTypesByKey: [String: TrainingType] = [:]
         var createdExercisesByKey: [String: Exercise] = [:]
@@ -220,14 +333,17 @@ enum PlanCSV {
             return created
         }
 
-        let startDate = group.planStartDate ?? group.days.first?.dayDate
+        let requestedPlanName = importedPlanName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedPlanName = (requestedPlanName?.isEmpty == false) ? requestedPlanName! : group.planName
+        let importStartDate = importedPlanStartDate.map { Calendar.current.startOfDay(for: $0) }
+        let startDate = importStartDate ?? group.planStartDate ?? group.days.first?.dayDate
         guard let startDate else {
             throw NSError(domain: "PlanCSV", code: 3, userInfo: [NSLocalizedDescriptionKey: "No valid day rows found in CSV."])
         }
 
         let existingPlanNames = Set(activePlans.map { normalizeName($0.name) })
-        let createdPlanName = uniqueImportedPlanName(baseName: group.planName, existing: existingPlanNames)
-        let planKind = ensurePlanKind(name: group.planKind)
+        let createdPlanName = uniqueImportedPlanName(baseName: resolvedPlanName, existing: existingPlanNames)
+        let planKind = importedPlanKind.flatMap { $0.isSoftDeleted ? nil : $0 } ?? ensurePlanKind(name: group.planKind)
         let plan = Plan(name: createdPlanName, kind: planKind, startDate: startDate)
         SyncLocalMutation.touch(plan)
         context.insert(plan)
@@ -299,6 +415,78 @@ enum PlanCSV {
             placeholderExercises: placeholderExercises
         )
     }
+}
+
+private struct PlanCSVExportExerciseRow {
+    let order: Int
+    let exerciseName: String
+    let exerciseID: String
+    let activityName: String
+    let trainingTypeName: String
+}
+
+private func orderedExerciseRows(
+    for day: PlanDay,
+    exerciseByID: [UUID: Exercise],
+    exerciseByName: [String: Exercise],
+    exerciseContextByID: [UUID: (activityName: String, trainingTypeName: String)]
+) -> [PlanCSVExportExerciseRow] {
+    var resolvedRows: [PlanCSVExportExerciseRow] = []
+
+    if !day.chosenExerciseIDs.isEmpty {
+        let sortedIDs = day.chosenExerciseIDs.enumerated().sorted { left, right in
+            let leftOrder = day.exerciseOrderByID[left.element.uuidString] ?? left.offset
+            let rightOrder = day.exerciseOrderByID[right.element.uuidString] ?? right.offset
+            if leftOrder != rightOrder {
+                return leftOrder < rightOrder
+            }
+            return left.offset < right.offset
+        }.map(\.element)
+
+        for (index, id) in sortedIDs.enumerated() {
+            let exercise = exerciseByID[id]
+            let context = exerciseContextByID[id]
+            let fallbackName = index < day.chosenExercises.count ? day.chosenExercises[index] : ""
+            let name = exercise?.name ?? fallbackName
+            resolvedRows.append(
+                PlanCSVExportExerciseRow(
+                    order: index + 1,
+                    exerciseName: name,
+                    exerciseID: id.uuidString,
+                    activityName: context?.activityName ?? "",
+                    trainingTypeName: context?.trainingTypeName ?? ""
+                )
+            )
+        }
+        return resolvedRows
+    }
+
+    if !day.chosenExercises.isEmpty {
+        let sortedNames = day.chosenExercises.enumerated().sorted { left, right in
+            let leftOrder = day.exerciseOrder[left.element] ?? left.offset
+            let rightOrder = day.exerciseOrder[right.element] ?? right.offset
+            if leftOrder != rightOrder {
+                return leftOrder < rightOrder
+            }
+            return left.offset < right.offset
+        }.map(\.element)
+
+        for (index, name) in sortedNames.enumerated() {
+            let exercise = exerciseByName[normalizeName(name)]
+            let context = exercise.flatMap { exerciseContextByID[$0.id] }
+            resolvedRows.append(
+                PlanCSVExportExerciseRow(
+                    order: index + 1,
+                    exerciseName: exercise?.name ?? name,
+                    exerciseID: exercise?.id.uuidString ?? "",
+                    activityName: context?.activityName ?? "",
+                    trainingTypeName: context?.trainingTypeName ?? ""
+                )
+            )
+        }
+    }
+
+    return resolvedRows
 }
 
 private struct PlanCSVParseResult {
@@ -591,4 +779,20 @@ private func slugify(_ value: String) -> String {
     let collapsed = raw.replacing("--", with: "-")
     let trimmed = collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     return trimmed.isEmpty ? "imported" : trimmed
+}
+
+private func makeDictionaryKeepingFirstValue<Key: Hashable, Value>(_ items: [(Key, Value)]) -> [Key: Value] {
+    var result: [Key: Value] = [:]
+    for (key, value) in items where result[key] == nil {
+        result[key] = value
+    }
+    return result
+}
+
+private func planCSVEscape(_ value: String) -> String {
+    if value.contains(",") || value.contains("\"") || value.contains("\n") {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
+    }
+    return value
 }

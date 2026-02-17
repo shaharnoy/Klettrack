@@ -14,7 +14,7 @@ final class Activity {
     var types: [TrainingType] = []
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     init(id: UUID = UUID(), name: String) {
         self.id = id
@@ -32,7 +32,7 @@ final class TrainingType {
     var combinations: [BoulderCombination] = []
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -55,7 +55,7 @@ final class BoulderCombination {
     var exercises: [Exercise] = []
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     init(id: UUID = UUID(), name: String, comboDescription: String? = nil) {
         self.id = id
@@ -78,7 +78,7 @@ final class Exercise {
     var notes: String?
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -115,7 +115,7 @@ final class Session {
     var items: [SessionItem] = []   // links to catalog exercises with performed values
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
     init(id: UUID = UUID(), date: Date = .now) { self.id = id; self.date = date }
 }
 
@@ -139,7 +139,7 @@ final class SessionItem {
     var duration: Double?
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -187,7 +187,7 @@ final class TimerTemplate {
     var useCount: Int
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
     
     init(
         id: UUID = UUID(),
@@ -245,7 +245,7 @@ final class TimerInterval {
     var order: Int
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
     
     init(
         id: UUID = UUID(),
@@ -279,7 +279,7 @@ final class TimerSession {
     var dailynotes: String?
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
         
     
     init(
@@ -308,7 +308,7 @@ final class TimerLap {
     var notes: String?
     var syncVersion: Int = 0
     var updatedAtClient: Date = Date.now
-    var isDeleted: Bool = false
+    var isSoftDeleted: Bool = false
     
     init(
         id: UUID = UUID(),

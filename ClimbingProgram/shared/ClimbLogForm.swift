@@ -17,11 +17,11 @@ struct ClimbLogForm: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(
-        filter: #Predicate<ClimbStyle> { !$0.isDeleted && $0.isHidden == false },
+        filter: #Predicate<ClimbStyle> { !$0.isSoftDeleted && $0.isHidden == false },
         sort: [SortDescriptor(\ClimbStyle.name, order: .forward)]
     ) private var climbStyles: [ClimbStyle]
     @Query(
-        filter: #Predicate<ClimbGym> { !$0.isDeleted },
+        filter: #Predicate<ClimbGym> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\ClimbGym.name, order: .forward)]
     ) private var climbGyms: [ClimbGym]
     

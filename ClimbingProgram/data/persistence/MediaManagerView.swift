@@ -11,7 +11,7 @@ import Foundation
 struct MediaManagerView: View {
     @Environment(\.modelContext) private var context
     @Query(
-        filter: #Predicate<ClimbMedia> { !$0.isDeleted },
+        filter: #Predicate<ClimbMedia> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\ClimbMedia.createdAt, order: .reverse)]
     )
     private var mediaItems: [ClimbMedia]

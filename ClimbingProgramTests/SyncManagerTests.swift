@@ -153,4 +153,25 @@ final class SyncManagerTests: XCTestCase {
             )
         )
     }
+
+    func testShouldPreferServerTombstoneWhenServerIsDeleted() {
+        XCTAssertTrue(
+            SyncManager.shouldPreferServerTombstone(
+                serverDoc: ["is_deleted": .bool(true)]
+            )
+        )
+    }
+
+    func testShouldPreferServerTombstoneFalseWhenServerIsActive() {
+        XCTAssertFalse(
+            SyncManager.shouldPreferServerTombstone(
+                serverDoc: ["is_deleted": .bool(false)]
+            )
+        )
+        XCTAssertFalse(
+            SyncManager.shouldPreferServerTombstone(
+                serverDoc: ["name": .string("Plan")]
+            )
+        )
+    }
 }

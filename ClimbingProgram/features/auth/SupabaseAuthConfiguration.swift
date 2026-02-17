@@ -47,13 +47,20 @@ struct SupabaseAuthConfiguration: Sendable {
         guard
             let rawURL,
             let url = URL(string: rawURL),
+            url.scheme?.localizedLowercase == "https",
             let rawKey,
             !rawKey.isEmpty
         else {
             return nil
         }
 
-        let resolverURL = rawResolver.flatMap { URL(string: $0) }
+        let resolverURL: URL?
+        if let rawResolver, let parsedResolverURL = URL(string: rawResolver),
+           parsedResolverURL.scheme?.localizedLowercase == "https" {
+            resolverURL = parsedResolverURL
+        } else {
+            resolverURL = nil
+        }
         return SupabaseAuthConfiguration(
             projectURL: url,
             publishableKey: rawKey,

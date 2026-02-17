@@ -28,7 +28,6 @@ SYNC_TABLES=(
   "climb_entries"
   "climb_styles"
   "climb_gyms"
-  "climb_media"
 )
 
 failures=0

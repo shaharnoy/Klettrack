@@ -17,7 +17,7 @@ struct TimerTemplateSelector: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query(
-        filter: #Predicate<TimerTemplate> { !$0.isDeleted },
+        filter: #Predicate<TimerTemplate> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\TimerTemplate.lastUsedDate, order: .reverse)]
     ) private var templates: [TimerTemplate]
     

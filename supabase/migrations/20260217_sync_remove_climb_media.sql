@@ -1,7 +1,31 @@
--- Consolidate sync pull into one RPC call to reduce per-request round trips.
-
 begin;
 
+-- Remove climb_media from realtime publication when present.
+do $$
+begin
+  if exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'climb_media'
+  ) then
+    execute 'alter publication supabase_realtime drop table public.climb_media';
+  end if;
+end;
+$$;
+
+-- Drop climb_media policies/triggers/indexes/table if present.
+drop trigger if exists climb_media_sync_metadata on public.climb_media;
+drop policy if exists climb_media_owner_select on public.climb_media;
+drop policy if exists climb_media_owner_insert on public.climb_media;
+drop policy if exists climb_media_owner_update on public.climb_media;
+drop policy if exists climb_media_owner_delete on public.climb_media;
+drop index if exists public.climb_media_owner_updated_idx;
+drop index if exists public.climb_media_entry_id_idx;
+drop table if exists public.climb_media;
+
+-- Recreate pull RPC without climb_media entity.
 create or replace function public.sync_pull_page(
   p_owner_id uuid,
   p_cursor text default null,
@@ -142,6 +166,69 @@ select
 from meta m;
 $$;
 
+alter function public.sync_pull_page(uuid, text, integer) set search_path = public, pg_temp;
 grant execute on function public.sync_pull_page(uuid, text, integer) to authenticated;
+
+-- Recreate tombstone compaction helper without climb_media target.
+create or replace function public.sync_compact_tombstones(
+  p_retention interval default interval '30 days'
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  cutoff timestamptz := now() - p_retention;
+  deleted_total bigint := 0;
+  deleted_rows bigint := 0;
+  table_name text;
+  targets text[] := array[
+    'plan_kinds',
+    'day_types',
+    'plans',
+    'plan_days',
+    'activities',
+    'training_types',
+    'exercises',
+    'boulder_combinations',
+    'boulder_combination_exercises',
+    'sessions',
+    'session_items',
+    'timer_templates',
+    'timer_intervals',
+    'timer_sessions',
+    'timer_laps',
+    'climb_entries',
+    'climb_styles',
+    'climb_gyms'
+  ];
+  per_table jsonb := '{}'::jsonb;
+begin
+  foreach table_name in array targets loop
+    execute format(
+      'delete from public.%I where is_deleted = true and updated_at_server < $1',
+      table_name
+    )
+    using cutoff;
+
+    get diagnostics deleted_rows = row_count;
+    deleted_total := deleted_total + deleted_rows;
+    per_table := per_table || jsonb_build_object(table_name, deleted_rows);
+  end loop;
+
+  return jsonb_build_object(
+    'retention', p_retention::text,
+    'cutoff', cutoff,
+    'deleted_total', deleted_total,
+    'by_table', per_table
+  );
+end;
+$$;
+
+revoke all on function public.sync_compact_tombstones(interval) from public;
+revoke all on function public.sync_compact_tombstones(interval) from anon;
+revoke all on function public.sync_compact_tombstones(interval) from authenticated;
+grant execute on function public.sync_compact_tombstones(interval) to service_role;
 
 commit;

@@ -123,10 +123,18 @@ export function parsePlanCsv(text) {
   };
 }
 
-export function buildPlanImportMutations({ group, store }) {
+export function buildPlanImportMutations({ group, store, overrides = null }) {
   if (!group) {
     throw new Error("Missing import group.");
   }
+
+  const nextGroup = {
+    ...group,
+    planName: String(overrides?.planName || group.planName || "").trim() || "Imported Plan",
+    planKindName: String(overrides?.planKindName || group.planKindName || "").trim(),
+    planStartDate: String(overrides?.planStartDate || group.planStartDate || "").trim() || null
+  };
+  const selectedPlanKind = String(overrides?.planKindSelection ?? "__auto__");
 
   const plans = store.active("plans");
   const planKinds = store.active("plan_kinds");
@@ -136,7 +144,7 @@ export function buildPlanImportMutations({ group, store }) {
   const exercises = store.active("exercises");
 
   const existingPlanNames = new Set(plans.map((plan) => normalizeName(plan.name)));
-  const nextPlanName = resolveUniquePlanName(group.planName || "Imported Plan", existingPlanNames);
+  const nextPlanName = resolveUniquePlanName(nextGroup.planName || "Imported Plan", existingPlanNames);
 
   const mutations = [];
   const placeholderSummary = {
@@ -320,14 +328,19 @@ export function buildPlanImportMutations({ group, store }) {
     return id;
   }
 
-  const earliestDayDate = group.earliestDayDate;
-  const startDate = group.planStartDate || earliestDayDate;
+  const earliestDayDate = nextGroup.earliestDayDate;
+  const startDate = nextGroup.planStartDate || earliestDayDate;
   if (!startDate) {
     throw new Error("No valid day rows were found in this CSV file.");
   }
 
   const planId = crypto.randomUUID();
-  const planKindId = ensurePlanKind(group.planKindName || "");
+  const planKindId =
+    selectedPlanKind === "__auto__"
+      ? ensurePlanKind(nextGroup.planKindName || "")
+      : selectedPlanKind === ""
+        ? null
+        : selectedPlanKind;
   mutations.push({
     entity: "plans",
     id: planId,

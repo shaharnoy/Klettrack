@@ -36,8 +36,6 @@ const timerLapId = crypto.randomUUID();
 const invalidTimerLapId = crypto.randomUUID();
 const sessionItemId = crypto.randomUUID();
 const climbEntryId = crypto.randomUUID();
-const climbMediaId = crypto.randomUUID();
-const invalidClimbMediaId = crypto.randomUUID();
 const climbStyleId = crypto.randomUUID();
 const climbGymId = crypto.randomUUID();
 const runCursor = new Date(Date.now() - 60_000).toISOString();
@@ -349,62 +347,6 @@ const climbEntryCreateResponse = await syncPush({
 });
 assertAcked(climbEntryCreateResponse, climbEntryCreateOpId, "climb_entry_create");
 
-const climbMediaCreateOpId = crypto.randomUUID();
-const climbMediaCreateResponse = await syncPush({
-  url: config.url,
-  token: primarySession.access_token,
-  body: {
-    deviceId: `contract-primary-${runId}`,
-    baseCursor: primaryAfterCreate.lastCursor,
-    mutations: [
-      {
-        opId: climbMediaCreateOpId,
-        entity: "climb_media",
-        entityId: climbMediaId,
-        type: "upsert",
-        baseVersion: 0,
-        updatedAtClient: new Date().toISOString(),
-        payload: {
-          climb_entry_id: climbEntryId,
-          type: "video",
-          created_at: new Date().toISOString(),
-          storage_bucket: "climb-media",
-          storage_path: `contract/${runId}.mp4`
-        }
-      }
-    ]
-  }
-});
-assertAcked(climbMediaCreateResponse, climbMediaCreateOpId, "climb_media_create");
-
-const invalidClimbMediaOpId = crypto.randomUUID();
-const invalidClimbMediaResponse = await syncPush({
-  url: config.url,
-  token: primarySession.access_token,
-  body: {
-    deviceId: `contract-primary-${runId}`,
-    baseCursor: primaryAfterCreate.lastCursor,
-    mutations: [
-      {
-        opId: invalidClimbMediaOpId,
-        entity: "climb_media",
-        entityId: invalidClimbMediaId,
-        type: "upsert",
-        baseVersion: 0,
-        updatedAtClient: new Date().toISOString(),
-        payload: {
-          climb_entry_id: crypto.randomUUID(),
-          type: "photo",
-          created_at: new Date().toISOString(),
-          storage_bucket: "climb-media",
-          storage_path: `contract/${runId}.jpg`
-        }
-      }
-    ]
-  }
-});
-assertMutationFailed(invalidClimbMediaResponse, invalidClimbMediaOpId, "invalid_parent_reference", "climb_media_invalid_parent");
-
 const climbStyleCreateOpId = crypto.randomUUID();
 const climbStyleCreateResponse = await syncPush({
   url: config.url,
@@ -577,11 +519,6 @@ if (!climbEntryDoc) {
   throw new Error("Climb entry upsert verification failed.");
 }
 
-const climbMediaDoc = findEntityDoc(v2AfterCreate.changes, "climb_media", climbMediaId);
-if (!climbMediaDoc) {
-  throw new Error("Climb media upsert verification failed.");
-}
-
 const climbStyleDoc = findEntityDoc(v2AfterCreate.changes, "climb_styles", climbStyleId);
 if (!climbStyleDoc) {
     throw new Error("Climb style upsert verification failed.");
@@ -614,14 +551,6 @@ const cleanupResponse = await syncPush({
         entityId: climbStyleId,
         type: "delete",
         baseVersion: Number(climbStyleDoc.version ?? 1),
-        updatedAtClient: new Date().toISOString()
-      },
-      {
-        opId: crypto.randomUUID(),
-        entity: "climb_media",
-        entityId: climbMediaId,
-        type: "delete",
-        baseVersion: Number(climbMediaDoc.version ?? 1),
         updatedAtClient: new Date().toISOString()
       },
       {

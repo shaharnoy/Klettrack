@@ -1,6 +1,6 @@
 import { supabaseKey, supabaseURL } from "./supabaseClient.js";
 
-const SESSION_STORAGE_KEY = "web_supabase_session_v1";
+let inMemorySession = null;
 
 function normalizeIdentifier(identifier) {
   return identifier.trim().toLowerCase();
@@ -207,36 +207,24 @@ export function getAccessToken() {
 }
 
 function loadSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-    return parsed;
-  } catch {
+  if (!inMemorySession || typeof inMemorySession !== "object") {
     return null;
   }
+  return inMemorySession;
 }
 
 function saveSession(sessionLike) {
   const accessToken = String(sessionLike?.access_token || "").trim();
-  const refreshToken = String(sessionLike?.refresh_token || "").trim();
   if (!accessToken) {
     return;
   }
-  localStorage.setItem(
-    SESSION_STORAGE_KEY,
-    JSON.stringify({
-      access_token: accessToken,
-      refresh_token: refreshToken || null
-    })
-  );
+  // Security hardening: do not persist auth tokens in browser storage.
+  inMemorySession = {
+    access_token: accessToken,
+    refresh_token: null
+  };
 }
 
 function clearSession() {
-  localStorage.removeItem(SESSION_STORAGE_KEY);
+  inMemorySession = null;
 }
