@@ -42,22 +42,25 @@ private struct ExerciseSelection: Identifiable, Equatable {
 // MARK: - Log (list of sessions)
 
 struct LogView: View {
+    private enum ModalRoute: Hashable {
+        case newSession
+        case exportCSV
+        case importCSV
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Query(sort: [SortDescriptor(\Session.date, order: .reverse)]) private var sessions: [Session]
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
 
-    // New session
-    @State private var showingNew = false
+    @State private var modalRoute: ModalRoute?
     @State private var navigationPath = NavigationPath()
 
 
     // Export
     @State private var exportDoc: LogCSVDocument? = nil
-    @State private var showExporter = false
 
     // Import (async with progress)
-    @State private var showImporter = false
     @State private var importing = false
     @State private var importProgress: Double = 0
 
@@ -72,7 +75,7 @@ struct LogView: View {
             NavigationStack(path: $navigationPath) {
                 CombinedLogList(sessions: sessions, climbEntries: climbEntries)
                     .toolbar { trailingToolbar }
-                    .sheet(isPresented: $showingNew) {
+                    .sheet(isPresented: newSessionPresentedBinding) {
                         NewSessionSheet { createdDay in
                             navigationPath.append(createdDay)
                         }
@@ -99,7 +102,7 @@ struct LogView: View {
             }
         // Exporter
         .fileExporter(
-            isPresented: $showExporter,
+            isPresented: exportPresentedBinding,
             document: exportDoc,
             contentType: .commaSeparatedText,
             defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
@@ -111,7 +114,7 @@ struct LogView: View {
         }
         // Importer (async)
         .fileImporter(
-            isPresented: $showImporter,
+            isPresented: importPresentedBinding,
             allowedContentTypes: [.commaSeparatedText],
             allowsMultipleSelection: false
         ) { res in
@@ -133,6 +136,27 @@ struct LogView: View {
         .overlay { if importing { ImportProgressOverlay(progress: importProgress) } }
     }
 
+    private var newSessionPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { modalRoute == .newSession },
+            set: { if !$0 { modalRoute = nil } }
+        )
+    }
+
+    private var exportPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { modalRoute == .exportCSV },
+            set: { if !$0 { modalRoute = nil } }
+        )
+    }
+
+    private var importPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { modalRoute == .importCSV },
+            set: { if !$0 { modalRoute = nil } }
+        )
+    }
+
     // MARK: - Toolbar (extracted to keep body small)
 
     @ToolbarContentBuilder
@@ -150,7 +174,7 @@ struct LogView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 guard isDataReady else { return }
-                showingNew = true
+                modalRoute = .newSession
             } label: {
                 Image(systemName: "plus")
             }
@@ -161,7 +185,7 @@ struct LogView: View {
     private var exportButton: some View {
         Button {
             exportDoc = LogCSV.makeExportCSV(context: context)
-            showExporter = true
+            modalRoute = .exportCSV
         } label: {
             Label("Export logs to CSV", systemImage: "square.and.arrow.up")
         }
@@ -174,7 +198,7 @@ struct LogView: View {
     }
 
     private var importButton: some View {
-        Button { showImporter = true } label: {
+        Button { modalRoute = .importCSV } label: {
             Label("Import logs from CSV", systemImage: "square.and.arrow.down")
         }
     }
@@ -278,6 +302,18 @@ struct SessionItemRow: View {
     @Bindable var item: SessionItem
     var onProgress: (() -> Void)? = nil
     
+    @ViewBuilder
+    private var metricsRow: some View {
+        HStack(spacing: 16) {
+            if let r = item.reps { Text("Reps: \(r, format: .number.precision(.fractionLength(1)))") }
+            if let s = item.sets { Text("Sets: \(s, format: .number.precision(.fractionLength(1)))") }
+            if let d = item.duration { Text("Duration: \(d, format: .number.precision(.fractionLength(1)))") }
+            if let w = item.weightKg { Text("Weight: \(w, format: .number.precision(.fractionLength(1))) kg") }
+            if let g = item.grade { Text("Grade: \(g)") }
+        }
+        .font(.footnote.monospacedDigit())
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -300,15 +336,8 @@ struct SessionItemRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                    }
-            HStack(spacing: 16) {
-                if let r = item.reps { Text(String(format: "Reps: %.1f", r)) }
-                if let s = item.sets { Text(String(format: "Sets: %.1f", s)) }
-                if let d = item.duration { Text(String(format: "Duration: %.1f", d)) }
-                if let w = item.weightKg { Text(String(format: "Weight: %.1f kg", w)) }
-                if let g = item.grade { Text("Grade: \(g)") }
             }
-            .font(.footnote.monospacedDigit())
+            metricsRow
             if let n = item.notes, !n.isEmpty {
                 Text(n).font(.footnote).foregroundStyle(.secondary)
             }
@@ -371,11 +400,11 @@ struct LogClimbRow: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.yellow.opacity(0.3))
-                        .cornerRadius(4)
+                        .clipShape(.rect(cornerRadius: 4))
                 }
                 if climb.isPreviouslyClimbed == true {
                         Image(systemName: "arrow.uturn.backward.circle")
-                            .foregroundColor(.orange)
+                            .foregroundStyle(.orange)
                             .font(.caption)
                     }
                 
@@ -420,6 +449,11 @@ struct LogClimbRow: View {
 
 // MARK: - Add item to a session
 struct AddSessionItemSheet: View {
+    private enum SheetRoute: String, Identifiable {
+        case catalogPicker
+        var id: String { rawValue }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Bindable var session: Session
@@ -427,7 +461,7 @@ struct AddSessionItemSheet: View {
     @Query(sort: [SortDescriptor(\Exercise.name)]) private var allExercises: [Exercise]
     @Query(sort: [SortDescriptor(\Plan.startDate)]) private var plans: [Plan]
 
-    @State private var showingCatalogPicker = false
+    @State private var sheetRoute: SheetRoute?
     @State private var selectedCatalogName: String? = nil
     @State private var selectedPlan: Plan? = nil
     @State private var inputReps: String = ""
@@ -441,7 +475,7 @@ struct AddSessionItemSheet: View {
         NavigationStack {
             Form {
                 Button {
-                    showingCatalogPicker = true
+                    sheetRoute = .catalogPicker
                 } label: {
                     HStack {
                         Text("Exercise")
@@ -453,8 +487,11 @@ struct AddSessionItemSheet: View {
                         }
                     }
                 }
-                .sheet(isPresented: $showingCatalogPicker) {
-                    SingleCatalogExercisePicker(selected: $selectedCatalogName)
+                .sheet(item: $sheetRoute) { route in
+                    switch route {
+                    case .catalogPicker:
+                        SingleCatalogExercisePicker(selected: $selectedCatalogName)
+                    }
                 }
                 
                 // Plan selection
@@ -481,13 +518,13 @@ struct AddSessionItemSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         guard let selectedName = selectedCatalogName, !selectedName.isEmpty else { return }
-                        let reps = Double(inputReps.replacingOccurrences(of: ",", with: ".")
+                        let reps = Double(inputReps.replacing(",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
-                        let sets = Double(inputSets.replacingOccurrences(of: ",", with: ".")
+                        let sets = Double(inputSets.replacing(",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
-                        let duration = Double(inputDuration.replacingOccurrences(of: ",", with: ".")
+                        let duration = Double(inputDuration.replacing(",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
-                        let weight = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
+                        let weight = Double(inputWeight.replacing(",", with: ".")
                             .trimmingCharacters(in: .whitespaces))
                         let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
                         let item = SessionItem(
@@ -533,6 +570,11 @@ private struct ImportProgressOverlay: View {
 // MARK: - New session
 
 struct NewSessionSheet: View {
+    private enum SheetRoute: String, Identifiable {
+        case multiExercisePicker
+        var id: String { rawValue }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
@@ -540,7 +582,7 @@ struct NewSessionSheet: View {
     @State private var date = Date()
 
     // NEW: multi-exercise add flow
-    @State private var showingMultiExercisePicker = false
+    @State private var sheetRoute: SheetRoute?
     @State private var selectedExercises: [String] = []
 
     // NEW: tell LogView what day to open after creation
@@ -556,7 +598,7 @@ struct NewSessionSheet: View {
                 Section("Exercises (optional)") {
                     Button {
                         guard isDataReady else { return }
-                        showingMultiExercisePicker = true
+                        sheetRoute = .multiExercisePicker
                     } label: {
                         HStack {
                             Text("Add Exercises")
@@ -610,7 +652,7 @@ struct NewSessionSheet: View {
                         dismiss()
 
                         // Navigate after the sheet is dismissed
-                        DispatchQueue.main.async {
+                        Task { @MainActor in
                             onCreated(dayKey)
                         }
                     }
@@ -618,9 +660,12 @@ struct NewSessionSheet: View {
                 }
             }
         }
-        .sheet(isPresented: $showingMultiExercisePicker) {
-            CatalogExercisePicker(selected: $selectedExercises)
-                .environment(\.isDataReady, isDataReady)
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .multiExercisePicker:
+                CatalogExercisePicker(selected: $selectedExercises)
+                    .environment(\.isDataReady, isDataReady)
+            }
         }
     }
 }
@@ -629,30 +674,35 @@ struct NewSessionSheet: View {
 // MARK: - Session detail
 
 struct SessionDetailView: View {
+    private enum SheetRoute: String, Identifiable {
+        case addItem
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.editMode) private var editMode
     @Bindable var session: Session
-    @State private var showingAddItem = false
+    @State private var sheetRoute: SheetRoute?
     @State private var editingItem: SessionItem? = nil
     @State private var didReorder = false
     // Quick Progress
        @State private var progressExercise: ExerciseSelection? = nil
 
     //multi-exercise add flow
-    @State private var showingMultiExercisePicker = false
-    @State private var multiSelectedExercises: [String] = []
     var body: some View {
         List {
             Section("Exercises") {
                 ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
-                    SessionItemRow(item: item) {
-                        progressExercise = ExerciseSelection(name: item.exerciseName)
-                    }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            editingItem = item
+                    Button {
+                        editingItem = item
+                    } label: {
+                        SessionItemRow(item: item) {
+                            progressExercise = ExerciseSelection(name: item.exerciseName)
                         }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 guard isDataReady else { return }
@@ -697,15 +747,18 @@ struct SessionDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     guard isDataReady else { return }
-                    showingAddItem = true
+                    sheetRoute = .addItem
                 } label: {
                     Image(systemName: "plus")
                 }
                 .disabled(!isDataReady)
             }
         }
-        .sheet(isPresented: $showingAddItem) {
-            AddSessionItemSheet(session: session)
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .addItem:
+                AddSessionItemSheet(session: session)
+            }
         }
         .sheet(item: $editingItem) { item in
             NavigationStack {
@@ -750,6 +803,11 @@ struct SessionDetailView: View {
 }
 
 struct EditSessionItemView: View {
+    private enum SheetRoute: String, Identifiable {
+        case catalogPicker
+        var id: String { rawValue }
+    }
+
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -757,7 +815,7 @@ struct EditSessionItemView: View {
     @Bindable var item: SessionItem
 
     @Query(sort: [SortDescriptor(\Plan.startDate)]) private var plans: [Plan]
-    @State private var showingCatalogPicker = false
+    @State private var sheetRoute: SheetRoute?
     @State private var selectedCatalogName: String? = nil
     @State private var selectedPlan: Plan? = nil
     @State private var inputReps: String = ""
@@ -787,7 +845,7 @@ struct EditSessionItemView: View {
             } else {
                 Form {
                     Button {
-                        showingCatalogPicker = true
+                        sheetRoute = .catalogPicker
                     } label: {
                         HStack {
                             Text("Exercise")
@@ -799,8 +857,11 @@ struct EditSessionItemView: View {
                             }
                         }
                     }
-                    .sheet(isPresented: $showingCatalogPicker) {
-                        SingleCatalogExercisePicker(selected: $selectedCatalogName)
+                    .sheet(item: $sheetRoute) { route in
+                        switch route {
+                        case .catalogPicker:
+                            SingleCatalogExercisePicker(selected: $selectedCatalogName)
+                        }
                     }
                     
                     // Plan selection
@@ -831,13 +892,13 @@ struct EditSessionItemView: View {
                             item.exerciseName = selectedName
                             item.planSourceId = selectedPlan?.id
                             item.planName = selectedPlan?.name
-                            item.reps = Double(inputReps.replacingOccurrences(of: ",", with: ".")
+                            item.reps = Double(inputReps.replacing(",", with: ".")
                                 .trimmingCharacters(in: .whitespaces))
-                            item.sets = Double(inputSets.replacingOccurrences(of: ",", with: ".")
+                            item.sets = Double(inputSets.replacing(",", with: ".")
                                 .trimmingCharacters(in: .whitespaces))
-                            item.duration = Double(inputDuration.replacingOccurrences(of: ",", with: ".")
+                            item.duration = Double(inputDuration.replacing(",", with: ".")
                                 .trimmingCharacters(in: .whitespaces))
-                            item.weightKg = Double(inputWeight.replacingOccurrences(of: ",", with: ".")
+                            item.weightKg = Double(inputWeight.replacing(",", with: ".")
                                 .trimmingCharacters(in: .whitespaces))
                             item.grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
                             item.notes = inputNotes.isEmpty ? nil : inputNotes
@@ -1029,8 +1090,8 @@ private struct CombinedDayRow: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(4)
+                            .foregroundStyle(.white)
+                            .clipShape(.rect(cornerRadius: 4))
                     }
                     
                     if climbCount > 0 {
@@ -1039,8 +1100,8 @@ private struct CombinedDayRow: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.orange)
-                            .foregroundColor(.white)
-                            .cornerRadius(4)
+                            .foregroundStyle(.white)
+                            .clipShape(.rect(cornerRadius: 4))
                     }
                 }
             }
@@ -1066,6 +1127,14 @@ private struct CombinedDayRow: View {
 // MARK: - Combined Day Detail View
 
 private struct CombinedDayDetailView: View {
+    private enum AddRoute: String, Identifiable {
+        case exercise
+        case climb
+        case multiExercisePicker
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.editMode) private var editMode
@@ -1073,15 +1142,14 @@ private struct CombinedDayDetailView: View {
     let session: Session?
     let climbEntries: [ClimbEntry]
     
-    @State private var showingAddItem = false
-    @State private var showingAddClimb = false
+    @State private var addRoute: AddRoute? = nil
     @State private var didReorder = false
     @State private var editingClimb: ClimbEntry? = nil
     @State private var editingItem: SessionItem? = nil
     // Quick Progress
     @State private var progressExercise: ExerciseSelection? = nil
     //multi-exercise add flow
-    @State private var showingMultiExercisePicker = false
+    @State private var shouldProcessMultiSelectionOnDismiss = false
     @State private var multiSelectedExercises: [String] = []
     
     // Pre-sorted climbs so we don't re-sort inside the body repeatedly
@@ -1095,13 +1163,15 @@ private struct CombinedDayDetailView: View {
             if let session = session, !session.items.isEmpty {
                 Section("Exercises") {
                     ForEach(session.items.sorted(by: { $0.sort < $1.sort })) { item in
-                        SessionItemRow(item: item) {
-                            progressExercise = ExerciseSelection(name: item.exerciseName)
-                        }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                editingItem = item
+                        Button {
+                            editingItem = item
+                        } label: {
+                            SessionItemRow(item: item) {
+                                progressExercise = ExerciseSelection(name: item.exerciseName)
                             }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
                                     guard isDataReady else { return }
@@ -1132,11 +1202,13 @@ private struct CombinedDayDetailView: View {
             if !sortedClimbs.isEmpty {
                 Section("Climbs") {
                     ForEach(sortedClimbs) { climb in
-                        LogClimbRow(climb: climb)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                editingClimb = climb
-                            }
+                        Button {
+                            editingClimb = climb
+                        } label: {
+                            LogClimbRow(climb: climb)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
                                     guard isDataReady else { return }
@@ -1189,10 +1261,16 @@ private struct CombinedDayDetailView: View {
                     Button(action: { addExercise() }) {
                         Label("Log Exercise", systemImage: "dumbbell")
                     }
-                    Button(action: { showingMultiExercisePicker = true }) {
+                    Button(action: {
+                        shouldProcessMultiSelectionOnDismiss = true
+                        addRoute = .multiExercisePicker
+                    }) {
                                Label("Add Several Exercises", systemImage: "text.badge.plus")
                            }
-                    Button(action: { showingAddClimb = true }) {
+                    Button(action: {
+                        shouldProcessMultiSelectionOnDismiss = false
+                        addRoute = .climb
+                    }) {
                         Label("Log Climb", systemImage: "figure.climbing")
                     }
                 } label: {
@@ -1201,21 +1279,23 @@ private struct CombinedDayDetailView: View {
                 .disabled(!isDataReady)
             }
         }
-
-        .sheet(isPresented: $showingAddItem) {
-            if let session = session {
-                AddSessionItemSheet(session: session)
+        .sheet(item: $addRoute, onDismiss: {
+            if shouldProcessMultiSelectionOnDismiss {
+                addExercisesFromSelection()
+                shouldProcessMultiSelectionOnDismiss = false
             }
-        }
-        .sheet(isPresented: $showingAddClimb) {
-            AddClimbView()
-        }
-        // multi-select catalog picker
-        .sheet(isPresented: $showingMultiExercisePicker, onDismiss: {
-            addExercisesFromSelection()
-        }) {
-            CatalogExercisePicker(selected: $multiSelectedExercises)
-                .environment(\.isDataReady, isDataReady)
+        }) { route in
+            switch route {
+            case .exercise:
+                if let session = session {
+                    AddSessionItemSheet(session: session)
+                }
+            case .climb:
+                AddClimbView()
+            case .multiExercisePicker:
+                CatalogExercisePicker(selected: $multiSelectedExercises)
+                    .environment(\.isDataReady, isDataReady)
+            }
         }
         .sheet(item: $editingClimb) { climb in
             ClimbLogForm(
@@ -1260,7 +1340,8 @@ private struct CombinedDayDetailView: View {
             try? context.save()
         }
         
-        showingAddItem = true
+        shouldProcessMultiSelectionOnDismiss = false
+        addRoute = .exercise
     }
     
     private func addExercisesFromSelection() {
@@ -1321,4 +1402,3 @@ private struct CombinedDayDetailView: View {
         try? context.save()
     }
 }
-

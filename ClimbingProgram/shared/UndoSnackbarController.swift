@@ -9,9 +9,10 @@ import Foundation
 import SwiftUI
 
 @MainActor
-public final class UndoSnackbarController: ObservableObject {
-    @Published public private(set) var isVisible: Bool = false
-    @Published public private(set) var message: String = ""
+@Observable
+public final class UndoSnackbarController {
+    public private(set) var isVisible: Bool = false
+    public private(set) var message: String = ""
     public private(set) var duration: TimeInterval = 10
 
     private var onUndoAction: (() -> Void)?

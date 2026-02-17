@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 
 /// Manages session memory for climb logging to remember type and gym within a session
+@MainActor
 @Observable
 final class ClimbSessionManager {
     static let shared = ClimbSessionManager()

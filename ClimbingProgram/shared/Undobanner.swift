@@ -48,20 +48,17 @@ public struct UndoBanner: View {
         .padding(.vertical, 10)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(alignment: .bottomLeading) {
-            GeometryReader { proxy in
-                let barHeight: CGFloat = 3
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.12))
-                    Capsule()
-                        .fill(Color.accentColor.opacity(0.85))
-                        .frame(width: max(0, proxy.size.width * progress))
-                        .animation(.linear(duration: duration), value: progress)
-                }
-                .frame(height: barHeight)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
-                .allowsHitTesting(false)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.12))
+                Capsule()
+                    .fill(Color.accentColor.opacity(0.85))
+                    .scaleEffect(x: max(0, progress), y: 1, anchor: .leading)
+                    .animation(.linear(duration: duration), value: progress)
             }
+            .frame(height: 3)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+            .allowsHitTesting(false)
         }
         .shadow(radius: 2)
         .accessibilityElement(children: .combine)

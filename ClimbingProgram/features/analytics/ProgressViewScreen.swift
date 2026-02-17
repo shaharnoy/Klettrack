@@ -30,8 +30,8 @@ public struct ProgressViewScreen: View {
     @Query(sort: \Plan.startDate) private var allPlans: [Plan]
     
     @State private var tab: Tab = .climb
-    @StateObject private var climbVM  = ClimbStatsVM(input: .init(sessions: [], climbs: [], plans: []))
-    @StateObject private var exerciseVM = ExerciseStatsVM(input: .init(sessions: [], climbs: [], plans: []))
+    @State private var climbVM  = ClimbStatsVM(input: .init(sessions: [], climbs: [], plans: []))
+    @State private var exerciseVM = ExerciseStatsVM(input: .init(sessions: [], climbs: [], plans: []))
     @State private var hasRequestedReviewThisSession = false
     @AppStorage("filterReviewTriggerCount") private var filterCount = 0
 
@@ -39,34 +39,31 @@ public struct ProgressViewScreen: View {
     public init() {}
     
     public var body: some View {
-        GeometryReader { geo in
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Segmented tab selector
-                    Picker("", selection: $tab) {
-                        ForEach(Tab.allCases, id: \.self) { tabCase in
-                            Text(tabCase.rawValue).tag(tabCase)
-                        }
+        ScrollView {
+            VStack(spacing: 0) {
+                // Segmented tab selector
+                Picker("", selection: $tab) {
+                    ForEach(Tab.allCases, id: \.self) { tabCase in
+                        Text(tabCase.rawValue).tag(tabCase)
                     }
-                    .pickerStyle(.segmented)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, LayoutGrid.outerHorizontal)
+                .padding(.top, 8)
+
+                Divider()
                     .padding(.horizontal, LayoutGrid.outerHorizontal)
                     .padding(.top, 8)
 
-                    Divider()
-                        .padding(.horizontal, LayoutGrid.outerHorizontal)
-                        .padding(.top, 8)
-
-                    Group {
-                        if tab == .climb {
-                            ClimbStatsView(vm: climbVM)
-                        } else {
-                            ExerciseStatsView(vm: exerciseVM)
-                        }
+                Group {
+                    if tab == .climb {
+                        ClimbStatsView(vm: climbVM)
+                    } else {
+                        ExerciseStatsView(vm: exerciseVM)
                     }
                 }
-                .frame(width: geo.size.width, alignment: .topLeading)
             }
-            .frame(width: geo.size.width)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .navigationTitle("PROGRESS")
         .navigationBarTitleDisplayMode(.large)
@@ -133,32 +130,34 @@ struct DateRange: Equatable {
 }
 
 // MARK: - Exercise VM
-fileprivate final class ExerciseStatsVM: ObservableObject {
+@MainActor
+@Observable
+fileprivate final class ExerciseStatsVM {
     private var input: StatsInputData
-    @Published var dateRange = DateRange(
+    var dateRange = DateRange(
             customStart: Calendar.current.startOfDay(for: Date()),
             customEnd:   Calendar.current.startOfDay(for: Date())
         )
-    @Published var trainingPlanIDs: Set<String> = []
-    @Published var exerciseNames: Set<String> = []
+    var trainingPlanIDs: Set<String> = []
+    var exerciseNames: Set<String> = []
 
-    @Published var totalSessions: Int = 0
-    @Published var totalExercises: Int = 0
+    var totalSessions: Int = 0
+    var totalExercises: Int = 0
 
-    @Published var availableTrainingPlans: [MultiPickOption] = []
-    @Published var availableExercises: [MultiPickOption] = []
+    var availableTrainingPlans: [MultiPickOption] = []
+    var availableExercises: [MultiPickOption] = []
 
-    @Published var distWeight: [(String, Int)] = []
-    @Published var distReps: [(String, Int)] = []
-    @Published var distSets: [(String, Int)] = []
-    @Published var distDuration: [(String, Int)] = []
-    @Published var weightBreakdown: [String: [(String, Int)]] = [:] // bin → [(value, count)]
-    @Published var repsBreakdown:   [String: [(String, Int)]] = [:]
-    @Published var setsBreakdown:   [String: [(String, Int)]] = [:]
-    @Published var durationBreakdown:  [String: [(String, Int)]] = [:]
+    var distWeight: [(String, Int)] = []
+    var distReps: [(String, Int)] = []
+    var distSets: [(String, Int)] = []
+    var distDuration: [(String, Int)] = []
+    var weightBreakdown: [String: [(String, Int)]] = [:] // bin → [(value, count)]
+    var repsBreakdown:   [String: [(String, Int)]] = [:]
+    var setsBreakdown:   [String: [(String, Int)]] = [:]
+    var durationBreakdown:  [String: [(String, Int)]] = [:]
 
 
-    @Published var timeSeries: [TimePoint] = []
+    var timeSeries: [TimePoint] = []
 
     init(input: StatsInputData) {
         self.input = input
@@ -296,9 +295,8 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
 
     private func label(_ r: ClosedRange<Double>, unit: String?) -> String {
         let lo = r.lowerBound, hi = r.upperBound
-        let fmt = (lo.rounded() == lo && hi.rounded() == hi) ? "%.0f" : "%.1f"
         let u = unit.map { " \($0)" } ?? ""
-        return String(format: "\(fmt)-\(fmt)\(u)", lo, hi)
+        return "\(formattedBinValue(lo))-\(formattedBinValue(hi))\(u)"
     }
     
     // Aggregations
@@ -334,9 +332,7 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
             let pretty: [String:[(String,Int)]] = breakdown.mapValues { dict in
                 dict.map { kv in
                     let v = kv.key
-                    let valLabel = unit == nil
-                        ? (v.rounded() == v ? String(format: "%.0f", v) : String(format: "%.1f", v))
-                        : (v.rounded() == v ? String(format: "%.0f%@", v, " \(unit!)") : String(format: "%.1f%@", v, " \(unit!)"))
+                    let valLabel = unit == nil ? formattedBinValue(v) : "\(formattedBinValue(v)) \(unit!)"
                     return (valLabel, kv.value)
                 }
                 .sorted { $0.0 < $1.0 }
@@ -357,7 +353,7 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
         let num = label
             .split(whereSeparator: { !$0.isNumber && $0 != "." && $0 != "," })
             .first
-            .flatMap { Double($0.replacingOccurrences(of: ",", with: ".")) } ?? 0
+            .flatMap { Double($0.replacing(",", with: ".")) } ?? 0
         return num
     }
     
@@ -413,7 +409,9 @@ fileprivate final class ExerciseStatsVM: ObservableObject {
 }
 
 // MARK: - Climb VM
-fileprivate final class ClimbStatsVM: ObservableObject {
+@MainActor
+@Observable
+fileprivate final class ClimbStatsVM {
     private var input: StatsInputData
     enum ClimbType: String, CaseIterable {
         case boulder = "Boulder"
@@ -423,46 +421,46 @@ fileprivate final class ClimbStatsVM: ObservableObject {
     enum WipFilter: String, CaseIterable { case all = "All", yes = "Yes", no = "No" }
 
 
-    @Published var dateRange = DateRange(
-            customStart: Calendar.current.startOfDay(for: Date()),
-            customEnd:   Calendar.current.startOfDay(for: Date())
-        )
-    @Published var climbType: ClimbType? = nil
-    @Published var sportType: SportType? = nil
-    @Published var gyms: Set<String> = []
-    @Published var grades: Set<String> = []
-    @Published var styles: Set<String> = []
-    
-    @Published var totalClimbs: Int = 0
-    @Published var totalAttempts: Int = 0
-    @Published var climbsAttemptsRatioText: String = "-"
+    var dateRange = DateRange(
+        customStart: Calendar.current.startOfDay(for: Date()),
+        customEnd:   Calendar.current.startOfDay(for: Date())
+    )
+    var climbType: ClimbType? = nil
+    var sportType: SportType? = nil
+    var gyms: Set<String> = []
+    var grades: Set<String> = []
+    var styles: Set<String> = []
 
-    @Published var availableGyms: [MultiPickOption] = []
-    @Published var availableGrades: [MultiPickOption] = []
-    @Published var availableStyles: [MultiPickOption] = []
-    @Published var workInProgress: WipFilter = .all
+    var totalClimbs: Int = 0
+    var totalAttempts: Int = 0
+    var climbsAttemptsRatioText: String = "-"
 
-    @Published var distStyle: [(String,Int)] = []
-    @Published var distGrade: [(String,Int)] = []
-    @Published var distAngle: [(String,Int)] = []
+    var availableGyms: [MultiPickOption] = []
+    var availableGrades: [MultiPickOption] = []
+    var availableStyles: [MultiPickOption] = []
+    var workInProgress: WipFilter = .all
 
-    @Published var timeSeries: [TimePoint] = []
-    @Published var attemptsSeries: [TimePoint] = []
-    @Published var ratioSeries: [TimePoint] = []
+    var distStyle: [(String,Int)] = []
+    var distGrade: [(String,Int)] = []
+    var distAngle: [(String,Int)] = []
 
-    @Published var styleByGradeStacks: [StackedBar<String,String>] = []
-    @Published var seasonality: [SeasonalitySlice] = []
-    @Published var gradeByStyleStacks: [StackedBar<String,String>] = []
-    @Published var angleByGradeStacks: [StackedBar<String,String>] = []
-    @Published var gradeByPrevStacks: [StackedBar<String,String>] = []
+    var timeSeries: [TimePoint] = []
+    var attemptsSeries: [TimePoint] = []
+    var ratioSeries: [TimePoint] = []
 
-    @Published var sendRatioByGradeStyle: [(grade: String, style: String, ratio: Double)] = []
-    @Published var sendRatioByGrade: [(grade: String, ratio: Double)] = []
-    @Published var sendRatioByStyle: [(style: String, ratio: Double)] = []
-    
-    @Published var gradeFeelCells: [GradeFeelCell] = []
-    @Published var preferFeelsLikeGrade: Bool = false
-    @Published var searchQuery: String = ""
+    var styleByGradeStacks: [StackedBar<String,String>] = []
+    var seasonality: [SeasonalitySlice] = []
+    var gradeByStyleStacks: [StackedBar<String,String>] = []
+    var angleByGradeStacks: [StackedBar<String,String>] = []
+    var gradeByPrevStacks: [StackedBar<String,String>] = []
+
+    var sendRatioByGradeStyle: [(grade: String, style: String, ratio: Double)] = []
+    var sendRatioByGrade: [(grade: String, ratio: Double)] = []
+    var sendRatioByStyle: [(style: String, ratio: Double)] = []
+
+    var gradeFeelCells: [GradeFeelCell] = []
+    var preferFeelsLikeGrade: Bool = false
+    var searchQuery: String = ""
 
 
 
@@ -596,8 +594,7 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            let q = trimmed.lowercased()
-            filtered = filtered.filter { matchesSearch($0, query: q) }
+            filtered = filtered.filter { matchesSearch($0, query: trimmed) }
         }
         // KPIs
         let nonWip = filtered.filter { !$0.isWorkInProgress }
@@ -605,7 +602,7 @@ fileprivate final class ClimbStatsVM: ObservableObject {
         totalAttempts = filtered.reduce(0) { $0 + parseAttempts($1.attempts) }
         if totalAttempts > 0 {
             let ratio = Double(totalClimbs) / Double(totalAttempts)
-            climbsAttemptsRatioText = String(format: "%.2f", ratio)
+            climbsAttemptsRatioText = ratio.formatted(.number.precision(.fractionLength(2)))
         } else {
             climbsAttemptsRatioText = "-"
         }
@@ -657,7 +654,7 @@ fileprivate final class ClimbStatsVM: ObservableObject {
     private func matchesSearch(_ climb: ClimbEntry, query: String) -> Bool {
         func contains(_ value: String?) -> Bool {
             guard let value = value, !value.isEmpty else { return false }
-            return value.lowercased().contains(query)
+            return value.localizedStandardContains(query)
         }
         // same fields as in ClimbView search
         return contains(climb.grade)
@@ -705,7 +702,7 @@ fileprivate final class ClimbStatsVM: ObservableObject {
             let g = resolvedGrade(e)
             attemptSum[g, default: 0] += parseAttempts(e.attempts)
         }
-        func gkey(_ g:String)->Double { Double(g.replacingOccurrences(of:",", with:".")) ?? .infinity }
+        func gkey(_ g:String)->Double { Double(g.replacing(",", with: ".")) ?? .infinity }
         return Set(sendCount.keys).union(attemptSum.keys).map { g in
             let sends = sendCount[g, default: 0]
             let attempts = attemptSum[g, default: 0]
@@ -983,9 +980,14 @@ fileprivate enum TimeBucketer { case day, week, month
 
 // MARK: - Exercise UI
 fileprivate struct ExerciseStatsView: View {
-    @ObservedObject var vm: ExerciseStatsVM
-    @State private var showPlanPicker = false
-    @State private var showExercisePicker = false
+    private enum PickerRoute: String, Identifiable {
+        case plans
+        case exercise
+        var id: String { rawValue }
+    }
+
+    @Bindable var vm: ExerciseStatsVM
+    @State private var pickerRoute: PickerRoute?
     @State private var showFilters = false
     @State private var selectedExerciseDist: ExerciseDist = .weight
     @State private var didInit = false
@@ -1023,18 +1025,8 @@ fileprivate struct ExerciseStatsView: View {
                             }
                             ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
                         }
-                        FilterRow(title: "Plans", value: summary(vm.trainingPlanIDs)) { showPlanPicker = true }
-                            .sheet(isPresented: $showPlanPicker) {
-                                MultiSelectSheet(title: "Plans", options: vm.availableTrainingPlans, selected: $vm.trainingPlanIDs)
-                                    .onDisappear { vm.recomputeAll()
-                                        ReviewTrigger.shared.filtersChanged()}
-                            }
-                        FilterRow(title: "Exercise", value: summary(vm.exerciseNames)) { showExercisePicker = true }
-                            .sheet(isPresented: $showExercisePicker) {
-                                MultiSelectSheet(title: "Exercise", options: vm.availableExercises, selected: $vm.exerciseNames)
-                                    .onDisappear { vm.recomputeAll()
-                                        ReviewTrigger.shared.filtersChanged()}
-                            }
+                        FilterRow(title: "Plans", value: summary(vm.trainingPlanIDs)) { pickerRoute = .plans }
+                        FilterRow(title: "Exercise", value: summary(vm.exerciseNames)) { pickerRoute = .exercise }
                     }
                 }
             }
@@ -1067,6 +1059,22 @@ fileprivate struct ExerciseStatsView: View {
 
             }
             .padding(.bottom, 24)
+            .sheet(item: $pickerRoute) { route in
+                switch route {
+                case .plans:
+                    MultiSelectSheet(title: "Plans", options: vm.availableTrainingPlans, selected: $vm.trainingPlanIDs)
+                        .onDisappear {
+                            vm.recomputeAll()
+                            ReviewTrigger.shared.filtersChanged()
+                        }
+                case .exercise:
+                    MultiSelectSheet(title: "Exercise", options: vm.availableExercises, selected: $vm.exerciseNames)
+                        .onDisappear {
+                            vm.recomputeAll()
+                            ReviewTrigger.shared.filtersChanged()
+                        }
+                }
+            }
             //.frame(maxWidth: .infinity, alignment: .topLeading)
             .onChange(of: vm.dateRange) {
                 vm.recomputeAll()
@@ -1079,11 +1087,17 @@ fileprivate struct ExerciseStatsView: View {
 
 // MARK: - Climb UI
 fileprivate struct ClimbStatsView: View {
-    @ObservedObject var vm: ClimbStatsVM
-    @State private var showGymPicker = false
-    @State private var showStylePicker = false
-    @State private var showGradePicker = false
+    private enum PickerRoute: String, Identifiable {
+        case gym
+        case style
+        case grade
+        var id: String { rawValue }
+    }
+
+    @Bindable var vm: ClimbStatsVM
+    @State private var pickerRoute: PickerRoute?
     @State private var showFilters = false
+    @AppStorage(FeatureFlags.forcePreferMyGradeInProgress) private var forcePreferMyGradeInProgress = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: LayoutGrid.sectionSpacing) {
@@ -1160,16 +1174,8 @@ fileprivate struct ClimbStatsView: View {
                         }
                         
                         
-                        FilterRow(title: "Gym", value: summary(vm.gyms)) { showGymPicker = true }
-                            .sheet(isPresented: $showGymPicker) {
-                                MultiSelectSheet(title: "Gym", options: vm.availableGyms, selected: $vm.gyms)
-                                    .onDisappear { vm.recomputeAll() }
-                            }
-                        FilterRow(title: "Grade", value: summary(vm.grades)) { showGradePicker = true }
-                            .sheet(isPresented: $showGradePicker) {
-                                MultiSelectSheet(title: "Grade", options: vm.availableGrades, selected: $vm.grades)
-                                    .onDisappear { vm.recomputeAll() }
-                            }
+                        FilterRow(title: "Gym", value: summary(vm.gyms)) { pickerRoute = .gym }
+                        FilterRow(title: "Grade", value: summary(vm.grades)) { pickerRoute = .grade }
                         HStack(spacing: 4) {
                             Toggle(isOn: $vm.preferFeelsLikeGrade) {
                                 InfoLabel(
@@ -1195,11 +1201,7 @@ fileprivate struct ClimbStatsView: View {
                             .pickerStyle(.segmented)
                         }
                         .pickerStyle(.segmented)
-                        FilterRow(title: "Style", value: summary(vm.styles)) { showStylePicker = true }
-                            .sheet(isPresented: $showStylePicker) {
-                                MultiSelectSheet(title: "Style", options: vm.availableStyles, selected: $vm.styles)
-                                    .onDisappear { vm.recomputeAll() }
-                            }
+                        FilterRow(title: "Style", value: summary(vm.styles)) { pickerRoute = .style }
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 8) {
                                 Image(systemName: "magnifyingglass")
@@ -1239,6 +1241,19 @@ fileprivate struct ClimbStatsView: View {
                 SeasonalitySection(slices: vm.seasonality)
             }
             .padding(.bottom, 24)
+            .sheet(item: $pickerRoute) { route in
+                switch route {
+                case .gym:
+                    MultiSelectSheet(title: "Gym", options: vm.availableGyms, selected: $vm.gyms)
+                        .onDisappear { vm.recomputeAll() }
+                case .style:
+                    MultiSelectSheet(title: "Style", options: vm.availableStyles, selected: $vm.styles)
+                        .onDisappear { vm.recomputeAll() }
+                case .grade:
+                    MultiSelectSheet(title: "Grade", options: vm.availableGrades, selected: $vm.grades)
+                        .onDisappear { vm.recomputeAll() }
+                }
+            }
             //.frame(maxWidth: .infinity, alignment: .topLeading)
             .onChange(of: vm.dateRange) {
                 vm.recomputeAll()
@@ -1260,9 +1275,21 @@ fileprivate struct ClimbStatsView: View {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
             }
+            .onChange(of: forcePreferMyGradeInProgress) { _, isEnabled in
+                if isEnabled {
+                    vm.preferFeelsLikeGrade = true
+                }
+                vm.recomputeAll()
+                ReviewTrigger.shared.filtersChanged()
+            }
             .onChange(of: vm.searchQuery) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+            }
+            .onAppear {
+                if forcePreferMyGradeInProgress {
+                    vm.preferFeelsLikeGrade = true
+                }
             }
         }
 
@@ -1316,7 +1343,7 @@ fileprivate struct DistributionCards: View {
                         BarMark(x: .value("Category", row.label),
                                 y: .value("Count", row.count))
                             .foregroundStyle(.green)
-                            .cornerRadius(4)
+                            .clipShape(.rect(cornerRadius: 4))
                             .opacity(interactionsEnabled
                                      ? (selected == nil || selected == row.label ? 1 : 0.35)
                                      : 1)
@@ -1328,7 +1355,7 @@ fileprivate struct DistributionCards: View {
                     } else {
                         BarMark(x: .value("Count", row.count),
                                 y: .value("Category", row.label))
-                            .cornerRadius(4)
+                            .clipShape(.rect(cornerRadius: 4))
                             .opacity(interactionsEnabled
                                      ? (selected == nil || selected == row.label ? 1 : 0.35)
                                      : 1)
@@ -1543,7 +1570,7 @@ fileprivate struct GradeVsFeelsLikeHeatmapSection: View {
                         y: .value("My Grade", cell.feelsLike)
                     )
                     .foregroundStyle(Color.blue.opacity(0.15 + 0.85 * intensity))
-                    .cornerRadius(4)
+                    .clipShape(.rect(cornerRadius: 4))
                     .annotation {
                         Text("\(cell.count)")
                             .font(.caption2)
@@ -1629,7 +1656,7 @@ fileprivate struct SendRatioSwitcherSection: View {
                                 )
                                 .opacity(0) // invisible anchor for the annotation
                                 .annotation(position: .top) {
-                                    Text(String(format: "%.2f", row.ratio))
+                                    Text(row.ratio, format: .number.precision(.fractionLength(2)))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -1649,7 +1676,7 @@ fileprivate struct SendRatioSwitcherSection: View {
                         )
                         .foregroundStyle(.orange)
                         .annotation(position: .trailing) {
-                            Text(String(format: "%.2f", row.ratio))
+                            Text(row.ratio, format: .number.precision(.fractionLength(2)))
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
@@ -1798,7 +1825,7 @@ fileprivate struct ClimbTimeSeriesSection: View {
         else { return nil }
 
         let ratioVal = Double(r.cumulative) / 1000.0
-        return "\(monthYearLabel(s.date)) • sends: \(s.cumulative), attempts: \(a.cumulative), ratio: \(String(format: "%.2f", ratioVal))"
+        return "\(monthYearLabel(s.date)) • sends: \(s.cumulative), attempts: \(a.cumulative), ratio: \(ratioVal.formatted(.number.precision(.fractionLength(2))))"
     }
     // Helper
     private func monthYearLabel(_ d: Date) -> String {
@@ -1912,7 +1939,8 @@ fileprivate struct ClimbTimeSeriesSection: View {
         let m = cal.component(.month, from: d)
         let q = ((m - 1) / 3) + 1
         let yy = cal.component(.year, from: d) % 100
-        return "Q\(q)/\(String(format: "%02d", yy))"
+        let paddedYear = yy.formatted(.number.grouping(.never).precision(.integerLength(2)))
+        return "Q\(q)/\(paddedYear)"
     }
 
 
@@ -1972,7 +2000,7 @@ fileprivate struct ClimbChartView: View {
             }
 
             // Ratio scaled to left axis range (0...1 → 0...leftMax)
-            ForEach(Array(ratio.enumerated()), id: \.offset) { _, p in
+            ForEach(ratio, id: \.date) { p in
                 let r = Double(p.cumulative) / 1000.0
                 LineMark(
                     x: .value("Date", p.date),
@@ -2000,7 +2028,7 @@ fileprivate struct ClimbChartView: View {
                 AxisTick()
                 if let raw = v.as(Double.self) {
                     let val = max(0, min(1, raw / Double(leftMax)))
-                    AxisValueLabel(String(format: "%.1f", val))
+                    AxisValueLabel(val.formatted(.number.precision(.fractionLength(1))))
                 }
             }
         }
@@ -2061,7 +2089,15 @@ private func quarterLabel(_ d: Date) -> String {
     let m = cal.component(.month, from: d)
     let q = ((m - 1) / 3) + 1
     let yy = cal.component(.year, from: d) % 100
-    return "Q\(q)/\(String(format: "%02d", yy))"
+    let paddedYear = yy.formatted(.number.grouping(.never).precision(.integerLength(2)))
+    return "Q\(q)/\(paddedYear)"
+}
+
+private func formattedBinValue(_ value: Double) -> String {
+    let style = value.rounded() == value
+        ? FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0))
+        : FloatingPointFormatStyle<Double>.number.precision(.fractionLength(1))
+    return value.formatted(style)
 }
 
 
@@ -2089,7 +2125,7 @@ fileprivate struct StackedByIsPreviouslyClimbedSection: View {
                                 y: .value("Count", v),
                                 stacking: .standard
                             )
-                            .cornerRadius(4)
+                            .clipShape(.rect(cornerRadius: 4))
                             .foregroundStyle(by: .value("Segment", seg))
                             .annotation(position: .top, alignment: .center) {
                                 if seg == wanted.last, total > 0 {
@@ -2216,14 +2252,11 @@ fileprivate struct StackedByGradeSection: View {
         let stacks: [StackedBar<String,String>]
         @Binding var selectedGrade: String?
 
+        @ViewBuilder
         var body: some View {
-            guard let plotFrame = proxy.plotFrame else {
-                return AnyView(Color.clear)
-            }
+            if let plotFrame = proxy.plotFrame {
+                let frame = geo[plotFrame]
 
-            let frame = geo[plotFrame]
-
-            return AnyView(
                 Rectangle()
                     .fill(Color.clear)
                     .contentShape(Rectangle())
@@ -2239,7 +2272,9 @@ fileprivate struct StackedByGradeSection: View {
                                 // selectedGrade = nil
                             }
                     )
-            )
+            } else {
+                Color.clear
+            }
         }
 
         private func handleTouch(_ value: DragGesture.Value, frame: CGRect) {
@@ -2769,7 +2804,7 @@ fileprivate struct MultiSelectSheet: View {
             }
         }
     }
-    private func filtered(_ o: [MultiPickOption]) -> [MultiPickOption] { query.isEmpty ? o : o.filter { $0.label.localizedCaseInsensitiveContains(query) } }
+    private func filtered(_ o: [MultiPickOption]) -> [MultiPickOption] { query.isEmpty ? o : o.filter { $0.label.localizedStandardContains(query) } }
     private func toggle(_ id: String) { if selected.contains(id) { selected.remove(id) } else { selected.insert(id) } }
 }
 
