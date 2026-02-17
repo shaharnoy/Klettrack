@@ -740,7 +740,7 @@ struct ClimbLogForm: View {
         defer { isSaving = false }
 
         let angleInt      = angleDegrees.isEmpty ? nil : Int(angleDegrees)
-        let attemptsText  = attempts.isEmpty ? nil : attempts
+        let attemptsText  = String(max(1, attemptsIntBinding.wrappedValue))
         let notesText     = inputNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil
             : inputNotes.trimmingCharacters(in: .whitespacesAndNewlines)
