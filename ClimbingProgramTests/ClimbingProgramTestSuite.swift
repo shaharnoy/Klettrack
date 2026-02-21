@@ -6,6 +6,7 @@ import XCTest
 import SwiftData
 @testable import klettrack
 
+@MainActor
 class ClimbingProgramTestSuite: XCTestCase {
 
     // Shared in-memory SwiftData container for each test case
