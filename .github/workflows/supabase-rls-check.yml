@@ -10,6 +10,13 @@ on:
 jobs:
   all-tests:
     runs-on: macos-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_TEST_EMAIL: ${{ secrets.SUPABASE_TEST_EMAIL }}
+      SUPABASE_TEST_PASSWORD: ${{ secrets.SUPABASE_TEST_PASSWORD }}
+      SUPABASE_SECONDARY_TEST_EMAIL: ${{ secrets.SUPABASE_SECONDARY_TEST_EMAIL }}
+      SUPABASE_SECONDARY_TEST_PASSWORD: ${{ secrets.SUPABASE_SECONDARY_TEST_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,14 +41,8 @@ jobs:
           node --check web/js/components/toasts.js
 
       - name: Web + Node live Supabase tests
-        if: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_PUBLISHABLE_KEY != '' && secrets.SUPABASE_TEST_EMAIL != '' && secrets.SUPABASE_TEST_PASSWORD != '' }}
+        if: ${{ env.SUPABASE_URL != '' && env.SUPABASE_PUBLISHABLE_KEY != '' && env.SUPABASE_TEST_EMAIL != '' && env.SUPABASE_TEST_PASSWORD != '' }}
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-          SUPABASE_TEST_EMAIL: ${{ secrets.SUPABASE_TEST_EMAIL }}
-          SUPABASE_TEST_PASSWORD: ${{ secrets.SUPABASE_TEST_PASSWORD }}
-          SUPABASE_SECONDARY_TEST_EMAIL: ${{ secrets.SUPABASE_SECONDARY_TEST_EMAIL }}
-          SUPABASE_SECONDARY_TEST_PASSWORD: ${{ secrets.SUPABASE_SECONDARY_TEST_PASSWORD }}
           SUPABASE_SCALE_UPSERT_COUNT: "120"
         run: |
           node scripts/supabase/smoke/sync_web_hydration_smoke.mjs
