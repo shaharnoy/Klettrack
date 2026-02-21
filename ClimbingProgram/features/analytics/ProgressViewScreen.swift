@@ -138,6 +138,39 @@ struct DateRange: Equatable {
     var customEnd: Date? = nil
 }
 
+fileprivate struct ExerciseFilterSnapshot: Codable {
+    var customStart: Date?
+    var customEnd: Date?
+    var trainingPlanIDs: [String]
+    var exerciseNames: [String]
+}
+
+fileprivate struct ClimbFilterSnapshot: Codable {
+    var customStart: Date?
+    var customEnd: Date?
+    var climbType: String?
+    var sportType: String?
+    var gyms: [String]
+    var grades: [String]
+    var styles: [String]
+    var workInProgress: String
+    var preferFeelsLikeGrade: Bool
+    var searchQuery: String
+}
+
+fileprivate enum ProgressFilterPersistence {
+    static func encode<T: Encodable>(_ value: T) -> String? {
+        let encoder = JSONEncoder()
+        guard let data = try? encoder.encode(value) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func decode<T: Decodable>(_ type: T.Type, from string: String) -> T? {
+        guard let data = string.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+}
+
 // MARK: - Exercise VM
 @MainActor
 @Observable
@@ -414,6 +447,23 @@ fileprivate final class ExerciseStatsVM {
         isDateFiltered()
         || !trainingPlanIDs.isEmpty
         || !exerciseNames.isEmpty
+    }
+
+    func filterSnapshot() -> ExerciseFilterSnapshot {
+        ExerciseFilterSnapshot(
+            customStart: dateRange.customStart,
+            customEnd: dateRange.customEnd,
+            trainingPlanIDs: Array(trainingPlanIDs).sorted(),
+            exerciseNames: Array(exerciseNames).sorted()
+        )
+    }
+
+    func applyFilterSnapshot(_ snapshot: ExerciseFilterSnapshot) {
+        dateRange.customStart = snapshot.customStart
+        dateRange.customEnd = snapshot.customEnd
+        trainingPlanIDs = Set(snapshot.trainingPlanIDs)
+        exerciseNames = Set(snapshot.exerciseNames)
+        recomputeAll()
     }
 }
 
@@ -936,6 +986,38 @@ fileprivate final class ClimbStatsVM {
         || workInProgress != .all
         || !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+
+    func filterSnapshot() -> ClimbFilterSnapshot {
+        ClimbFilterSnapshot(
+            customStart: dateRange.customStart,
+            customEnd: dateRange.customEnd,
+            climbType: climbType?.rawValue,
+            sportType: sportType?.rawValue,
+            gyms: Array(gyms).sorted(),
+            grades: Array(grades).sorted(),
+            styles: Array(styles).sorted(),
+            workInProgress: workInProgress.rawValue,
+            preferFeelsLikeGrade: preferFeelsLikeGrade,
+            searchQuery: searchQuery
+        )
+    }
+
+    func applyFilterSnapshot(_ snapshot: ClimbFilterSnapshot) {
+        dateRange.customStart = snapshot.customStart
+        dateRange.customEnd = snapshot.customEnd
+        climbType = snapshot.climbType.flatMap(ClimbType.init(rawValue:))
+        sportType = snapshot.sportType.flatMap(SportType.init(rawValue:))
+        if climbType != .sport {
+            sportType = nil
+        }
+        gyms = Set(snapshot.gyms)
+        grades = Set(snapshot.grades)
+        styles = Set(snapshot.styles)
+        workInProgress = WipFilter(rawValue: snapshot.workInProgress) ?? .all
+        preferFeelsLikeGrade = snapshot.preferFeelsLikeGrade
+        searchQuery = snapshot.searchQuery
+        recomputeAll()
+    }
     
     private func resolvedGrade(_ e: ClimbEntry) -> String {
         let logged = e.grade.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -999,7 +1081,9 @@ fileprivate struct ExerciseStatsView: View {
     @State private var pickerRoute: PickerRoute?
     @State private var showFilters = false
     @State private var selectedExerciseDist: ExerciseDist = .weight
-    @State private var didInit = false
+    @State private var didLoadPersistedFilters = false
+    @AppStorage(FeatureFlags.persistProgressFilters) private var persistProgressFilters = false
+    @AppStorage("progress.exerciseFilters.v1") private var persistedExerciseFilters = ""
     fileprivate enum ExerciseDist { case weight, reps, sets,duration}
 
     var body: some View {
@@ -1032,7 +1116,11 @@ fileprivate struct ExerciseStatsView: View {
                                 Text("Date Range")
                                 DateRangePicker(range: $vm.dateRange)
                             }
-                            ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
+                            ClearAllButton(action: {
+                                vm.clearAll()
+                                ReviewTrigger.shared.filtersChanged()
+                                persistFiltersIfNeeded()
+                            }, isEnabled: vm.hasActiveFilters)
                         }
                         FilterRow(title: "Plans", value: summary(vm.trainingPlanIDs)) { pickerRoute = .plans }
                         FilterRow(title: "Exercise", value: summary(vm.exerciseNames)) { pickerRoute = .exercise }
@@ -1075,12 +1163,14 @@ fileprivate struct ExerciseStatsView: View {
                         .onDisappear {
                             vm.recomputeAll()
                             ReviewTrigger.shared.filtersChanged()
+                            persistFiltersIfNeeded()
                         }
                 case .exercise:
                     MultiSelectSheet(title: "Exercise", options: vm.availableExercises, selected: $vm.exerciseNames)
                         .onDisappear {
                             vm.recomputeAll()
                             ReviewTrigger.shared.filtersChanged()
+                            persistFiltersIfNeeded()
                         }
                 }
             }
@@ -1088,10 +1178,34 @@ fileprivate struct ExerciseStatsView: View {
             .onChange(of: vm.dateRange) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
+            }
+            .onChange(of: persistProgressFilters) { _, isEnabled in
+                if isEnabled {
+                    persistFiltersIfNeeded()
+                }
+            }
+            .onAppear {
+                guard !didLoadPersistedFilters else { return }
+                didLoadPersistedFilters = true
+
+                guard persistProgressFilters else { return }
+                guard let snapshot = ProgressFilterPersistence.decode(
+                    ExerciseFilterSnapshot.self,
+                    from: persistedExerciseFilters
+                ) else { return }
+
+                vm.applyFilterSnapshot(snapshot)
             }
     }
 
     private func summary(_ set: Set<String>) -> String { set.isEmpty ? "All" : "\(set.count) selected" }
+
+    private func persistFiltersIfNeeded() {
+        guard persistProgressFilters else { return }
+        guard let encoded = ProgressFilterPersistence.encode(vm.filterSnapshot()) else { return }
+        persistedExerciseFilters = encoded
+    }
 }
 
 // MARK: - Climb UI
@@ -1106,7 +1220,10 @@ fileprivate struct ClimbStatsView: View {
     @Bindable var vm: ClimbStatsVM
     @State private var pickerRoute: PickerRoute?
     @State private var showFilters = false
+    @State private var didLoadPersistedFilters = false
     @AppStorage(FeatureFlags.forcePreferMyGradeInProgress) private var forcePreferMyGradeInProgress = false
+    @AppStorage(FeatureFlags.persistProgressFilters) private var persistProgressFilters = false
+    @AppStorage("progress.climbFilters.v1") private var persistedClimbFilters = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: LayoutGrid.sectionSpacing) {
@@ -1138,7 +1255,11 @@ fileprivate struct ClimbStatsView: View {
                                 Text("Date Range")
                                 DateRangePicker(range: $vm.dateRange)
                             }
-                            ClearAllButton(action: { vm.clearAll() }, isEnabled: vm.hasActiveFilters)
+                            ClearAllButton(action: {
+                                vm.clearAll()
+                                ReviewTrigger.shared.filtersChanged()
+                                persistFiltersIfNeeded()
+                            }, isEnabled: vm.hasActiveFilters)
                         }
                         
                         // Climb type — segmented with “All”
@@ -1254,35 +1375,49 @@ fileprivate struct ClimbStatsView: View {
                 switch route {
                 case .gym:
                     MultiSelectSheet(title: "Gym", options: vm.availableGyms, selected: $vm.gyms)
-                        .onDisappear { vm.recomputeAll() }
+                        .onDisappear {
+                            vm.recomputeAll()
+                            persistFiltersIfNeeded()
+                        }
                 case .style:
                     MultiSelectSheet(title: "Style", options: vm.availableStyles, selected: $vm.styles)
-                        .onDisappear { vm.recomputeAll() }
+                        .onDisappear {
+                            vm.recomputeAll()
+                            persistFiltersIfNeeded()
+                        }
                 case .grade:
                     MultiSelectSheet(title: "Grade", options: vm.availableGrades, selected: $vm.grades)
-                        .onDisappear { vm.recomputeAll() }
+                        .onDisappear {
+                            vm.recomputeAll()
+                            persistFiltersIfNeeded()
+                        }
                 }
             }
             //.frame(maxWidth: .infinity, alignment: .topLeading)
             .onChange(of: vm.dateRange) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
             }
             .onChange(of: vm.climbType) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
             }
             .onChange(of: vm.sportType) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
             }
             .onChange(of: vm.workInProgress) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
             }
             .onChange(of: vm.preferFeelsLikeGrade) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
             }
             .onChange(of: forcePreferMyGradeInProgress) { _, isEnabled in
                 if isEnabled {
@@ -1290,19 +1425,45 @@ fileprivate struct ClimbStatsView: View {
                 }
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
+            }
+            .onChange(of: persistProgressFilters) { _, isEnabled in
+                if isEnabled {
+                    persistFiltersIfNeeded()
+                }
             }
             .onChange(of: vm.searchQuery) {
                 vm.recomputeAll()
                 ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
             }
             .onAppear {
+                guard !didLoadPersistedFilters else { return }
+                didLoadPersistedFilters = true
+
+                if persistProgressFilters,
+                   let snapshot = ProgressFilterPersistence.decode(
+                    ClimbFilterSnapshot.self,
+                    from: persistedClimbFilters
+                   ) {
+                    vm.applyFilterSnapshot(snapshot)
+                }
+
                 if forcePreferMyGradeInProgress {
                     vm.preferFeelsLikeGrade = true
                 }
+
+                vm.recomputeAll()
             }
         }
 
     private func summary(_ set: Set<String>) -> String { set.isEmpty ? "All" : "\(set.count) selected" }
+
+    private func persistFiltersIfNeeded() {
+        guard persistProgressFilters else { return }
+        guard let encoded = ProgressFilterPersistence.encode(vm.filterSnapshot()) else { return }
+        persistedClimbFilters = encoded
+    }
 }
 
 // MARK: - Distribution (horizontal bar )
