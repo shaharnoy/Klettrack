@@ -78,7 +78,7 @@ export async function signInWithPassword(identifier, password) {
   return payload;
 }
 
-export async function signUpWithPassword(email, password) {
+export async function signUpWithPassword(email, password, redirectTo = null) {
   if (!supabaseURL || !supabaseKey) {
     throw new Error("Supabase config is missing.");
   }
@@ -95,7 +95,8 @@ export async function signUpWithPassword(email, password) {
     },
     body: JSON.stringify({
       email: normalizedEmail,
-      password
+      password,
+      ...(redirectTo ? { email_redirect_to: redirectTo } : {})
     })
   });
   const payload = await response.json().catch(() => ({}));

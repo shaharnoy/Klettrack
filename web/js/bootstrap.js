@@ -280,7 +280,8 @@ async function render() {
           try {
             state.loginError = "";
             state.loginNotice = "";
-            const payload = await signUpWithPassword(email, password);
+            const redirectTo = new URL("/app.html", window.location.origin).toString();
+            const payload = await signUpWithPassword(email, password, redirectTo);
             if (payload?.session?.access_token) {
               state.user = await getCurrentUser();
               if (state.user) {
@@ -291,7 +292,7 @@ async function render() {
                 return;
               }
             }
-            state.loginNotice = "Account created. If email confirmation is enabled, check your inbox.";
+            state.loginNotice = "Account created. Check your inbox to confirm.";
           } catch (error) {
             state.loginError = normalizeAuthMessage(error, "Registration failed.");
           }
