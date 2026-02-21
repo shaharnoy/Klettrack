@@ -1,3 +1,9 @@
+//
+//  TestSupport.swift
+//  Klettrack tests
+//  Created by Shahar Noy on 17.02.26.
+//
+
 import XCTest
 import SwiftData
 @testable import klettrack
@@ -11,10 +17,11 @@ class BaseSwiftDataTestCase: XCTestCase {
         try super.setUpWithError()
         let types: [any PersistentModel.Type] = [
             Activity.self, TrainingType.self, Exercise.self, BoulderCombination.self,
+            SyncState.self, SyncMutation.self,
             Session.self, SessionItem.self,
             Plan.self, PlanDay.self,
             TimerTemplate.self, TimerInterval.self, TimerSession.self, TimerLap.self,
-            ClimbEntry.self, ClimbStyle.self, ClimbGym.self
+            ClimbEntry.self, ClimbStyle.self, ClimbGym.self, ClimbMedia.self
         ]
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let schema = Schema(types)

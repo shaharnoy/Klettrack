@@ -17,10 +17,13 @@ struct ClimbLogForm: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(
-        filter: #Predicate<ClimbStyle> { $0.isHidden == false },
+        filter: #Predicate<ClimbStyle> { !$0.isSoftDeleted && $0.isHidden == false },
         sort: [SortDescriptor(\ClimbStyle.name, order: .forward)]
     ) private var climbStyles: [ClimbStyle]
-    @Query private var climbGyms: [ClimbGym]
+    @Query(
+        filter: #Predicate<ClimbGym> { !$0.isSoftDeleted },
+        sort: [SortDescriptor(\ClimbGym.name, order: .forward)]
+    ) private var climbGyms: [ClimbGym]
     
     // Configuration
     let title: String
@@ -764,6 +767,7 @@ struct ClimbLogForm: View {
             existing.gym                 = selectedGym.isEmpty ? "Unknown" : selectedGym
             existing.notes               = notesText
             existing.dateLogged          = selectedDate
+            SyncLocalMutation.touch(existing)
 
             target = existing
         } else {
@@ -792,12 +796,14 @@ struct ClimbLogForm: View {
             // Create the first climb
             let first = makeClimb()
             modelContext.insert(first)
+            SyncLocalMutation.touch(first)
 
             // Create clones (unique UUIDs because each ClimbEntry() generates a new one)
             if bulkCount > 1 {
                 for _ in 2...bulkCount {
                     let clone = makeClimb()
                     modelContext.insert(clone)
+                    SyncLocalMutation.touch(clone)
 
                     // Duplicate media picks for each clone (same asset references, new ClimbMedia rows)
                     if !mediaPreviews.isEmpty {
@@ -812,6 +818,7 @@ struct ClimbLogForm: View {
                                     climb: clone
                                 )
                                 modelContext.insert(media)
+                                SyncLocalMutation.touch(media)
 
                             case .video(let assetId, let thumbnail):
                                 let media = ClimbMedia(
@@ -822,6 +829,7 @@ struct ClimbLogForm: View {
                                     climb: clone
                                 )
                                 modelContext.insert(media)
+                                SyncLocalMutation.touch(media)
 
                             case .existingPhoto, .existingVideo:
                                 // In Add mode these shouldn't appear; ignore if they do.
@@ -848,6 +856,7 @@ struct ClimbLogForm: View {
                         climb: target
                     )
                     modelContext.insert(media)
+                    SyncLocalMutation.touch(media)
 
                 case .video(let assetId, let thumbnail):
                     let media = ClimbMedia(
@@ -858,6 +867,7 @@ struct ClimbLogForm: View {
                         climb: target
                     )
                     modelContext.insert(media)
+                    SyncLocalMutation.touch(media)
 
                 case .existingPhoto, .existingVideo:
                     // Already stored and linked to `target`; no extra insert
@@ -919,6 +929,7 @@ struct ClimbLogForm: View {
     private func addNewStyle(_ styleName: String) {
         let newStyle = ClimbStyle(name: styleName, isDefault: false)
         modelContext.insert(newStyle)
+        SyncLocalMutation.touch(newStyle)
         try? modelContext.save()
         selectedStyle = styleName
     }
@@ -926,6 +937,7 @@ struct ClimbLogForm: View {
     private func addNewGym(_ gymName: String) {
         let newGym = ClimbGym(name: gymName, isDefault: false)
         modelContext.insert(newGym)
+        SyncLocalMutation.touch(newGym)
         try? modelContext.save()
         selectedGym = gymName
     }
@@ -1194,7 +1206,7 @@ extension ClimbLogForm {
     fileprivate func deletePreview(_ preview: ClimbLogMediaPreview) {
         // If this preview represents an existing ClimbMedia, delete it from the store
         if let existing = preview.existingMedia {
-            modelContext.delete(existing)
+            SyncLocalMutation.softDelete(existing)
         }
         mediaPreviews.removeAll { $0.id == preview.id }
     }

@@ -10,7 +10,10 @@ import Foundation
 
 struct MediaManagerView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: [SortDescriptor(\ClimbMedia.createdAt, order: .reverse)])
+    @Query(
+        filter: #Predicate<ClimbMedia> { !$0.isSoftDeleted },
+        sort: [SortDescriptor(\ClimbMedia.createdAt, order: .reverse)]
+    )
     private var mediaItems: [ClimbMedia]
 
     @State private var fullScreenMedia: ClimbMedia?
@@ -79,7 +82,7 @@ struct MediaManagerView: View {
     }
 
     private func delete(_ media: ClimbMedia) {
-        context.delete(media)
+        SyncLocalMutation.softDelete(media)
         try? context.save()
     }
     
@@ -182,5 +185,3 @@ struct MediaManagerView: View {
 
     }
 }
-
-

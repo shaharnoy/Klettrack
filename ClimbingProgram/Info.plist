@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.somenoys.klettrack.sync.refresh</string>
+	</array>
+	<key>SUPABASE_PUBLISHABLE_KEY</key>
+	<string>sb_publishable_vXrs-zZLDbueKaDw5_ZmLA_71YwRedt</string>
+	<key>SUPABASE_URL</key>
+	<string>https://iyeftdnenkzdjwfmkulm.supabase.co</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+</dict>
 </plist>

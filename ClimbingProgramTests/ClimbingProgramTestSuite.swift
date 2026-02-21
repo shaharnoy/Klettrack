@@ -22,6 +22,8 @@ class ClimbingProgramTestSuite: XCTestCase {
             TrainingType.self,
             BoulderCombination.self,
             Exercise.self,
+            SyncState.self,
+            SyncMutation.self,
 
             // Plans
             Plan.self,
@@ -40,7 +42,8 @@ class ClimbingProgramTestSuite: XCTestCase {
             // Climbing log (used by CSV export/tests)
             ClimbEntry.self,
             ClimbStyle.self,
-            ClimbGym.self
+            ClimbGym.self,
+            ClimbMedia.self
         ])
 
         // In-memory configuration for isolation and speed

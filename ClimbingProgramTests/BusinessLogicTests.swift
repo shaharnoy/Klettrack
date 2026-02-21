@@ -2,7 +2,7 @@
 //  BusinessLogicTests.swift
 //  klettrack Tests
 //
-//  Created by AI Assistant on 23.08.25.
+//  Created by Shahar Noy on 17.02.26.
 //
 
 import XCTest

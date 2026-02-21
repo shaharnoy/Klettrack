@@ -1,0 +1,60 @@
+name: CI - All Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  all-tests:
+    runs-on: macos-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_TEST_EMAIL: ${{ secrets.SUPABASE_TEST_EMAIL }}
+      SUPABASE_TEST_PASSWORD: ${{ secrets.SUPABASE_TEST_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate sync table RLS/policy coverage
+        run: ./scripts/check_sync_rls_coverage.sh
+
+      - name: Web UX syntax checks
+        run: |
+          node --check web/js/bootstrap.js
+          node --check web/js/views/catalogView.js
+          node --check web/js/views/plansView.js
+          node --check web/js/views/sessionsView.js
+          node --check web/js/views/climbView.js
+          node --check web/js/views/timersView.js
+          node --check web/js/components/conflictPanel.js
+          node --check web/js/components/toasts.js
+
+      - name: Web + Node live Supabase tests
+        if: ${{ env.SUPABASE_URL != '' && env.SUPABASE_PUBLISHABLE_KEY != '' && env.SUPABASE_TEST_EMAIL != '' && env.SUPABASE_TEST_PASSWORD != '' }}
+        env:
+          SUPABASE_SCALE_UPSERT_COUNT: "120"
+        run: |
+          node scripts/supabase/smoke/sync_web_hydration_smoke.mjs
+          node scripts/supabase/smoke/auth_register_smoke.mjs
+          node scripts/supabase/smoke/auth_forgot_password_smoke.mjs
+          node scripts/supabase/smoke/auth_user_mgmt_smoke.mjs
+          node scripts/supabase/smoke/data_manager_groups_smoke.mjs
+          node scripts/supabase/smoke/sync_web_smoke.mjs
+          node scripts/supabase/contract/sync_function_contract_tests.mjs
+          node scripts/supabase/diagnostics/sync_scale_validation.mjs
+
+      - name: Run iOS test suite (iPhone 17 simulator)
+        run: |
+          xcodebuild test \
+            -project ClimbingProgram.xcodeproj \
+            -scheme ClimbingProgramTests \
+            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest'

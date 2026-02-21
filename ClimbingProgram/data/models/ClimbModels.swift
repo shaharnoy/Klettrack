@@ -28,6 +28,9 @@ final class ClimbEntry {
     var notes: String?
     var dateLogged: Date
     var tb2ClimbUUID: String?
+    var syncVersion: Int = 0
+    var updatedAtClient: Date = Date.now
+    var isSoftDeleted: Bool = false
     
     //support multiple media files per climb
         @Relationship(deleteRule: .cascade, inverse: \ClimbMedia.climb)
@@ -200,6 +203,9 @@ final class ClimbStyle {
     var name: String
     var isDefault: Bool
     var isHidden: Bool = false
+    var syncVersion: Int = 0
+    var updatedAtClient: Date = Date.now
+    var isSoftDeleted: Bool = false
     
     init(id: UUID = UUID(), name: String, isDefault: Bool = false) {
         self.id = id
@@ -213,6 +219,9 @@ final class ClimbGym {
     @Attribute(.unique) var id: UUID
     var name: String
     var isDefault: Bool
+    var syncVersion: Int = 0
+    var updatedAtClient: Date = Date.now
+    var isSoftDeleted: Bool = false
     
     init(id: UUID = UUID(), name: String, isDefault: Bool = false) {
         self.id = id
@@ -234,6 +243,12 @@ final class ClimbMedia {
     var thumbnailData: Data?
     var typeRaw: String
     var createdAt: Date
+    var storageBucket: String?
+    var storagePath: String?
+    var thumbnailStoragePath: String?
+    var syncVersion: Int = 0
+    var updatedAtClient: Date = Date.now
+    var isSoftDeleted: Bool = false
 
     @Relationship var climb: ClimbEntry
 
@@ -264,3 +279,8 @@ extension ClimbMedia {
         return result.firstObject == nil
     }
 }
+
+extension ClimbEntry: SyncLocallyMutable {}
+extension ClimbStyle: SyncLocallyMutable {}
+extension ClimbGym: SyncLocallyMutable {}
+extension ClimbMedia: SyncLocallyMutable {}

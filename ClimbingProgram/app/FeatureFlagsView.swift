@@ -38,4 +38,3 @@ struct FeatureFlagsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
-
