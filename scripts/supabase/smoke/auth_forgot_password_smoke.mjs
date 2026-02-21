@@ -14,7 +14,7 @@ const config = {
   email: process.env.SUPABASE_TEST_EMAIL.trim(),
   redirectTo:
     process.env.SUPABASE_RESET_REDIRECT ||
-    `${process.env.SUPABASE_URL.trim().replace(/\/$/, "")}/app.html?next=%2Faccount&flow=recovery`
+    `${process.env.SUPABASE_URL.trim().replace(/\/$/, "")}/app.html`
 };
 
 const response = await fetch(`${config.url}/auth/v1/recover`, {
