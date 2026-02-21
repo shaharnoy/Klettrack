@@ -18,6 +18,16 @@ const syncOnboardingBannerNode = document.getElementById("sync-onboarding-banner
 const logoutButton = document.getElementById("logout-btn");
 const syncButton = document.getElementById("sync-btn");
 const getCurrentUser = auth.getCurrentUser;
+const consumeAuthRedirectFromURL =
+  typeof auth.consumeAuthRedirectFromURL === "function"
+    ? auth.consumeAuthRedirectFromURL
+    : () => ({
+        didHandle: false,
+        hasSession: false,
+        flowType: null,
+        nextRoute: null,
+        error: null
+      });
 const signInWithPassword = auth.signInWithPassword;
 const signUpWithPassword =
   typeof auth.signUpWithPassword === "function"
@@ -145,7 +155,21 @@ void startApp();
 
 async function startApp() {
   try {
+    const authRedirect = consumeAuthRedirectFromURL();
+    if (authRedirect.error) {
+      state.loginError = authRedirect.error;
+    }
+    if (authRedirect.flowType === "recovery") {
+      state.accountNotice = "Reset link verified. Enter a new password below.";
+    }
     await restoreSession();
+    if (authRedirect.didHandle && authRedirect.hasSession) {
+      const targetRoute =
+        authRedirect.nextRoute || (authRedirect.flowType === "recovery" ? "/account" : null);
+      if (targetRoute) {
+        navigate(targetRoute);
+      }
+    }
     await render();
   } catch (error) {
     renderFatalError(error);
@@ -290,7 +314,10 @@ async function render() {
         try {
           state.loginError = "";
           state.loginNotice = "";
-          const redirectTo = `${window.location.origin}/app.html#/login`;
+          const redirectURL = new URL("/app.html", window.location.origin);
+          redirectURL.searchParams.set("next", "/account");
+          redirectURL.searchParams.set("flow", "recovery");
+          const redirectTo = redirectURL.toString();
           await requestPasswordReset(identifier, redirectTo);
           showToast("Password reset email sent. Check your inbox.", "success");
         } catch (error) {

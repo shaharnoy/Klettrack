@@ -12,7 +12,9 @@ const config = {
   url: process.env.SUPABASE_URL.trim().replace(/\/$/, ""),
   apikey: process.env.SUPABASE_PUBLISHABLE_KEY.trim(),
   email: process.env.SUPABASE_TEST_EMAIL.trim(),
-  redirectTo: process.env.SUPABASE_RESET_REDIRECT || `${process.env.SUPABASE_URL.trim().replace(/\/$/, "")}/app.html#/login`
+  redirectTo:
+    process.env.SUPABASE_RESET_REDIRECT ||
+    `${process.env.SUPABASE_URL.trim().replace(/\/$/, "")}/app.html?next=%2Faccount&flow=recovery`
 };
 
 const response = await fetch(`${config.url}/auth/v1/recover`, {

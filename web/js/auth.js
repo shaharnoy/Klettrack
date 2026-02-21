@@ -131,6 +131,64 @@ export async function requestPasswordReset(identifier, redirectTo = null) {
   return payload;
 }
 
+export function consumeAuthRedirectFromURL() {
+  const currentURL = new URL(window.location.href);
+  const hash = String(currentURL.hash || "");
+  if (!hash.startsWith("#")) {
+    return {
+      didHandle: false,
+      hasSession: false,
+      flowType: null,
+      nextRoute: null,
+      error: null
+    };
+  }
+
+  const hashParams = new URLSearchParams(hash.slice(1));
+  const accessToken = String(hashParams.get("access_token") || "").trim();
+  const refreshToken = String(hashParams.get("refresh_token") || "").trim();
+  const tokenType = String(hashParams.get("token_type") || "bearer").trim() || "bearer";
+  const flowType = String(hashParams.get("type") || "").trim() || null;
+  const error = String(hashParams.get("error_description") || hashParams.get("error") || "").trim() || null;
+  const hasAuthPayload =
+    Boolean(accessToken) ||
+    Boolean(error) ||
+    Boolean(hashParams.get("expires_in")) ||
+    Boolean(hashParams.get("token_hash"));
+
+  if (!hasAuthPayload) {
+    return {
+      didHandle: false,
+      hasSession: false,
+      flowType: null,
+      nextRoute: null,
+      error: null
+    };
+  }
+
+  if (accessToken) {
+    saveSession({
+      access_token: accessToken,
+      refresh_token: refreshToken || null,
+      token_type: tokenType
+    });
+  }
+
+  const nextRoute = normalizeNextRoute(currentURL.searchParams.get("next"));
+  currentURL.searchParams.delete("next");
+  currentURL.searchParams.delete("flow");
+  currentURL.hash = "";
+  window.history.replaceState({}, "", currentURL.toString());
+
+  return {
+    didHandle: true,
+    hasSession: Boolean(accessToken),
+    flowType,
+    nextRoute,
+    error
+  };
+}
+
 export async function updatePassword(newPassword) {
   if (!supabaseURL || !supabaseKey) {
     throw new Error("Supabase config is missing.");
@@ -227,4 +285,15 @@ function saveSession(sessionLike) {
 
 function clearSession() {
   inMemorySession = null;
+}
+
+function normalizeNextRoute(value) {
+  const nextRoute = String(value || "").trim();
+  if (!nextRoute.startsWith("/")) {
+    return null;
+  }
+  if (nextRoute.startsWith("//")) {
+    return null;
+  }
+  return nextRoute;
 }
