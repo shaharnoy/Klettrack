@@ -5,7 +5,6 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct SettingsSheet: View {
     private enum SheetRoute: String, Identifiable {
@@ -14,18 +13,8 @@ struct SettingsSheet: View {
         var id: String { rawValue }
     }
 
-    @Environment(\.dismiss) private var dismiss
-    @Environment(TimerAppState.self) private var timerAppState
-    @Environment(\.modelContext) private var context
-    @State private var activeBoard: TB2Client.Board? = nil
-    @State private var credsUsername: String = ""
-    @State private var credsPassword: String = ""
-    @State private var isEditingCredentials = true
     @State private var sheetRoute: SheetRoute?
-    
-    // Export state
-    @State private var showExporter = false
-    @State private var exportDoc: LogCSVDocument? = nil
+
     @State private var hasRequestedReviewThisSession = false
     
     var body: some View {
@@ -59,22 +48,6 @@ struct SettingsSheet: View {
                                 Text("Data Manager")
                                     .font(.body)
                                 Text("Edit day types, styles, and gyms")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .padding(.vertical, 1)
-                    }
-                    NavigationLink {
-                        FeatureFlagsView()
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Image(systemName: "switch.2")
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Feature Flags")
-                                    .font(.body)
-                                Text("Enable or disable experimental behavior")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -116,59 +89,40 @@ struct SettingsSheet: View {
                         }
                         .padding(.vertical, 1)
                     }
-                    // Boards credentials menu
-                    Menu {
-                        Button("TB2 Login") {
-                            openCredentialsEditor(for: .tension)
-                        }
-                        Divider()
-                        Button("Kilter Login") {
-                            openCredentialsEditor(for: .kilter)
-                        }
-                    } label: {
-                        HStack {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Image(systemName: "lock.circle")
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Board Connections")
-                                        .font(.body)
-                                    Text("Add or update your boards credentials")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, 1)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Export CSV button (trigger export without navigation)
-                    Button {
-                        exportDoc = LogCSV.makeExportCSV(context: context)
-                        showExporter = true
+                    NavigationLink {
+                        KlettrackWebSettingsView()
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Image(systemName: "square.and.arrow.up")
+                            Image(systemName: "cloud")
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Export Logs")
+                                Text("klettrack web")
                                     .font(.body)
-                                Text("Export your climbs and sessions")
+                                Text("Manage cloud sync and account")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
                             }
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1)
                     }
-                    .buttonStyle(.plain)
+                    NavigationLink {
+                        BoardCredentialsSettingsView()
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "lock.circle")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Board Credentials")
+                                    .font(.body)
+                                Text("Manage TB2 and Kilter credentials")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 1)
+                    }
                 }
 
-                // About section (subtle separation)
                 Section {
                     //rate the app
                     Button {
@@ -240,58 +194,6 @@ struct SettingsSheet: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
         }
-        // Credentials prompt sheet (shared view)
-        .sheet(item: $activeBoard) { board in
-            TB2CredentialsSheet(
-                header: (board == .kilter) ? "Kilter login details" : "TB2 login details",
-                username: $credsUsername,
-                password: $credsPassword,
-                onSave: {
-                    let username = credsUsername.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let password = credsPassword
-                    
-                    do {
-                        if username.isEmpty && password.isEmpty {
-                            // Both empty → treat as "remove credentials"
-                            try CredentialsStore.deleteBoardCredentials(for: board)
-                        } else {
-                            // Non-empty → save/update credentials
-                            try CredentialsStore.saveBoardCredentials(
-                                for: board,
-                                username: username,
-                                password: password
-                            )
-                        }
-                        
-                        isEditingCredentials = false
-                        activeBoard = nil
-                    } catch {
-                        isEditingCredentials = false
-                        activeBoard = nil
-                    }
-                },
-                onCancel: {
-                    isEditingCredentials = false
-                    activeBoard = nil
-                }
-            )
-        }
-
-
-        // Exporter
-        .fileExporter(
-            isPresented: $showExporter,
-            document: exportDoc,
-            contentType: .commaSeparatedText,
-            defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
-        ) { result in
-            switch result {
-            case .success:
-                break
-            case .failure:
-                break
-            }
-        }
         // About / Contribute sheet
         .sheet(item: $sheetRoute) { route in
             NavigationStack {
@@ -311,30 +213,4 @@ struct SettingsSheet: View {
             }
         }
     }
-
-    private func openCredentialsEditor(for board: TB2Client.Board) {
-        if let creds = CredentialsStore.loadBoardCredentials(for: board) {
-            credsUsername = creds.username
-            credsPassword = creds.password
-        } else {
-            credsUsername = ""
-            credsPassword = ""
-        }
-        isEditingCredentials = true
-        activeBoard = board
-    }
-    
-    private func clearBoardCredentials(for board: TB2Client.Board) {
-        do {
-            try CredentialsStore.deleteBoardCredentials(for: board)
-            
-            if activeBoard == board {
-                credsUsername = ""
-                credsPassword = ""
-            }
-        } catch {
-            print("Failed to delete credentials for \(board): \(error)")
-        }
-    }
-
 }

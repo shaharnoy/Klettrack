@@ -162,7 +162,7 @@ struct SeedData {
             ensureEx("FB \"Minimum Edge\" Hangs", into: maxStrength, order: 1, area: "Fingers",
                      reps: "5", sets: "2–5", notes: "12s work, 3min rest", description: "Smallest edge you can hold ~12s")
             ensureEx("FB Max-Weight Hangs (10s, 14–20mm)", into: maxStrength, order: 2, area: "Fingers",
-                     reps: "5", sets: "2–5", notes: "10s work, 50s rest")
+                     reps: "5", sets: "2–5", notes: "")
             ensureEx("FB Max-Weight Hangs (7/53, 14–20mm)", into: maxStrength, order: 3, area: "Fingers",
                      reps: "3", sets: "2–5", notes: "7s work, 53s rest")
             ensureEx("One Arm Hangs", into: maxStrength, order: 4, area: "Fingers",

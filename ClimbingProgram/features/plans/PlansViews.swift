@@ -54,13 +54,6 @@ private final class PlanDayEditorCache {
     }
 }
 
-
-
-struct SharePayload: Identifiable {
-    let id = UUID()
-    let url: URL
-}
-
 // Shared exercise hit type for catalog search results (file-scope, internal)
 struct ExerciseHit: Identifiable {
     let id: UUID
@@ -110,21 +103,19 @@ struct PlansListView: View {
     @Environment(\.isDataReady) private var isDataReady
     @Environment(TimerAppState.self) private var timerAppState
     // Be explicit with SortDescriptor to help the type checker
-    @Query(sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
+    @Query(
+        filter: #Predicate<Plan> { !$0.isSoftDeleted },
+        sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]
+    ) private var plans: [Plan]
 
     @State private var sheetRoute: SheetRoute?
 
-    // Export / Import / Share state
-    @State private var showExporter = false
-    @State private var exportDoc: LogCSVDocument? = nil
-
-    // Import (async with progress)
-    @State private var showImporter = false
-    @State private var importing = false
-    @State private var importProgress: Double = 0
-
-    // Share (use Identifiable payload)
-    @State private var sharePayload: SharePayload? = nil
+    // Plan export state
+    @State private var showPlanExporter = false
+    @State private var planExportDoc: PlanCSVDocument? = nil
+    @State private var selectedPlanForExportID: UUID? = nil
+    @State private var showingPlanExportPicker = false
+    @State private var newPlanInitialMode: NewPlanSheet.CreationMode = .template
 
     // Alerts
     @State private var resultMessage: String? = nil
@@ -142,7 +133,6 @@ struct PlansListView: View {
                 .plansDestinations(plans: plans, timerAppState: timerAppState)
                 .plansToolbar(
                     isDataReady: isDataReady,
-                    context: context,
                     showingNew: Binding(
                         get: { sheetRoute == .newPlan },
                         set: { newValue in
@@ -153,23 +143,20 @@ struct PlansListView: View {
                             }
                         }
                     ),
-                    showExporter: $showExporter,
-                    exportDoc: $exportDoc,
-                    showImporter: $showImporter,
-                    sharePayload: $sharePayload,
-                    resultMessage: $resultMessage
+                    newPlanInitialMode: $newPlanInitialMode,
+                    showingPlanExportPicker: $showingPlanExportPicker
                 )
                 .sheet(item: $sheetRoute) { route in
                     switch route {
                     case .newPlan:
-                        NewPlanSheet()
+                        NewPlanSheet(initialMode: newPlanInitialMode)
                     }
                 }
                 .fileExporter(
-                    isPresented: $showExporter,
-                    document: exportDoc,
+                    isPresented: $showPlanExporter,
+                    document: planExportDoc,
                     contentType: .commaSeparatedText,
-                    defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
+                    defaultFilename: planExportFilename
                 ) { result in
                     switch result {
                     case .success:
@@ -178,18 +165,13 @@ struct PlansListView: View {
                         resultMessage = "Export failed: \(err.localizedDescription)"
                     }
                 }
-                .fileImporter(
-                    isPresented: $showImporter,
-                    allowedContentTypes: [.commaSeparatedText],
-                    allowsMultipleSelection: false
-                ) { result in
-                    handleImportResult(result)
-                }
-                .sheet(item: $sharePayload) { payload in
-                    ShareSheet(items: [payload.url]) {
-                        try? FileManager.default.removeItem(at: payload.url)
+                .sheet(isPresented: $showingPlanExportPicker) {
+                    PlanExportSelectionSheet(
+                        plans: plans,
+                        selectedPlanID: $selectedPlanForExportID
+                    ) { selectedPlanID in
+                        preparePlanExport(for: selectedPlanID)
                     }
-                    .presentationDetents([.medium])
                 }
                 .alert(resultMessage ?? "", isPresented: Binding(
                     get: { resultMessage != nil },
@@ -212,50 +194,42 @@ struct PlansListView: View {
             }
             .onDelete { idx in
                 guard isDataReady else { return }
-                idx.map { plans[$0] }.forEach(context.delete)
+                idx.map { plans[$0] }.forEach { plan in
+                    softDeletePlan(plan)
+                }
                 try? context.save()
             }
         }
     }
 
-    
-    private func handleImportResult(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
-            let tag = "import:\(df.string(from: Date()))"
-
-            importing = true
-            importProgress = 0
-
-            Task {
-                do {
-                    let count = try await LogCSV.importCSVAsync(
-                        from: url,
-                        into: context,
-                        tag: tag,
-                        dedupe: true,
-                        progress: { p in
-                            Task { @MainActor in
-                                importProgress = p
-                            }
-                        }
-                    )
-                    await MainActor.run {
-                        importing = false
-                        resultMessage = "Imported \(count) log item(s)."
-                    }
-                } catch {
-                    await MainActor.run {
-                        importing = false
-                        resultMessage = "Import failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-        } catch {
-            resultMessage = "Import failed: \(error.localizedDescription)"
+    private func softDeletePlan(_ plan: Plan) {
+        SyncLocalMutation.softDelete(plan)
+        for day in plan.days where !day.isSoftDeleted {
+            SyncLocalMutation.softDelete(day)
         }
     }
+
+    private var planExportFilename: String {
+        let formattedDate = Date.now.formatted(.iso8601.year().month().day())
+        let base = plans.first(where: { $0.id == selectedPlanForExportID })?.name ?? "plan"
+        let normalizedName = base
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacing(" ", with: "-")
+            .lowercased()
+        let safeName = normalizedName.isEmpty ? "plan" : normalizedName
+        return "klettrack-export-plan-\(safeName)-\(formattedDate)"
+    }
+
+    private func preparePlanExport(for selectedPlanID: UUID) {
+        guard let plan = plans.first(where: { $0.id == selectedPlanID }) else {
+            resultMessage = "Selected plan not found."
+            return
+        }
+        selectedPlanForExportID = selectedPlanID
+        planExportDoc = PlanCSV.makeExportCSV(for: plan, in: context)
+        showPlanExporter = true
+    }
+
 }
 
 private struct PlansDestinationsModifier: ViewModifier {
@@ -294,14 +268,10 @@ private extension View {
 
 private struct PlansToolbarModifier: ViewModifier {
     let isDataReady: Bool
-    let context: ModelContext
 
     @Binding var showingNew: Bool
-    @Binding var showExporter: Bool
-    @Binding var exportDoc: LogCSVDocument?
-    @Binding var showImporter: Bool
-    @Binding var sharePayload: SharePayload?
-    @Binding var resultMessage: String?
+    @Binding var newPlanInitialMode: NewPlanSheet.CreationMode
+    @Binding var showingPlanExportPicker: Bool
 
     func body(content: Content) -> some View {
         content.toolbar {
@@ -309,37 +279,17 @@ private struct PlansToolbarModifier: ViewModifier {
                 Menu {
                     Button {
                         guard isDataReady else { return }
-                        exportDoc = LogCSV.makeExportCSV(context: context)
-                        showExporter = true
+                        showingPlanExportPicker = true
                     } label: {
-                        Label("Export logs to CSV", systemImage: "square.and.arrow.up")
+                        Label("Export training plan", systemImage: "square.and.arrow.up")
                     }
 
                     Button {
                         guard isDataReady else { return }
-                        let doc = LogCSV.makeExportCSV(context: context)
-                        let fn = "klettrack-log-\(Date().formatted(.dateTime.year().month().day())).csv"
-                        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
-
-                        do {
-                            try doc.csv.write(to: url, atomically: true, encoding: .utf8)
-                            guard FileManager.default.fileExists(atPath: url.path) else {
-                                resultMessage = "Share failed: file not found."
-                                return
-                            }
-                            sharePayload = SharePayload(url: url)
-                        } catch {
-                            resultMessage = "Share prep failed: \(error.localizedDescription)"
-                        }
+                        newPlanInitialMode = .importCSV
+                        showingNew = true
                     } label: {
-                        Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
-                    }
-
-                    Button {
-                        guard isDataReady else { return }
-                        showImporter = true
-                    } label: {
-                        Label("Import logs from CSV", systemImage: "square.and.arrow.down")
+                        Label("Import training plan", systemImage: "calendar.badge.plus")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -350,6 +300,7 @@ private struct PlansToolbarModifier: ViewModifier {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     guard isDataReady else { return }
+                    newPlanInitialMode = .template
                     showingNew = true
                 } label: {
                     Image(systemName: "plus")
@@ -363,23 +314,15 @@ private struct PlansToolbarModifier: ViewModifier {
 private extension View {
     func plansToolbar(
         isDataReady: Bool,
-        context: ModelContext,
         showingNew: Binding<Bool>,
-        showExporter: Binding<Bool>,
-        exportDoc: Binding<LogCSVDocument?>,
-        showImporter: Binding<Bool>,
-        sharePayload: Binding<SharePayload?>,
-        resultMessage: Binding<String?>
+        newPlanInitialMode: Binding<NewPlanSheet.CreationMode>,
+        showingPlanExportPicker: Binding<Bool>
     ) -> some View {
         modifier(PlansToolbarModifier(
             isDataReady: isDataReady,
-            context: context,
             showingNew: showingNew,
-            showExporter: showExporter,
-            exportDoc: exportDoc,
-            showImporter: showImporter,
-            sharePayload: sharePayload,
-            resultMessage: resultMessage
+            newPlanInitialMode: newPlanInitialMode,
+            showingPlanExportPicker: showingPlanExportPicker
         ))
     }
 }
@@ -388,6 +331,53 @@ private extension View {
 struct EditablePlanDayNav: Hashable {
     let planId: UUID
     let planDayId: UUID
+}
+
+private struct PlanExportSelectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let plans: [Plan]
+    @Binding var selectedPlanID: UUID?
+    let onExport: (UUID) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("Plan", selection: selectedPlanBinding) {
+                    ForEach(plans) { plan in
+                        Text(plan.name).tag(plan.id)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            .navigationTitle("Export plan to CSV")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Export") {
+                        guard let selectedPlanID else { return }
+                        onExport(selectedPlanID)
+                        dismiss()
+                    }
+                    .disabled(selectedPlanID == nil || plans.isEmpty)
+                }
+            }
+            .onAppear {
+                if selectedPlanID == nil {
+                    selectedPlanID = plans.first?.id
+                }
+            }
+        }
+    }
+
+    private var selectedPlanBinding: Binding<UUID> {
+        Binding(
+            get: { selectedPlanID ?? plans.first?.id ?? UUID() },
+            set: { selectedPlanID = $0 }
+        )
+    }
 }
 
 // Small, explicit row view reduces type inference work
@@ -417,19 +407,34 @@ private struct PlanRow: View {
 
 // MARK: New plan sheet
 struct NewPlanSheet: View {
-    enum CreationMode { case template, customDates }
+    enum CreationMode: Hashable {
+        case template
+        case customDates
+        case importCSV
+    }
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
 
     // SwiftData: keep sort descriptors simple
-    @Query(sort: [SortDescriptor(\PlanKindModel.order)]) private var kinds: [PlanKindModel]
+    @Query(
+        filter: #Predicate<PlanKindModel> { !$0.isSoftDeleted },
+        sort: [SortDescriptor(\PlanKindModel.order)]
+    ) private var kinds: [PlanKindModel]
 
     @State private var name = ""
     @State private var selectedKind: PlanKindModel? = nil
     @State private var start = Date()
-    @State private var creationMode: CreationMode = .template
+    @State private var creationMode: CreationMode
     @State private var end = Calendar.current.date(byAdding: .day, value: 27, to: Date()) ?? Date()
+    @State private var showImportPicker = false
+    @State private var importing = false
+    @State private var importProgress: Double = 0
+    @State private var resultMessage: String? = nil
+
+    init(initialMode: CreationMode = .template) {
+        _creationMode = State(initialValue: initialMode)
+    }
     
     var body: some View {
         NavigationStack {
@@ -437,11 +442,43 @@ struct NewPlanSheet: View {
                 Picker("Mode", selection: $creationMode) {
                     Text("Template").tag(CreationMode.template)
                     Text("Custom").tag(CreationMode.customDates)
+                    Text("Import").tag(CreationMode.importCSV)
                 }
                 .pickerStyle(.segmented)
                 
-                TextField("Plan name", text: $name)
-                
+                if creationMode == .importCSV {
+                    TextField("Plan name", text: $name)
+                    Picker("Template", selection: $selectedKind) {
+                        Text("From CSV").tag(nil as PlanKindModel?)
+                        ForEach(kinds) { k in
+                            Text(k.name).tag(k as PlanKindModel?)
+                        }
+                    }
+                    DatePicker("Start date", selection: $start, displayedComponents: .date)
+
+                    Button {
+                        showImportPicker = true
+                    } label: {
+                        HStack {
+                            Text("Choose CSV and Import")
+                            Spacer()
+                            if importing {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "square.and.arrow.down")
+                            }
+                        }
+                    }
+                    .disabled(importing)
+
+                    if importing {
+                        ProgressView(value: importProgress)
+                            .progressViewStyle(.linear)
+                    }
+                } else {
+                    TextField("Plan name", text: $name)
+                }
+
                 if creationMode == .template {
                     Picker("Template", selection: $selectedKind) {
                         ForEach(kinds) { k in
@@ -450,7 +487,7 @@ struct NewPlanSheet: View {
                         }
                     }
                     DatePicker("Start date", selection: $start, displayedComponents: .date)
-                } else {
+                } else if creationMode == .customDates {
                     DatePicker("Start date", selection: $start, displayedComponents: .date)
                     DatePicker("End date", selection: $end, in: start..., displayedComponents: .date)
 
@@ -467,7 +504,7 @@ struct NewPlanSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
+                    Button(creationMode == .importCSV ? "Import" : "Create") {
                         let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         let planName = finalName.isEmpty ? (selectedKind?.name ?? "Plan") : finalName
                         switch creationMode {
@@ -479,11 +516,27 @@ struct NewPlanSheet: View {
                             guard end >= start else { return }
                             createPlanFromDates(context: context, name: planName, start: start, end: end)
                             dismiss()
+                        case .importCSV:
+                            showImportPicker = true
                         }
                     }
                     .disabled((creationMode == .template && selectedKind == nil) ||
-                              (creationMode == .customDates && end < start))
+                              (creationMode == .customDates && end < start) ||
+                              importing)
                 }
+            }
+            .fileImporter(
+                isPresented: $showImportPicker,
+                allowedContentTypes: [.commaSeparatedText],
+                allowsMultipleSelection: false
+            ) { result in
+                handlePlanImportResult(result)
+            }
+            .alert(resultMessage ?? "", isPresented: Binding(
+                get: { resultMessage != nil },
+                set: { if !$0 { resultMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { }
             }
         }
     }
@@ -495,15 +548,62 @@ struct NewPlanSheet: View {
 
         let plan = Plan(name: name, kind:nil, startDate: startDay)
         context.insert(plan)
+        SyncLocalMutation.touch(plan)
 
         var d = startDay
         while d <= endDay {
             let day = PlanDay(date: d)
+            SyncLocalMutation.touch(day)
             plan.days.append(day)
             d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86_400)
         }
 
         try? context.save()
+    }
+
+    private func handlePlanImportResult(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            importing = true
+            importProgress = 0
+
+            Task {
+                do {
+                    let summary = try await PlanCSV.importPlanCSVAsync(
+                        from: url,
+                        into: context,
+                        progress: { value in
+                            Task { @MainActor in
+                                importProgress = value
+                            }
+                        },
+                        importedPlanName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                        importedPlanKind: selectedKind,
+                        importedPlanStartDate: start
+                    )
+
+                    await MainActor.run {
+                        importing = false
+                        resultMessage = """
+                        Imported plan: \(summary.createdPlanName)
+                        Days: \(summary.importedDays)
+                        Exercises linked: \(summary.linkedExercises)
+                        Placeholders created: \(summary.totalPlaceholders)
+                        Skipped rows: \(summary.skippedRows)
+                        """
+                        dismiss()
+                    }
+                } catch {
+                    await MainActor.run {
+                        importing = false
+                        resultMessage = "Plan import failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+        } catch {
+            importing = false
+            resultMessage = "Plan import failed: \(error.localizedDescription)"
+        }
     }
 }
 
@@ -780,7 +880,7 @@ struct PlanDayEditor: View {
     @State private var cache: PlanDayEditorCache
     
     @Query(
-        filter: #Predicate<DayTypeModel> { $0.isHidden == false },
+        filter: #Predicate<DayTypeModel> { !$0.isSoftDeleted && $0.isHidden == false },
         sort: [SortDescriptor<DayTypeModel>(\DayTypeModel.order)]
     ) private var dayTypes: [DayTypeModel]
 
@@ -1199,7 +1299,7 @@ struct PlanDayEditor: View {
                                     }
                                 } else {
                                     // Fallback if no back-reference
-                                    context.delete(item)
+                                    SyncLocalMutation.softDelete(item)
                                     try? context.save()
                                 }
 
@@ -1236,6 +1336,7 @@ struct PlanDayEditor: View {
                     // Save the notes to the model
                     let trimmed = dailyNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
                     day.dailyNotes = trimmed.isEmpty ? nil : trimmed
+                    SyncLocalMutation.touch(day)
                     try? context.save()
                 }
         }
@@ -1258,6 +1359,7 @@ struct PlanDayEditor: View {
                 // Resolve selected id to model instance; assign (or nil) safely
                 let resolved = dayTypes.first(where: { $0.id == newId })
                 day.type = resolved
+                SyncLocalMutation.touch(day)
                 try? context.save()
             }
             
@@ -1329,12 +1431,14 @@ struct PlanDayEditor: View {
         .onChange(of: editMode?.wrappedValue) { _, newValue in
                     if newValue == .inactive, didReorder {
                         didReorder = false
+                        SyncLocalMutation.touch(day)
                         try? context.save() // single save after drag session
                     }
                 }
                 .onDisappear {
                     if didReorder {
                         didReorder = false
+                        SyncLocalMutation.touch(day)
                         try? context.save()
                     }
                 }
@@ -1404,6 +1508,7 @@ struct PlanDayEditor: View {
         targetDay.chosenExercises = day.chosenExercises
         targetDay.exerciseOrder = day.exerciseOrder
         targetDay.type = day.type
+        SyncLocalMutation.touch(targetDay)
 
         try? context.save()
         cloneMessage = "Cloned to \(targetStart.formatted(date: .abbreviated, time: .omitted))"
@@ -1443,10 +1548,12 @@ struct PlanDayEditor: View {
                 d.chosenExercises = day.chosenExercises
                 d.exerciseOrder = day.exerciseOrder
                 d.type = day.type
+                SyncLocalMutation.touch(d)
             }
         }
 
 
+        SyncLocalMutation.touch(plan)
         try? context.save()
         cloneMessage = "Success"
     }
@@ -1505,7 +1612,7 @@ struct PlanDayEditor: View {
 
         let planId = cache.parentPlan?.id
         let allItems = sessions.flatMap(\.items)
-        let filtered = allItems.filter { $0.planSourceId == planId }
+        let filtered = allItems.filter { $0.planSourceId == planId && !$0.isSoftDeleted }
 
         cache.loggedItemsForDay = filtered
     }
@@ -1528,7 +1635,7 @@ struct PlanDayEditor: View {
         
         let p = cache.parentPlan
         
-        session.items.append(SessionItem(
+        let item = SessionItem(
             exerciseName: exerciseName,
             planSourceId: p?.id,
             planName: p?.name,
@@ -1538,7 +1645,10 @@ struct PlanDayEditor: View {
             grade: grade,
             notes: inputNotes.isEmpty ? nil : inputNotes,
             duration: duration
-        ))
+        )
+        SyncLocalMutation.touch(item)
+        session.items.append(item)
+        SyncLocalMutation.touch(session)
         try? context.save()
         saveTick.toggle()
         loggingExercise = nil
@@ -1551,7 +1661,7 @@ struct PlanDayEditor: View {
         let p = cache.parentPlan
         
         // Create a simple log entry without metrics - just capture that it was done
-        session.items.append(SessionItem(
+        let item = SessionItem(
             exerciseName: name,
             planSourceId: p?.id,
             planName: p?.name,
@@ -1561,7 +1671,10 @@ struct PlanDayEditor: View {
             grade: nil,
             notes: "Quick logged",
             duration: nil
-        ))
+        )
+        SyncLocalMutation.touch(item)
+        session.items.append(item)
+        SyncLocalMutation.touch(session)
         try? context.save()
         saveTick.toggle()
     }
@@ -1920,7 +2033,7 @@ struct CatalogExercisePicker: View {
     @Binding var selected: [String]
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
     @State private var searchText: String = ""
     @State private var isSearchPresented: Bool = false
     
@@ -2106,7 +2219,7 @@ struct TypesList: View {
     @Binding var isSearchPresented: Bool
     // Provider to compute flattened hits for the whole catalog (same as root)
     let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
     
     private var allHits: [ExerciseHit] {
         allHitsProvider(activities)
@@ -2216,7 +2329,7 @@ struct CombosList: View {
     @Binding var searchText: String
     @Binding var isSearchPresented: Bool
     let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
     
     private var allHits: [ExerciseHit] {
         allHitsProvider(activities)
@@ -2314,7 +2427,7 @@ struct ComboExercisesList: View {
     @Binding var searchText: String
     @Binding var isSearchPresented: Bool
     let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
     
     private var allHits: [ExerciseHit] {
         allHitsProvider(activities)
@@ -2403,7 +2516,7 @@ struct ExercisesList: View {
     @Binding var searchText: String
     @Binding var isSearchPresented: Bool
     let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
     
     private var allHits: [ExerciseHit] {
         allHitsProvider(activities)
@@ -2639,6 +2752,7 @@ private func findOrCreateSession(for date: Date, in context: ModelContext) -> Se
 
     let newSession = Session(date: date)
     context.insert(newSession)
+    SyncLocalMutation.touch(newSession)
     return newSession
 }
 

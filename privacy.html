@@ -144,25 +144,27 @@
     <section class="section">
       <div class="container">
         <h1>Privacy Policy</h1>
-        <p class="muted"><em>Effective date: <strong>November 2025</strong></em></p>
+        <p class="muted"><em>Effective date: <strong>February 17, 2026</strong></em></p>
 
         <div class="card" style="margin-top:24px;">
           <h2>1. Summary</h2>
           <ul>
-            <li>We do not collect, share, or sell personal data.</li>
-            <li>Your logs and settings are stored locally on your device.</li>
-            <li>Any sharing or third-party sync you initiate is completly under your control.</li>
-            <li>We run no servers and include no third-party analytics or advertising SDKs.</li>
+            <li>klettrack supports two modes: device-only and optional cloud sync.</li>
+            <li>Cloud sync is optional. You can stay device-only and keep full core functionality.</li>
+            <li>In device-only mode, your logs and settings remain on your device.</li>
+            <li>If you enable cloud sync, your account and synced training data are processed through Supabase to provide sync and account features.</li>
+            <li>We do not sell your personal data and we do not use advertising SDKs.</li>
           </ul>
         </div>
 
         <div class="card" style="margin-top:16px;">
           <h2>2. Data the app processes</h2>
           <ul>
-            <li><strong>On-device data:</strong> climb logs, training entries, timers, and app settings are saved on your device only.</li>
-            <li><strong>Optional imports/exports:</strong> when you choose to import or export (e.g., CSV), data moves via the iOS share sheet to the destination you select (Files, Mail, cloud drives, etc.).</li>
-            <li><strong>Optional board integrations:</strong> if you connect to third-party services (e.g., to sync sends from system boards), network requests go directly from your device to that service. klettrack’s developers do not receive your credentials or data. Credentials are stored, on device (e.g., iOS Keychain).</li>
-            <li><strong>Media (e.g., photos, videos) that you add to your climb logs aren not stored within the app but only reference to it on your device.</li>
+            <li><strong>Device-only data:</strong> climb logs, training entries, timers, and app settings are stored locally on your device.</li>
+            <li><strong>Optional cloud sync data:</strong> if you sign in and enable sync, klettrack processes account identifiers (such as email and user ID), sync metadata, and the training/log records you choose to sync.</li>
+            <li><strong>Optional imports/exports:</strong> when you choose to import or export (e.g., CSV), data moves via the iOS share sheet to destinations you select (Files, Mail, cloud drives, etc.).</li>
+            <li><strong>Optional board integrations:</strong> if you connect to third-party services, requests go from your device to that service. Their terms and privacy policies apply.</li>
+            <li><strong>Media references:</strong> media linked to climb logs is referenced by the app and may be stored in locations you control on your device or storage provider.</li>
           </ul>
         </div>
 
@@ -174,8 +176,9 @@
 
         <div class="card" style="margin-top:16px;">
           <h2>4. Crash logs &amp; diagnostics</h2>
-          <p>We do not embed third-party analytics or crash SDKs.</p>
+          <p>We do not embed advertising SDKs.</p>
           <p>If you opted into Apple’s system <strong>“Share with App Developers”</strong> setting, Apple may provide us with anonymized, aggregated diagnostics. These reports do not include information that directly identifies you and are used solely to improve stability.</p>
+          <p>The web app may store limited UX and sync troubleshooting events in your browser local storage for local troubleshooting only.</p>
         </div>
 
         <div class="card" style="margin-top:16px;">
@@ -186,24 +189,31 @@
         <div class="card" style="margin-top:16px;">
           <h2>6. Data retention and deletion</h2>
           <ul>
-            <li>All app data is on your device.</li>
-            <li>To delete your data, you can delete entries in the app (where available) or delete the app to remove all app data from your device.</li>
-            <li>We hold no copies on any server.</li>
+            <li><strong>Device-only mode:</strong> data stays on your device until you delete it or remove the app.</li>
+            <li><strong>Cloud sync mode:</strong> synced records are retained in cloud infrastructure to provide sync until you delete them, delete your account, or disable sync and remove cloud data.</li>
+            <li><strong>Account deletion:</strong> if available in your version, you can request cloud account deletion from the app/web account settings. This removes your cloud auth account and associated synced data according to backend retention operations.</li>
+            <li>Deleting the app removes local app data from the device but does not automatically delete your cloud account unless you also request account deletion.</li>
           </ul>
         </div>
 
         <div class="card" style="margin-top:16px;">
           <h2>7. Third-party services</h2>
-          <p>If you choose to connect to or open links for third-party services (e.g., board platforms), those services are governed by their own terms and privacy policies. Review those documents before using integrations.</p>
+          <p>klettrack uses third-party infrastructure providers to operate optional account and sync features, including Supabase (authentication, database, and edge functions).</p>
+          <p>If you choose to connect to additional third-party services (for example board platforms), those services are governed by their own terms and privacy policies.</p>
         </div>
 
         <div class="card" style="margin-top:16px;">
-          <h2>8. Changes to this policy</h2>
+          <h2>8. Security</h2>
+          <p>We use technical safeguards intended to protect your data in transit and at rest for enabled cloud features. No method of transmission or storage is guaranteed to be 100% secure.</p>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <h2>9. Changes to this policy</h2>
           <p>If we make material changes, we’ll update this text and the <strong>Effective date</strong>. Your continued use of klettrack after changes means you accept the revised policy.</p>
         </div>
 
         <div class="card" style="margin-top:16px;">
-          <h2>9. Contact</h2>
+          <h2>10. Contact</h2>
           <p>Questions or requests?</p>
           <ul>
             <li><strong>Issues/Support:</strong> <a href="https://klettrack.featurebase.app/">https://klettrack.featurebase.app</a></li>
@@ -223,7 +233,8 @@
 
       <div style="margin-top:8px;">
         <a href="/privacy.html">Privacy Policy</a> · 
-        <a href="/terms.html">Terms &amp; Conditions</a>
+        <a href="/terms.html">Terms &amp; Conditions</a> ·
+        <a href="mailto:support@klettrack.com">support@klettrack.com</a>
       </div>
     </div>
   </div>

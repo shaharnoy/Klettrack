@@ -17,7 +17,10 @@ struct CatalogView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
-    @Query(sort: \Activity.name) private var activities: [Activity]
+    @Query(
+        filter: #Predicate<Activity> { !$0.isSoftDeleted },
+        sort: \Activity.name
+    ) private var activities: [Activity]
 
     @State private var sheetRoute: SheetRoute?
     @State private var draftActivityName = ""
@@ -67,6 +70,7 @@ struct CatalogView: View {
                 NameOnlySheet(title: "New Category", placeholder: "e.g. Core, Antagonist & Stabilizer…", name: $draftActivityName) {
                     guard !draftActivityName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                     let a = Activity(name: draftActivityName.trimmingCharacters(in: .whitespaces))
+                    SyncLocalMutation.touch(a)
                     context.insert(a)
                     try? context.save()
                 }
@@ -77,6 +81,7 @@ struct CatalogView: View {
             .sheet(item: $renamingActivity) { toRename in
                 NameOnlySheet(title: "Rename Category", placeholder: "New name", name: $draftActivityName) {
                     toRename.name = draftActivityName.trimmingCharacters(in: .whitespaces)
+                    SyncLocalMutation.touch(toRename)
                     try? context.save()
                 }
             }
@@ -109,7 +114,7 @@ struct CatalogView: View {
             }
             Button(role: .destructive) {
                 guard isDataReady else { return }
-                context.delete(activity)
+                SyncLocalMutation.softDelete(activity)
                 try? context.save()
             } label: {
                 Label("Delete", systemImage: "trash")
@@ -135,11 +140,14 @@ struct ActivityDetailView: View {
     @State private var draftArea = ""
     @State private var draftTypeDesc = ""
     @State private var renamingType: TrainingType?
+    private var activeTypes: [TrainingType] {
+        SyncLocalMutation.active(activity.types)
+    }
 
     var body: some View {
         List {
             Section {
-                ForEach(activity.types) { t in
+                ForEach(activeTypes) { t in
                     NavigationLink {
                         TrainingTypeDetailView(trainingType: t, tint: activity.hue.color)
                     } label: {
@@ -162,8 +170,8 @@ struct ActivityDetailView: View {
                             guard isDataReady else { return }
 
                             activity.types.removeAll { $0.id == t.id }
-
-                            context.delete(t)
+                            SyncLocalMutation.softDelete(t)
+                            SyncLocalMutation.touch(activity)
                             try? context.save()
                         } label: { Label("Delete", systemImage: "trash") }
 
@@ -171,12 +179,12 @@ struct ActivityDetailView: View {
                 }
                 .onDelete { idx in
                     guard isDataReady else { return }
-                    let toDelete = idx.map { activity.types[$0] }
+                    let toDelete = idx.map { activeTypes[$0] }
                     let ids = Set(toDelete.map(\.id))
 
                     activity.types.removeAll { ids.contains($0.id) }
-
-                    toDelete.forEach { context.delete($0) }
+                    toDelete.forEach { SyncLocalMutation.softDelete($0) }
+                    SyncLocalMutation.touch(activity)
                     try? context.save()
                 }
 
@@ -216,7 +224,9 @@ struct ActivityDetailView: View {
                     area: draftArea.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftArea,
                     typeDescription: draftTypeDesc.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftTypeDesc
                 )
+                SyncLocalMutation.touch(t)
                 activity.types.append(t)
+                SyncLocalMutation.touch(activity)
                 try? context.save()
             }
             }
@@ -233,6 +243,7 @@ struct ActivityDetailView: View {
                 tt.name = draftTypeName.trimmingCharacters(in: .whitespaces)
                 tt.area = draftArea.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftArea
                 tt.typeDescription = draftTypeDesc.trimmingCharacters(in: .whitespaces).isEmpty ? nil : draftTypeDesc
+                SyncLocalMutation.touch(tt)
                 try? context.save()
             }
         }
@@ -268,7 +279,7 @@ struct TrainingTypeDetailView: View {
     @State private var draftAbout = ""
 
     private var exercisesByArea: [(String, [Exercise])] {
-        let grouped = Dictionary(grouping: trainingType.exercises) { $0.area ?? "" }
+        let grouped = Dictionary(grouping: SyncLocalMutation.active(trainingType.exercises)) { $0.area ?? "" }
         if grouped.keys.contains("Fingers") || grouped.keys.contains("Pull") {
             // For climbing-specific exercises, maintain Fingers/Pull order
             return ["Fingers", "Pull"].compactMap { area in
@@ -287,13 +298,15 @@ struct TrainingTypeDetailView: View {
     }
 
     private var ungroupedExercises: [Exercise] {
-        trainingType.exercises.filter { $0.area == nil }.sorted { $0.order < $1.order }
+        SyncLocalMutation.active(trainingType.exercises)
+            .filter { $0.area == nil }
+            .sorted { $0.order < $1.order }
     }
     
     // Define available areas for climbing exercises
     private var availableAreas: [String] {
         // Check if this is a climbing training type by looking at existing exercises
-        let existingAreas = Set(trainingType.exercises.compactMap { $0.area })
+        let existingAreas = Set(SyncLocalMutation.active(trainingType.exercises).compactMap { $0.area })
         if existingAreas.contains("Fingers") || existingAreas.contains("Pull") ||
            trainingType.name.lowercased().contains("climb") {
             return ["Fingers", "Pull"]
@@ -309,9 +322,9 @@ struct TrainingTypeDetailView: View {
                 }
             }
 
-            if !trainingType.combinations.isEmpty {
+            if !SyncLocalMutation.active(trainingType.combinations).isEmpty {
                 Section("Combinations") {
-                    ForEach(trainingType.combinations) { combo in
+                    ForEach(SyncLocalMutation.active(trainingType.combinations)) { combo in
                         NavigationLink {
                             CombinationDetailView(combo: combo, tint: tint)
                         } label: {
@@ -345,7 +358,8 @@ struct TrainingTypeDetailView: View {
                                         trainingType.exercises.removeAll { $0.id == ex.id }
 
                                         // Persist
-                                        context.delete(ex)
+                                        SyncLocalMutation.softDelete(ex)
+                                        SyncLocalMutation.touch(trainingType)
                                         try? context.save()
                                     } label: {
                                         Label("Delete", systemImage: "trash")
@@ -360,7 +374,8 @@ struct TrainingTypeDetailView: View {
                             trainingType.exercises.removeAll { ids.contains($0.id) }
 
                             // Persist
-                            toDelete.forEach { context.delete($0) }
+                            toDelete.forEach { SyncLocalMutation.softDelete($0) }
+                            SyncLocalMutation.touch(trainingType)
                             try? context.save()
                         }
 
@@ -382,7 +397,8 @@ struct TrainingTypeDetailView: View {
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     trainingType.exercises.removeAll { $0.id == ex.id }
-                                    context.delete(ex)
+                                    SyncLocalMutation.softDelete(ex)
+                                    SyncLocalMutation.touch(trainingType)
                                     try? context.save()
                                 } label: {
                                     Label("Delete", systemImage: "trash")
@@ -396,7 +412,8 @@ struct TrainingTypeDetailView: View {
 
                         trainingType.exercises.removeAll { ids.contains($0.id) }
 
-                        toDelete.forEach { context.delete($0) }
+                        toDelete.forEach { SyncLocalMutation.softDelete($0) }
+                        SyncLocalMutation.touch(trainingType)
                         try? context.save()
                     }
 
@@ -429,6 +446,7 @@ struct TrainingTypeDetailView: View {
                                text: $draftAbout) {
                     let trimmed = draftAbout.trimmingCharacters(in: .whitespacesAndNewlines)
                     trainingType.typeDescription = trimmed.isEmpty ? nil : trimmed
+                    SyncLocalMutation.touch(trainingType)
                     try? context.save()
                 }
             case .newExercise:
@@ -456,7 +474,9 @@ struct TrainingTypeDetailView: View {
                         restText: draftRest.isEmpty ? nil : draftRest,
                         notes: draftNotes.isEmpty ? nil : draftNotes
                     )
+                    SyncLocalMutation.touch(ex)
                     trainingType.exercises.append(ex)
+                    SyncLocalMutation.touch(trainingType)
                     try? context.save()
                 }
             }
@@ -481,9 +501,10 @@ struct TrainingTypeDetailView: View {
                 ex.exerciseDescription = draftDescription.isEmpty ? nil : draftDescription
                 ex.repsText = draftReps.isEmpty ? nil : draftReps
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
-                ex.durationText = draftSets.isEmpty ? nil : draftDuration
+                ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
+                SyncLocalMutation.touch(ex)
                 try? context.save()
             }
         }
@@ -540,7 +561,7 @@ struct CombinationDetailView: View {
                 Section("About") { Text(about) }
             }
             Section("Exercises") {
-                ForEach(combo.exercises.sorted { $0.order < $1.order }) { ex in
+                ForEach(SyncLocalMutation.active(combo.exercises).sorted { $0.order < $1.order }) { ex in
                     Button {
                         openEditor(for: ex)
                     } label: {
@@ -551,7 +572,8 @@ struct CombinationDetailView: View {
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
                                 combo.exercises.removeAll { $0.id == ex.id }
-                                context.delete(ex)
+                                SyncLocalMutation.softDelete(ex)
+                                SyncLocalMutation.touch(combo)
                                 try? context.save()
                             } label: { Label("Delete", systemImage: "trash") }
 
@@ -559,7 +581,8 @@ struct CombinationDetailView: View {
                         .contextMenu {
                             Button(role: .destructive) {
                                 combo.exercises.removeAll { $0.id == ex.id }
-                                context.delete(ex)
+                                SyncLocalMutation.softDelete(ex)
+                                SyncLocalMutation.touch(combo)
                                 try? context.save()
                             } label: {
                                 Label("Delete", systemImage: "trash")
@@ -568,13 +591,14 @@ struct CombinationDetailView: View {
                         }
                 }
                 .onDelete { idx in
-                    let sortedExercises = combo.exercises.sorted { $0.order < $1.order }
+                    let sortedExercises = SyncLocalMutation.active(combo.exercises).sorted { $0.order < $1.order }
                     let toDelete = idx.map { sortedExercises[$0] }
                     let ids = Set(toDelete.map(\.id))
 
                     combo.exercises.removeAll { ids.contains($0.id) }
 
-                    toDelete.forEach { context.delete($0) }
+                    toDelete.forEach { SyncLocalMutation.softDelete($0) }
+                    SyncLocalMutation.touch(combo)
                     try? context.save()
                 }
 
@@ -604,6 +628,7 @@ struct CombinationDetailView: View {
                                text: $draftAbout) {
                     let trimmed = draftAbout.trimmingCharacters(in: .whitespacesAndNewlines)
                     combo.comboDescription = trimmed.isEmpty ? nil : trimmed
+                    SyncLocalMutation.touch(combo)
                     try? context.save()
                 }
             case .newExercise:
@@ -631,7 +656,9 @@ struct CombinationDetailView: View {
                         restText: draftRest.isEmpty ? nil : draftRest,
                         notes: draftNotes.isEmpty ? nil : draftNotes
                     )
+                    SyncLocalMutation.touch(ex)
                     combo.exercises.append(ex)
+                    SyncLocalMutation.touch(combo)
                     try? context.save()
                 }
             }
@@ -659,6 +686,7 @@ struct CombinationDetailView: View {
                 ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
+                SyncLocalMutation.touch(ex)
                 try? context.save()
             }
         }
