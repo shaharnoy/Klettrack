@@ -287,11 +287,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-<<<<<<< HEAD
-				MARKETING_VERSION = 2.0;
-=======
-				MARKETING_VERSION = 2.0;
->>>>>>> 7629b2e (refactor(ui): modernize SwiftUI interactions, sheets & media sizing)
+					MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.somenoys.klettrack;
 				PRODUCT_MODULE_NAME = "$(PRODUCT_NAME)";
 				PRODUCT_NAME = klettrack;
@@ -335,11 +331,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-<<<<<<< HEAD
-				MARKETING_VERSION = 2.0;
-=======
-				MARKETING_VERSION = 2.0;
->>>>>>> 7629b2e (refactor(ui): modernize SwiftUI interactions, sheets & media sizing)
+					MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.somenoys.klettrack;
 				PRODUCT_MODULE_NAME = "$(PRODUCT_NAME)";
 				PRODUCT_NAME = klettrack;
