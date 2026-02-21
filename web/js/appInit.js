@@ -34,3 +34,12 @@ window.__SUPABASE_URL__ = window.__SUPABASE_URL__ || localStorage.getItem("SUPAB
 window.__SUPABASE_PUBLISHABLE_KEY__ = window.__SUPABASE_PUBLISHABLE_KEY__ || localStorage.getItem("SUPABASE_PUBLISHABLE_KEY") || "";
 window.__USERNAME_RESOLVER_URL__ = window.__USERNAME_RESOLVER_URL__ || localStorage.getItem("SUPABASE_USERNAME_RESOLVER_URL") || "";
 window.__SYNC_REALTIME_ENABLED__ = window.__SYNC_REALTIME_ENABLED__ || localStorage.getItem("SYNC_REALTIME_ENABLED") === "true";
+
+// Public defaults for production Pages deploys; can still be overridden by
+// window injection or localStorage for local/staging testing.
+if (!window.__SUPABASE_URL__) {
+  window.__SUPABASE_URL__ = "https://iyeftdnenkzdjwfmkulm.supabase.co";
+}
+if (!window.__SUPABASE_PUBLISHABLE_KEY__) {
+  window.__SUPABASE_PUBLISHABLE_KEY__ = "sb_publishable_vXrs-zZLDbueKaDw5_ZmLA_71YwRedt";
+}
