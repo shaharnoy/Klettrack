@@ -32,17 +32,26 @@ SYNC_TABLES=(
 
 failures=0
 
+search_sql_files() {
+  local pattern="$1"
+  if command -v rg >/dev/null 2>&1; then
+    rg -q --glob '*.sql' "${pattern}" "${MIGRATIONS_DIR}"
+  else
+    grep -R -E -q --include='*.sql' "${pattern}" "${MIGRATIONS_DIR}"
+  fi
+}
+
 echo "Checking RLS coverage for sync tables..."
 for table in "${SYNC_TABLES[@]}"; do
   rls_pattern="alter table public\\.${table} enable row level security;"
   policy_pattern="create policy [^;]+ on public\\.${table}"
 
-  if ! rg -q --glob '*.sql' "${rls_pattern}" "${MIGRATIONS_DIR}"; then
+  if ! search_sql_files "${rls_pattern}"; then
     echo "missing RLS enable statement for table public.${table}" >&2
     failures=$((failures + 1))
   fi
 
-  if ! rg -q --glob '*.sql' "${policy_pattern}" "${MIGRATIONS_DIR}"; then
+  if ! search_sql_files "${policy_pattern}"; then
     echo "missing policy definition for table public.${table}" >&2
     failures=$((failures + 1))
   fi
