@@ -314,10 +314,7 @@ async function render() {
         try {
           state.loginError = "";
           state.loginNotice = "";
-          const redirectURL = new URL("/app.html", window.location.origin);
-          redirectURL.searchParams.set("next", "/account");
-          redirectURL.searchParams.set("flow", "recovery");
-          const redirectTo = redirectURL.toString();
+          const redirectTo = new URL("/app.html", window.location.origin).toString();
           await requestPasswordReset(identifier, redirectTo);
           showToast("Password reset email sent. Check your inbox.", "success");
         } catch (error) {

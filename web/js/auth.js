@@ -113,15 +113,18 @@ export async function requestPasswordReset(identifier, redirectTo = null) {
     throw new Error("Supabase config is missing.");
   }
   const email = await resolveEmail(identifier);
-  const response = await fetch(`${supabaseURL}/auth/v1/recover`, {
+  const recoverURL = new URL(`${supabaseURL}/auth/v1/recover`);
+  if (redirectTo) {
+    recoverURL.searchParams.set("redirect_to", redirectTo);
+  }
+  const response = await fetch(recoverURL.toString(), {
     method: "POST",
     headers: {
       apikey: supabaseKey,
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      email,
-      ...(redirectTo ? { redirect_to: redirectTo } : {})
+      email
     })
   });
   const payload = await response.json().catch(() => ({}));
