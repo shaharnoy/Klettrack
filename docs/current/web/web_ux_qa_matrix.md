@@ -1,7 +1,7 @@
 # Web UX v2 QA Matrix
 
 Last Updated: 2026-02-14
-Owner: Codex + Shahar
+Owner: Shahar
 
 ## Validation Commands
 
