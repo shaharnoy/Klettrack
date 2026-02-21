@@ -365,9 +365,10 @@ class ImportExportTests: ClimbingProgramTestSuite {
 
         func testImportClimbCreatesStableIDFromTB2() async throws {
             let tb2 = "tb2-alpha-999"
+            let csvTimestamp = "2025-09-02 11:22:11"
             let csv = """
             \(testCSVHeader)
-            2025-09-02 11:22:11,climb,,boulder,V5,V5,30,blue,,Style,4,false,GymB,,,,,,,,,First import,,\(tb2),
+            \(csvTimestamp),climb,,boulder,V5,V5,30,blue,,Style,4,false,GymB,,,,,,,,,First import,,\(tb2),
             """
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("stable_tb2.csv")
             try csv.write(to: url, atomically: true, encoding: .utf8)
@@ -377,7 +378,14 @@ class ImportExportTests: ClimbingProgramTestSuite {
             XCTAssertEqual(inserted, 1)
 
             let all = try context.fetch(FetchDescriptor<ClimbEntry>())
-            let day = parseDay("2025-09-01")
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            df.timeZone = TimeZone.current
+            df.locale = Locale(identifier: "en_US_POSIX")
+            let parsed = try XCTUnwrap(df.date(from: csvTimestamp))
+            var calendar = Calendar.current
+            calendar.timeZone = TimeZone.current
+            let day = calendar.startOfDay(for: parsed)
             let expected = testStableID(climbUUID: tb2, day: day, angle: 30, isWIP: false)
             XCTAssertTrue(all.contains { $0.id == expected })
             XCTAssertEqual(all.first { $0.id == expected }?.tb2ClimbUUID, tb2)
