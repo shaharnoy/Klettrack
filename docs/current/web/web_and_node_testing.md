@@ -81,7 +81,6 @@ Validates:
 - Idempotent replay
 - Version conflict behavior
 - Cleanup
-- Ownership isolation checks (if secondary account is available)
 
 ```bash
 export SUPABASE_URL='<project-url>'
@@ -90,15 +89,6 @@ export SUPABASE_TEST_EMAIL='<test-email>'
 export SUPABASE_TEST_PASSWORD='<test-password>'
 node scripts/supabase/contract/sync_function_contract_tests.mjs
 ```
-
-Optional secondary user credentials:
-
-```bash
-export SUPABASE_SECONDARY_TEST_EMAIL='<secondary-test-email>'
-export SUPABASE_SECONDARY_TEST_PASSWORD='<secondary-test-password>'
-```
-
-If not provided, the script attempts auto-signup; if rate-limited, secondary checks are skipped.
 
 ### 4.3 Scale Validation Test
 

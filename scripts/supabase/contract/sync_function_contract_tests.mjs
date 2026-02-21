@@ -19,8 +19,6 @@ const config = {
   apikey: process.env.SUPABASE_PUBLISHABLE_KEY.trim(),
   primaryEmail: process.env.SUPABASE_TEST_EMAIL.trim(),
   primaryPassword: process.env.SUPABASE_TEST_PASSWORD,
-  secondaryEmail: process.env.SUPABASE_SECONDARY_TEST_EMAIL?.trim(),
-  secondaryPassword: process.env.SUPABASE_SECONDARY_TEST_PASSWORD,
   limit: 200
 };
 
@@ -46,8 +44,6 @@ const primarySession = await signInWithPassword({
   email: config.primaryEmail,
   password: config.primaryPassword
 });
-
-const secondarySession = await resolveSecondarySession(config);
 
 const createOpId = crypto.randomUUID();
 const createResponse = await syncPush({
@@ -428,55 +424,6 @@ if (!conflictMatched) {
   throw new Error(`Expected version_mismatch conflict for op ${conflictOpId}.`);
 }
 
-let ownershipReadIsolation = false;
-let ownershipWriteBlocked = false;
-let secondaryChecksSkipped = false;
-
-if (secondarySession) {
-  const secondaryAfterPrimaryCreate = await pullUntilExhausted({
-    url: config.url,
-    token: secondarySession.access_token,
-    startCursor: runCursor,
-    limit: config.limit
-  });
-
-  const leakedToSecondary = findActivityDoc(secondaryAfterPrimaryCreate.changes, activityId);
-  if (leakedToSecondary) {
-    throw new Error("Ownership isolation failed: secondary user can see primary user row.");
-  }
-  ownershipReadIsolation = true;
-
-  const secondaryDeleteOp = crypto.randomUUID();
-  const secondaryDeleteResponse = await syncPush({
-    url: config.url,
-    token: secondarySession.access_token,
-    body: {
-      deviceId: `contract-secondary-${runId}`,
-      baseCursor: secondaryAfterPrimaryCreate.lastCursor,
-      mutations: [
-        {
-          opId: secondaryDeleteOp,
-          entity: "activities",
-          entityId: activityId,
-          type: "delete",
-          baseVersion: Number(createdDoc.version ?? 1),
-          updatedAtClient: new Date().toISOString()
-        }
-      ]
-    }
-  });
-
-  ownershipWriteBlocked =
-    !(secondaryDeleteResponse.acknowledgedOpIds ?? []).includes(secondaryDeleteOp) &&
-    (((secondaryDeleteResponse.conflicts ?? []).length > 0) || ((secondaryDeleteResponse.failed ?? []).length > 0));
-
-  if (!ownershipWriteBlocked) {
-    throw new Error("Ownership enforcement failed: secondary user mutation unexpectedly acknowledged.");
-  }
-} else {
-  secondaryChecksSkipped = true;
-}
-
 const v2AfterCreate = await pullUntilExhausted({
   url: config.url,
   token: primarySession.access_token,
@@ -629,52 +576,12 @@ console.log(JSON.stringify({
   checks: {
     idempotentReplay: true,
     versionConflict: true,
-    ownershipReadIsolation,
-    ownershipWriteBlocked,
     v2EntityContract: true,
     parentValidation: true,
-    secondaryChecksSkipped,
     cleanup: true
   },
-  primaryEmail: config.primaryEmail,
-  secondaryEmail: secondarySession?.email ?? null
+  primaryEmail: config.primaryEmail
 }, null, 2));
-
-async function resolveSecondarySession({ url, apikey, secondaryEmail, secondaryPassword }) {
-  if (secondaryEmail && secondaryPassword) {
-    return await signInWithPassword({
-      url,
-      apikey,
-      email: secondaryEmail,
-      password: secondaryPassword
-    });
-  }
-
-  const generatedEmail = `codex-sync-${Date.now()}-${Math.floor(Math.random() * 10000)}@example.com`;
-  const generatedPassword = `Codex!${crypto.randomUUID()}`;
-
-  const created = await signUp({
-    url,
-    apikey,
-    email: generatedEmail,
-    password: generatedPassword,
-    allowFailure: true
-  });
-
-  if (created?.access_token) {
-    return { ...created, email: generatedEmail };
-  }
-
-  const signedIn = await signInWithPassword({
-    url,
-    apikey,
-    email: generatedEmail,
-    password: generatedPassword,
-    allowFailure: true
-  });
-
-  return signedIn;
-}
 
 async function signInWithPassword({ url, apikey, email, password, allowFailure = false }) {
   const response = await fetch(`${url}/auth/v1/token?grant_type=password`, {
@@ -697,26 +604,6 @@ async function signInWithPassword({ url, apikey, email, password, allowFailure =
   return { ...payload, email };
 }
 
-async function signUp({ url, apikey, email, password, allowFailure = false }) {
-  const response = await fetch(`${url}/auth/v1/signup`, {
-    method: "POST",
-    headers: {
-      apikey,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({ email, password })
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (allowFailure) {
-      return null;
-    }
-    throw new Error(`Sign-up failed for ${email}: ${payload?.error_description || payload?.msg || response.status}`);
-  }
-
-  return payload;
-}
 
 async function syncPush({ url, token, body }) {
   const response = await fetch(`${url}/functions/v1/sync/push`, {

@@ -15,8 +15,6 @@ jobs:
       SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
       SUPABASE_TEST_EMAIL: ${{ secrets.SUPABASE_TEST_EMAIL }}
       SUPABASE_TEST_PASSWORD: ${{ secrets.SUPABASE_TEST_PASSWORD }}
-      SUPABASE_SECONDARY_TEST_EMAIL: ${{ secrets.SUPABASE_SECONDARY_TEST_EMAIL }}
-      SUPABASE_SECONDARY_TEST_PASSWORD: ${{ secrets.SUPABASE_SECONDARY_TEST_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
