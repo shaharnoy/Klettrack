@@ -116,7 +116,6 @@ export function renderRegisterView({ onSubmit, onBackToLogin, errorMessage, noti
 
   root.innerHTML = `
     <h2>Create Account</h2>
-    <p>This registration page is intended to be opened from the iOS app.</p>
 
     <form id="register-form" class="row" style="flex-direction: column; align-items: stretch; max-width: 420px;">
       <input id="register-email" class="input" type="email" placeholder="Email" autocomplete="email" required />
