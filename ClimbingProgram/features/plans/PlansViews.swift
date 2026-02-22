@@ -8,6 +8,7 @@ import SwiftUI
 import SwiftData
 import Charts
 import UniformTypeIdentifiers
+import Combine
 
 import UIKit
 
@@ -20,6 +21,15 @@ private func dbg(_ msg: String) {
 @MainActor
 @Observable
 private final class PlanDayEditorCache {
+    struct ExerciseCatalogInfo {
+        let activityName: String
+        let activityColor: Color
+        let order: Int
+    }
+
+    private static let maxEntries = 32
+    private static let staleLifetime: TimeInterval = 30 * 60
+    private static let memoryPressureKeepCount = 4
 
     struct ExerciseGuidance {
         let repsText: String?
@@ -36,21 +46,82 @@ private final class PlanDayEditorCache {
 
     var guidanceByName: [String: ExerciseGuidance] = [:]
     var boulderingExerciseNames: Set<String> = []
+    var catalogInfoByExerciseName: [String: ExerciseCatalogInfo] = [:]
     var parentPlan: Plan? = nil
     var loggedItemsForDay: [SessionItem] = []
 
     var isWarm: Bool = false
+    private var lastAccessedAt: Date = .distantPast
 
     // Simple global in-memory store keyed by PlanDay id
     private static var store: [UUID: PlanDayEditorCache] = [:]
 
+    func markAccess(now: Date = .now) {
+        lastAccessedAt = now
+    }
+
     static func forDay(_ id: UUID) -> PlanDayEditorCache {
+        pruneStaleEntries(keeping: id)
+
         if let existing = store[id] {
+            existing.markAccess()
             return existing
         }
+
         let created = PlanDayEditorCache()
+        created.markAccess()
         store[id] = created
+        trimToLimit(keeping: id)
         return created
+    }
+
+    static func pruneStaleEntries(now: Date = .now, keeping keepID: UUID? = nil) {
+        let cutoff = now.addingTimeInterval(-staleLifetime)
+        var staleIDs: [UUID] = []
+        for (id, cache) in store {
+            if id == keepID {
+                continue
+            }
+            if cache.lastAccessedAt < cutoff {
+                staleIDs.append(id)
+            }
+        }
+
+        for id in staleIDs {
+            store.removeValue(forKey: id)
+        }
+
+        trimToLimit(keeping: keepID)
+    }
+
+    static func handleMemoryPressure(keeping keepID: UUID? = nil) {
+        let recentIDs = store
+            .sorted { lhs, rhs in lhs.value.lastAccessedAt > rhs.value.lastAccessedAt }
+            .prefix(memoryPressureKeepCount)
+            .map(\.key)
+        let keepSet = Set(recentIDs)
+
+        for id in Array(store.keys) where id != keepID && !keepSet.contains(id) {
+            store.removeValue(forKey: id)
+        }
+
+        if let keepID, let cache = store[keepID] {
+            cache.markAccess()
+        }
+    }
+
+    private static func trimToLimit(keeping keepID: UUID? = nil) {
+        guard store.count > maxEntries else { return }
+
+        let overflow = store.count - maxEntries
+        let removableIDs = store
+            .filter { id, _ in id != keepID }
+            .sorted { lhs, rhs in lhs.value.lastAccessedAt < rhs.value.lastAccessedAt }
+            .map(\.key)
+
+        for id in removableIDs.prefix(overflow) {
+            store.removeValue(forKey: id)
+        }
     }
 }
 
@@ -872,6 +943,7 @@ struct PlanDayEditor: View {
 
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.editMode) private var editMode
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(TimerAppState.self) private var timerAppState
     @State private var didReorder = false
     @Binding var day: PlanDay
@@ -905,6 +977,8 @@ struct PlanDayEditor: View {
     
     // State for daily notes to handle the optional binding
     @State private var dailyNotesText: String = ""
+    @State private var hasPendingNotesSave = false
+    @State private var pendingNotesSaveTask: Task<Void, Never>? = nil
     
     // Picker selection by identifier (prevents invalidated object binding)
     @State private var selectedDayTypeId: UUID? = nil
@@ -930,89 +1004,20 @@ struct PlanDayEditor: View {
         cache.loggedItemsForDay
     }
 
-    
-    // Helper to get exercises sorted by their catalog order
-    private func sortedChosenExercises() -> [String] {
-        // Get all exercises from the catalog
-        let descriptor = FetchDescriptor<Exercise>()
-        let allExercises = (try? context.fetch(descriptor)) ?? []
-        
-        // Create a map of exercise names to their order values, handling duplicates
-        var exerciseOrderMap: [String: Int] = [:]
-        for exercise in allExercises {
-            // If we encounter a duplicate name, keep the lower order value
-            if let existingOrder = exerciseOrderMap[exercise.name] {
-                exerciseOrderMap[exercise.name] = min(existingOrder, exercise.order)
-            } else {
-                exerciseOrderMap[exercise.name] = exercise.order
-            }
-        }
-        
-        // Sort chosen exercises: not quick-logged first (by catalog order), then quick-logged at bottom
-        return day.chosenExercises.sorted { name1, name2 in
-            let isLogged1 = isExerciseQuickLogged(name: name1)
-            let isLogged2 = isExerciseQuickLogged(name: name2)
-            
-            // If one is logged and the other isn't, put the unlogged one first
-            if isLogged1 != isLogged2 {
-                return !isLogged1 // not logged (false) comes before logged (true)
-            }
-            
-            // If both have the same logged status, sort by catalog order
-            let order1 = exerciseOrderMap[name1] ?? Int.max
-            let order2 = exerciseOrderMap[name2] ?? Int.max
-            return order1 < order2
-        }
-    }
-
     // Helper to get exercises grouped by activity type
     private func groupedChosenExercises() -> [(activityName: String, activityColor: Color, exercises: [String])] {
-        // Get all catalog data
-        let activityDescriptor = FetchDescriptor<Activity>()
-        let allActivities = (try? context.fetch(activityDescriptor)) ?? []
-        
-        // Create a map of exercise names to their parent activity and order
-        var exerciseToActivityMap: [String: (activity: Activity, order: Int)] = [:]
-        
-        for activity in allActivities {
-            for trainingType in activity.types {
-                // Handle direct exercises
-                for exercise in trainingType.exercises {
-                    if let existing = exerciseToActivityMap[exercise.name] {
-                        // Keep the one with lower order if duplicate names exist
-                        if exercise.order < existing.order {
-                            exerciseToActivityMap[exercise.name] = (activity, exercise.order)
-                        }
-                    } else {
-                        exerciseToActivityMap[exercise.name] = (activity, exercise.order)
-                    }
-                }
-                
-                // Handle combination exercises
-                for combination in trainingType.combinations {
-                    for exercise in combination.exercises {
-                        if let existing = exerciseToActivityMap[exercise.name] {
-                            // Keep the one with lower order if duplicate names exist
-                            if exercise.order < existing.order {
-                                exerciseToActivityMap[exercise.name] = (activity, exercise.order)
-                            }
-                        } else {
-                            exerciseToActivityMap[exercise.name] = (activity, exercise.order)
-                        }
-                    }
-                }
-            }
-        }
-        
+        let catalogInfoByExerciseName = cache.catalogInfoByExerciseName
+
         // Group chosen exercises by activity
         let groupedByActivity = Dictionary(grouping: day.chosenExercises) { exerciseName in
-                exerciseToActivityMap[exerciseName]?.activity.name ?? "Unknown"
+                catalogInfoByExerciseName[exerciseName]?.activityName ?? "Unknown"
             }
 
             var result: [(String, Color, [String])] = []
             for (activityName, exerciseNames) in groupedByActivity {
-                let activity = allActivities.first { $0.name == activityName }
-                let activityColor = activity?.hue.color ?? .gray
+                let activityColor = exerciseNames
+                    .compactMap { catalogInfoByExerciseName[$0]?.activityColor }
+                    .first ?? .gray
 
                 let sortedExercises = exerciseNames.sorted { name1, name2 in
                     // 1) Override with per-day manual order if available
@@ -1026,8 +1031,8 @@ struct PlanDayEditor: View {
                     if isLogged1 != isLogged2 { return !isLogged1 }
 
                     // 3) Fallback: catalog order
-                    let c1 = exerciseToActivityMap[name1]?.order ?? Int.max
-                    let c2 = exerciseToActivityMap[name2]?.order ?? Int.max
+                    let c1 = catalogInfoByExerciseName[name1]?.order ?? Int.max
+                    let c2 = catalogInfoByExerciseName[name2]?.order ?? Int.max
                     return c1 < c2
                 }
                 result.append((activityName, activityColor, sortedExercises))
@@ -1333,11 +1338,7 @@ struct PlanDayEditor: View {
                     dailyNotesText = day.dailyNotes ?? ""
                 }
                 .onChange(of: dailyNotesText) {
-                    // Save the notes to the model
-                    let trimmed = dailyNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    day.dailyNotes = trimmed.isEmpty ? nil : trimmed
-                    SyncLocalMutation.touch(day)
-                    try? context.save()
+                    scheduleDailyNotesSave()
                 }
         }
     }
@@ -1436,11 +1437,8 @@ struct PlanDayEditor: View {
                     }
                 }
                 .onDisappear {
-                    if didReorder {
-                        didReorder = false
-                        SyncLocalMutation.touch(day)
-                        try? context.save()
-                    }
+                    persistPendingEditorChanges()
+                    PlanDayEditorCache.pruneStaleEntries(keeping: day.id)
                 }
         // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in
@@ -1459,6 +1457,9 @@ struct PlanDayEditor: View {
             }
         }
         .task(id: day.id) {
+            cache.markAccess()
+            PlanDayEditorCache.pruneStaleEntries(keeping: day.id)
+
             if !cache.isWarm {
                 warmCachesIntoCache()
                 cache.isWarm = true
@@ -1471,6 +1472,16 @@ struct PlanDayEditor: View {
 
         .onChange(of: saveTick) { _, _ in
             refreshLoggedItemsIntoCache()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase != .active {
+                persistPendingEditorChanges()
+                PlanDayEditorCache.pruneStaleEntries(keeping: day.id)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            persistPendingEditorChanges()
+            PlanDayEditorCache.handleMemoryPressure(keeping: day.id)
         }
         // Quick Progress sheet
         .sheet(item: $progressExercise) { sel in
@@ -1560,6 +1571,7 @@ struct PlanDayEditor: View {
 
     
     private func warmCachesIntoCache() {
+        cache.markAccess()
 
         // 1) Guidance map (Exercises)
         let exDesc = FetchDescriptor<Exercise>()
@@ -1582,13 +1594,72 @@ struct PlanDayEditor: View {
         let actDesc = FetchDescriptor<Activity>()
         let activities = (try? context.fetch(actDesc)) ?? []
         var boulderSet: Set<String> = []
+        var catalogInfoByExerciseName: [String: PlanDayEditorCache.ExerciseCatalogInfo] = [:]
+
+        func upsertCatalogInfo(
+            exerciseName: String,
+            order: Int,
+            activityName: String,
+            activityColor: Color
+        ) {
+            if let existing = catalogInfoByExerciseName[exerciseName], existing.order <= order {
+                return
+            }
+            catalogInfoByExerciseName[exerciseName] = .init(
+                activityName: activityName,
+                activityColor: activityColor,
+                order: order
+            )
+        }
+
         for a in activities where a.name.localizedLowercase.contains("boulder") {
             for t in a.types {
-                for ex in t.exercises { boulderSet.insert(ex.name) }
-                for c in t.combinations { for ex in c.exercises { boulderSet.insert(ex.name) } }
+                for ex in t.exercises {
+                    boulderSet.insert(ex.name)
+                    upsertCatalogInfo(
+                        exerciseName: ex.name,
+                        order: ex.order,
+                        activityName: a.name,
+                        activityColor: a.hue.color
+                    )
+                }
+                for c in t.combinations {
+                    for ex in c.exercises {
+                        boulderSet.insert(ex.name)
+                        upsertCatalogInfo(
+                            exerciseName: ex.name,
+                            order: ex.order,
+                            activityName: a.name,
+                            activityColor: a.hue.color
+                        )
+                    }
+                }
+            }
+        }
+        for a in activities where !a.name.localizedLowercase.contains("boulder") {
+            for t in a.types {
+                for ex in t.exercises {
+                    upsertCatalogInfo(
+                        exerciseName: ex.name,
+                        order: ex.order,
+                        activityName: a.name,
+                        activityColor: a.hue.color
+                    )
+                }
+                for c in t.combinations {
+                    for ex in c.exercises {
+                        upsertCatalogInfo(
+                            exerciseName: ex.name,
+                            order: ex.order,
+                            activityName: a.name,
+                            activityColor: a.hue.color
+                        )
+                    }
+                }
             }
         }
         cache.boulderingExerciseNames = boulderSet
+        cache.catalogInfoByExerciseName = catalogInfoByExerciseName
 
         // 3) Parent plan (resolve once)
         let planDesc = FetchDescriptor<Plan>()
@@ -1600,6 +1671,8 @@ struct PlanDayEditor: View {
     }
 
     private func refreshLoggedItemsIntoCache() {
+        cache.markAccess()
+
         let calendar = Calendar.current
         let start = calendar.startOfDay(for: day.date)
         guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
@@ -1615,6 +1688,54 @@ struct PlanDayEditor: View {
         let filtered = allItems.filter { $0.planSourceId == planId && !$0.isSoftDeleted }
 
         cache.loggedItemsForDay = filtered
+    }
+
+    private func scheduleDailyNotesSave() {
+        let trimmed = dailyNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = trimmed.isEmpty ? nil : trimmed
+
+        guard day.dailyNotes != normalized else { return }
+
+        day.dailyNotes = normalized
+        SyncLocalMutation.touch(day)
+        hasPendingNotesSave = true
+
+        pendingNotesSaveTask?.cancel()
+        pendingNotesSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            flushPendingDailyNotesSave()
+        }
+    }
+
+    private func flushPendingDailyNotesSave() {
+        pendingNotesSaveTask?.cancel()
+        pendingNotesSaveTask = nil
+
+        guard hasPendingNotesSave else { return }
+        hasPendingNotesSave = false
+        try? context.save()
+    }
+
+    private func persistPendingEditorChanges() {
+        pendingNotesSaveTask?.cancel()
+        pendingNotesSaveTask = nil
+
+        var shouldSave = false
+        if hasPendingNotesSave {
+            hasPendingNotesSave = false
+            shouldSave = true
+        }
+
+        if didReorder {
+            didReorder = false
+            SyncLocalMutation.touch(day)
+            shouldSave = true
+        }
+
+        if shouldSave {
+            try? context.save()
+        }
     }
 
 
