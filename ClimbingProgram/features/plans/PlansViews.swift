@@ -2143,24 +2143,7 @@ struct CatalogExercisePicker: View {
                                     selected: $selected,
                                     tint: activity.hue.color,
                                     onDone: { dismiss() },     // close from any level
-                                    searchText: $searchText,
-                                    isSearchPresented: $isSearchPresented,
-                                    allHitsProvider: { (activities) in
-                                        // Reuse the same flattening logic
-                                        var hits: [ExerciseHit] = []
-                                        for activity in activities {
-                                            let tint = activity.hue.color
-                                            for t in activity.types {
-                                                for ex in t.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
-                                                for combo in t.combinations {
-                                                    for ex in combo.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
-                                                }
-                                            }
-                                        }
-                                        // de-dup by ID
-                                        var seen: Set<UUID> = []
-                                        return hits.filter { seen.insert($0.id).inserted }
-                                    }
+                                    allHits: allExerciseHits
                                 )
                             } label: {
                                 HStack(spacing: 10) {
@@ -2208,22 +2191,16 @@ struct CatalogExercisePicker: View {
     }
 }
 
-// TypesList now receives search bindings and a provider closure to compute all hits,
-// then shows the same unified Results section at the top while searching.
+// TypesList uses local search state and shared precomputed exercise hits.
 struct TypesList: View {
-    @Bindable var activity: Activity
+    let activity: Activity
     @Binding var selected: [String]
     let tint: Color
     let onDone: () -> Void
-    @Binding var searchText: String
-    @Binding var isSearchPresented: Bool
-    // Provider to compute flattened hits for the whole catalog (same as root)
-    let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
-    
-    private var allHits: [ExerciseHit] {
-        allHitsProvider(activities)
-    }
+    let allHits: [ExerciseHit]
+    @State private var searchText: String = ""
+    @State private var isSearchPresented: Bool = false
+
     private var filteredHits: [ExerciseHit] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
@@ -2278,9 +2255,7 @@ struct TypesList: View {
                                 selected: $selected,
                                 tint: tint,
                                 onDone: onDone,
-                                searchText: $searchText,
-                                isSearchPresented: $isSearchPresented,
-                                allHitsProvider: allHitsProvider
+                                allHits: allHits
                             )
                         } else {
                             ExercisesList(
@@ -2288,9 +2263,7 @@ struct TypesList: View {
                                 selected: $selected,
                                 tint: tint,
                                 onDone: onDone,
-                                searchText: $searchText,
-                                isSearchPresented: $isSearchPresented,
-                                allHitsProvider: allHitsProvider
+                                allHits: allHits
                             )
                         }
                     } label: {
@@ -2322,18 +2295,14 @@ struct TypesList: View {
 }
 
 struct CombosList: View {
-    @Bindable var trainingType: TrainingType
+    let trainingType: TrainingType
     @Binding var selected: [String]
     let tint: Color
     let onDone: () -> Void
-    @Binding var searchText: String
-    @Binding var isSearchPresented: Bool
-    let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
-    
-    private var allHits: [ExerciseHit] {
-        allHitsProvider(activities)
-    }
+    let allHits: [ExerciseHit]
+    @State private var searchText: String = ""
+    @State private var isSearchPresented: Bool = false
+
     private var filteredHits: [ExerciseHit] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
@@ -2387,9 +2356,7 @@ struct CombosList: View {
                             selected: $selected,
                             tint: tint,
                             onDone: onDone,
-                            searchText: $searchText,
-                            isSearchPresented: $isSearchPresented,
-                            allHitsProvider: allHitsProvider
+                            allHits: allHits
                         )
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
@@ -2420,18 +2387,14 @@ struct CombosList: View {
 }
 
 struct ComboExercisesList: View {
-    @Bindable var combo: BoulderCombination
+    let combo: BoulderCombination
     @Binding var selected: [String]
     let tint: Color
     let onDone: () -> Void
-    @Binding var searchText: String
-    @Binding var isSearchPresented: Bool
-    let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
-    
-    private var allHits: [ExerciseHit] {
-        allHitsProvider(activities)
-    }
+    let allHits: [ExerciseHit]
+    @State private var searchText: String = ""
+    @State private var isSearchPresented: Bool = false
+
     private var filteredHits: [ExerciseHit] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
@@ -2513,14 +2476,10 @@ struct ExercisesList: View {
     @Binding var selected: [String]
     let tint: Color
     let onDone: () -> Void
-    @Binding var searchText: String
-    @Binding var isSearchPresented: Bool
-    let allHitsProvider: ([Activity]) -> [ExerciseHit]
-    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
-    
-    private var allHits: [ExerciseHit] {
-        allHitsProvider(activities)
-    }
+    let allHits: [ExerciseHit]
+    @State private var searchText: String = ""
+    @State private var isSearchPresented: Bool = false
+
     private var filteredHits: [ExerciseHit] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
