@@ -23,8 +23,6 @@ rows as (
   union all select 'session_items', created_at, updated_at_server from public.session_items p, target t where p.owner_id = t.owner_id
   union all select 'timer_templates', created_at, updated_at_server from public.timer_templates p, target t where p.owner_id = t.owner_id
   union all select 'timer_intervals', created_at, updated_at_server from public.timer_intervals p, target t where p.owner_id = t.owner_id
-  union all select 'timer_sessions', created_at, updated_at_server from public.timer_sessions p, target t where p.owner_id = t.owner_id
-  union all select 'timer_laps', created_at, updated_at_server from public.timer_laps p, target t where p.owner_id = t.owner_id
   union all select 'climb_entries', created_at, updated_at_server from public.climb_entries p, target t where p.owner_id = t.owner_id
   union all select 'climb_styles', created_at, updated_at_server from public.climb_styles p, target t where p.owner_id = t.owner_id
   union all select 'climb_gyms', created_at, updated_at_server from public.climb_gyms p, target t where p.owner_id = t.owner_id
@@ -63,8 +61,6 @@ versions as (
   union all select 'session_items', version from public.session_items p, target t where p.owner_id = t.owner_id
   union all select 'timer_templates', version from public.timer_templates p, target t where p.owner_id = t.owner_id
   union all select 'timer_intervals', version from public.timer_intervals p, target t where p.owner_id = t.owner_id
-  union all select 'timer_sessions', version from public.timer_sessions p, target t where p.owner_id = t.owner_id
-  union all select 'timer_laps', version from public.timer_laps p, target t where p.owner_id = t.owner_id
   union all select 'climb_entries', version from public.climb_entries p, target t where p.owner_id = t.owner_id
   union all select 'climb_styles', version from public.climb_styles p, target t where p.owner_id = t.owner_id
   union all select 'climb_gyms', version from public.climb_gyms p, target t where p.owner_id = t.owner_id
@@ -95,8 +91,6 @@ rows as (
   union all select 'session_items', id, version, updated_at_client, updated_at_server from public.session_items p, target t where p.owner_id = t.owner_id
   union all select 'timer_templates', id, version, updated_at_client, updated_at_server from public.timer_templates p, target t where p.owner_id = t.owner_id
   union all select 'timer_intervals', id, version, updated_at_client, updated_at_server from public.timer_intervals p, target t where p.owner_id = t.owner_id
-  union all select 'timer_sessions', id, version, updated_at_client, updated_at_server from public.timer_sessions p, target t where p.owner_id = t.owner_id
-  union all select 'timer_laps', id, version, updated_at_client, updated_at_server from public.timer_laps p, target t where p.owner_id = t.owner_id
   union all select 'climb_entries', id, version, updated_at_client, updated_at_server from public.climb_entries p, target t where p.owner_id = t.owner_id
   union all select 'climb_styles', id, version, updated_at_client, updated_at_server from public.climb_styles p, target t where p.owner_id = t.owner_id
   union all select 'climb_gyms', id, version, updated_at_client, updated_at_server from public.climb_gyms p, target t where p.owner_id = t.owner_id
@@ -136,8 +130,6 @@ rows as (
   union all select 'session_items', version, updated_at_server from public.session_items p, target t where p.owner_id = t.owner_id
   union all select 'timer_templates', version, updated_at_server from public.timer_templates p, target t where p.owner_id = t.owner_id
   union all select 'timer_intervals', version, updated_at_server from public.timer_intervals p, target t where p.owner_id = t.owner_id
-  union all select 'timer_sessions', version, updated_at_server from public.timer_sessions p, target t where p.owner_id = t.owner_id
-  union all select 'timer_laps', version, updated_at_server from public.timer_laps p, target t where p.owner_id = t.owner_id
   union all select 'climb_entries', version, updated_at_server from public.climb_entries p, target t where p.owner_id = t.owner_id
   union all select 'climb_styles', version, updated_at_server from public.climb_styles p, target t where p.owner_id = t.owner_id
   union all select 'climb_gyms', version, updated_at_server from public.climb_gyms p, target t where p.owner_id = t.owner_id

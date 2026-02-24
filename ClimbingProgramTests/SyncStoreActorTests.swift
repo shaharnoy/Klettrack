@@ -109,18 +109,19 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
         XCTAssertEqual(pending.first?.attempts, 0)
     }
 
-    func testResolveConflictKeepMineForTimerLapMutationRebasesVersion() async throws {
+    func testResolveConflictKeepMineForTimerIntervalMutationRebasesVersion() async throws {
         let store = SyncStoreActor(modelContainer: container)
         let opID = try await store.enqueueMutation(
-            entity: .timerLaps,
+            entity: .timerIntervals,
             entityId: UUID(),
             mutationType: .upsert,
             baseVersion: 2,
             payload: [
-                "timer_session_id": .string(UUID().uuidString.lowercased()),
-                "lap_number": .number(1),
-                "timestamp": .string("2026-02-14T10:00:00.000Z"),
-                "elapsed_seconds": .number(30)
+                "timer_template_id": .string(UUID().uuidString.lowercased()),
+                "name": .string("Interval A"),
+                "work_time_seconds": .number(30),
+                "rest_time_seconds": .number(15),
+                "repetitions": .number(2)
             ]
         )
 
@@ -129,7 +130,7 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
             conflicts: [
                 SyncPushConflict(
                     opId: opID.uuidString.lowercased(),
-                    entity: .timerLaps,
+                    entity: .timerIntervals,
                     entityId: UUID().uuidString.lowercased(),
                     reason: "version_mismatch",
                     serverVersion: 9,
@@ -149,7 +150,7 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
 
         let pending = try await store.fetchPendingMutations(limit: 10)
         XCTAssertEqual(pending.count, 1)
-        XCTAssertEqual(pending.first?.entity, .timerLaps)
+        XCTAssertEqual(pending.first?.entity, .timerIntervals)
         XCTAssertEqual(pending.first?.baseVersion, 9)
         XCTAssertEqual(pending.first?.attempts, 0)
     }

@@ -184,7 +184,8 @@ final class SyncManagerTests: XCTestCase {
             lastCursor: "cursor-1",
             lastSuccessfulSyncAt: date,
             lastBootstrapSnapshotAt: nil,
-            isSyncEnabled: true
+            isSyncEnabled: true,
+            didBootstrapLocalSnapshot: true
         )
 
         XCTAssertEqual(SyncManager.persistedLastSyncAt(syncState: syncState), date)
@@ -198,7 +199,8 @@ final class SyncManagerTests: XCTestCase {
             lastCursor: "cursor-1",
             lastSuccessfulSyncAt: Date(timeIntervalSince1970: 1_234_567),
             lastBootstrapSnapshotAt: nil,
-            isSyncEnabled: false
+            isSyncEnabled: false,
+            didBootstrapLocalSnapshot: false
         )
 
         XCTAssertNil(SyncManager.persistedLastSyncAt(syncState: syncState))

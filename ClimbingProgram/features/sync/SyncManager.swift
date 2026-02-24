@@ -24,6 +24,10 @@ final class SyncManager {
         case failed(String)
     }
 
+    private enum SyncManagerError: Error {
+        case suspiciousResnapshot
+    }
+
     private let apiClient: SyncAPIClient
     private let store: SyncStoreActor
     private let auditStore: SyncConflictAuditStore
@@ -34,6 +38,7 @@ final class SyncManager {
     private(set) var lastSyncAt: Date?
     private(set) var conflicts: [SyncPushConflict] = []
     private(set) var telemetryEvents: [SyncConflictTelemetryEvent] = []
+    private(set) var cycleDiagnostics: [SyncCycleDiagnostics] = []
     private(set) var triggerMetrics = SyncTriggerMetrics()
 
     private var syncTask: Task<Void, Never>?
@@ -42,6 +47,7 @@ final class SyncManager {
 
     private let maxAutomaticRetryCount = 5
     private let maxAutomaticRetryDelaySeconds = 60.0
+    private let suspiciousResnapshotQueueThreshold = 400
     init(apiClient: SyncAPIClient, store: SyncStoreActor, auditStore: SyncConflictAuditStore = .shared) {
         self.apiClient = apiClient
         self.store = store
@@ -217,6 +223,8 @@ final class SyncManager {
                 try await performSingleSyncCycle()
             } catch is CancellationError {
                 state = .idle
+            } catch SyncManagerError.suspiciousResnapshot {
+                state = .failed("suspicious_resnapshot")
             } catch {
                 consecutiveFailureCount += 1
                 triggerMetrics.recordFailure()
@@ -231,19 +239,47 @@ final class SyncManager {
     }
 
     private func performSingleSyncCycle() async throws {
+        let cycleStartedAt = Date.now
         let syncState = try await store.loadOrCreateSyncState()
         guard syncState.isSyncEnabled else {
             state = .idle
             return
         }
 
+        let pendingQueueCountAtStart = try await store.pendingMutationCount()
+        let isSteadyState = syncState.didBootstrapLocalSnapshot && syncState.lastSuccessfulSyncAt != nil
+        if isSteadyState && pendingQueueCountAtStart > suspiciousResnapshotQueueThreshold {
+            appendCycleDiagnostics(
+                SyncCycleDiagnostics(
+                    queueSizeAtStart: pendingQueueCountAtStart,
+                    durationSeconds: Date.now.timeIntervalSince(cycleStartedAt),
+                    acknowledgedCount: 0,
+                    noopCount: 0,
+                    conflictCount: 0,
+                    failedCount: 1
+                )
+            )
+            throw SyncManagerError.suspiciousResnapshot
+        }
+
         _ = try await store.enqueueLocalSnapshotIfNeeded()
 
         state = .syncing
 
-        let pushConflicts = try await pushPendingMutations(baseCursor: syncState.lastCursor, deviceId: syncState.deviceId)
+        let pushSummary = try await pushPendingMutations(baseCursor: syncState.lastCursor, deviceId: syncState.deviceId)
+        let pushConflicts = pushSummary.conflicts
         conflicts = pushConflicts
         try await pullAllChanges(cursor: syncState.lastCursor)
+        appendCycleDiagnostics(
+            SyncCycleDiagnostics(
+                queueSizeAtStart: pendingQueueCountAtStart,
+                durationSeconds: Date.now.timeIntervalSince(cycleStartedAt),
+                acknowledgedCount: pushSummary.acknowledgedCount,
+                noopCount: pushSummary.noopCount,
+                conflictCount: pushSummary.conflictCount,
+                failedCount: pushSummary.failedCount
+            )
+        )
 
         consecutiveFailureCount = 0
         let refreshedSyncState = try await store.loadOrCreateSyncState()
@@ -255,8 +291,20 @@ final class SyncManager {
         }
     }
 
-    private func pushPendingMutations(baseCursor: String?, deviceId: String) async throws -> [SyncPushConflict] {
+    private struct PushCycleSummary: Sendable {
+        var conflicts: [SyncPushConflict]
+        var acknowledgedCount: Int
+        var noopCount: Int
+        var conflictCount: Int
+        var failedCount: Int
+    }
+
+    private func pushPendingMutations(baseCursor: String?, deviceId: String) async throws -> PushCycleSummary {
         var conflictMap: [String: SyncPushConflict] = [:]
+        var acknowledgedCount = 0
+        var noopCount = 0
+        var conflictCount = 0
+        var failedCount = 0
 
         while true {
             let pending = try await store.fetchPendingMutations(limit: 100)
@@ -279,6 +327,10 @@ final class SyncManager {
             )
 
             let response = try await apiClient.push(request: request)
+            acknowledgedCount += response.acknowledgedCount ?? response.acknowledgedOpIds.count
+            noopCount += response.noopCount ?? 0
+            conflictCount += response.conflictCount ?? response.conflicts.count
+            failedCount += response.failedCount ?? response.failed.count
             let unresolvedConflicts = try await resolveVersionConflictsAutomatically(
                 response.conflicts,
                 deviceId: deviceId
@@ -287,7 +339,15 @@ final class SyncManager {
                 acknowledgedOpIds: response.acknowledgedOpIds,
                 conflicts: unresolvedConflicts,
                 failed: response.failed,
-                newCursor: response.newCursor
+                newCursor: response.newCursor,
+                processedCount: response.processedCount,
+                acknowledgedCount: response.acknowledgedCount,
+                noopCount: response.noopCount,
+                insertedCount: response.insertedCount,
+                updatedCount: response.updatedCount,
+                failedCount: response.failedCount,
+                conflictCount: response.conflictCount,
+                durationMs: response.durationMs
             )
             let processingResult = try await store.processPushResponse(processedResponse)
 
@@ -301,7 +361,13 @@ final class SyncManager {
             }
         }
 
-        return Array(conflictMap.values)
+        return PushCycleSummary(
+            conflicts: Array(conflictMap.values),
+            acknowledgedCount: acknowledgedCount,
+            noopCount: noopCount,
+            conflictCount: conflictCount,
+            failedCount: failedCount
+        )
     }
 
     private func resolveVersionConflictsAutomatically(
@@ -441,6 +507,13 @@ final class SyncManager {
 
         Task {
             await auditStore.append(event: event)
+        }
+    }
+
+    private func appendCycleDiagnostics(_ diagnostics: SyncCycleDiagnostics) {
+        cycleDiagnostics.insert(diagnostics, at: 0)
+        if cycleDiagnostics.count > 50 {
+            cycleDiagnostics.removeLast(cycleDiagnostics.count - 50)
         }
     }
 
@@ -596,6 +669,37 @@ struct SyncConflictTelemetryEvent: Sendable, Identifiable, Codable {
         self.entityId = entityId
         self.reason = reason
         self.timestamp = timestamp
+    }
+}
+
+struct SyncCycleDiagnostics: Sendable, Identifiable, Codable {
+    let id: UUID
+    let timestamp: Date
+    let queueSizeAtStart: Int
+    let durationSeconds: Double
+    let acknowledgedCount: Int
+    let noopCount: Int
+    let conflictCount: Int
+    let failedCount: Int
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = .now,
+        queueSizeAtStart: Int,
+        durationSeconds: Double,
+        acknowledgedCount: Int,
+        noopCount: Int,
+        conflictCount: Int,
+        failedCount: Int
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.queueSizeAtStart = queueSizeAtStart
+        self.durationSeconds = durationSeconds
+        self.acknowledgedCount = acknowledgedCount
+        self.noopCount = noopCount
+        self.conflictCount = conflictCount
+        self.failedCount = failedCount
     }
 }
 

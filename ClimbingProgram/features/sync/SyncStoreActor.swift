@@ -171,8 +171,6 @@ actor SyncStoreActor {
         let sessionItems = try snapshotContext.fetch(FetchDescriptor<SessionItem>())
         let timerTemplates = try snapshotContext.fetch(FetchDescriptor<TimerTemplate>())
         let timerIntervals = try snapshotContext.fetch(FetchDescriptor<TimerInterval>())
-        let timerSessions = try snapshotContext.fetch(FetchDescriptor<TimerSession>())
-        let timerLaps = try snapshotContext.fetch(FetchDescriptor<TimerLap>())
         let climbEntries = try snapshotContext.fetch(FetchDescriptor<ClimbEntry>())
         let climbStyles = try snapshotContext.fetch(FetchDescriptor<ClimbStyle>())
         let climbGyms = try snapshotContext.fetch(FetchDescriptor<ClimbGym>())
@@ -205,11 +203,6 @@ actor SyncStoreActor {
         let templateByIntervalID = Dictionary(
             uniqueKeysWithValues: timerTemplates.flatMap { template in
                 template.intervals.map { interval in (interval.id, template.id) }
-            }
-        )
-        let timerSessionByLapID = Dictionary(
-            uniqueKeysWithValues: timerSessions.flatMap { session in
-                session.laps.map { lap in (lap.id, session.id) }
             }
         )
 
@@ -426,44 +419,6 @@ actor SyncStoreActor {
             )
         }
 
-        for model in timerSessions {
-            try enqueueIfNeeded(
-                entity: .timerSessions,
-                entityId: model.id,
-                mutationType: model.isSoftDeleted ? .delete : .upsert,
-                baseVersion: model.syncVersion,
-                payload: [
-                    "start_date": .string(model.startDate.iso8601WithFractionalSeconds),
-                    "end_date": model.endDate.map { .string($0.iso8601WithFractionalSeconds) } ?? .null,
-                    "timer_template_id": model.templateId.map { .string($0.uuidString.lowercased()) } ?? .null,
-                    "template_name": model.templateName.map(JSONValue.string) ?? .null,
-                    "plan_day_id": model.planDayId.map { .string($0.uuidString.lowercased()) } ?? .null,
-                    "total_elapsed_seconds": .number(Double(model.totalElapsedSeconds)),
-                    "completed_intervals": .number(Double(model.completedIntervals)),
-                    "was_completed": .bool(model.wasCompleted),
-                    "daily_notes": model.dailynotes.map(JSONValue.string) ?? .null
-                ],
-                updatedAtClient: model.updatedAtClient
-            )
-        }
-
-        for model in timerLaps {
-            try enqueueIfNeeded(
-                entity: .timerLaps,
-                entityId: model.id,
-                mutationType: model.isSoftDeleted ? .delete : .upsert,
-                baseVersion: model.syncVersion,
-                payload: [
-                    "timer_session_id": timerSessionByLapID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
-                    "lap_number": .number(Double(model.lapNumber)),
-                    "timestamp": .string(model.timestamp.iso8601WithFractionalSeconds),
-                    "elapsed_seconds": .number(Double(model.elapsedSeconds)),
-                    "notes": model.notes.map(JSONValue.string) ?? .null
-                ],
-                updatedAtClient: model.updatedAtClient
-            )
-        }
-
         for model in climbEntries {
             try enqueueIfNeeded(
                 entity: .climbEntries,
@@ -644,6 +599,10 @@ actor SyncStoreActor {
         }
     }
 
+    func pendingMutationCount() throws -> Int {
+        try modelContext.fetchCount(FetchDescriptor<SyncMutation>())
+    }
+
     func fetchPendingMutation(opId: String) throws -> PendingSyncMutation? {
         guard let row = try findMutationRow(opId: opId) else {
             return nil
@@ -801,10 +760,6 @@ actor SyncStoreActor {
             try applyTimerTemplate(document: document)
         case .timerIntervals:
             try applyTimerInterval(document: document)
-        case .timerSessions:
-            try applyTimerSession(document: document)
-        case .timerLaps:
-            try applyTimerLap(document: document)
         case .climbEntries:
             try applyClimbEntry(document: document)
         case .climbStyles:
@@ -879,16 +834,6 @@ actor SyncStoreActor {
             }
         case .timerIntervals:
             if let model = try modelContext.fetch(FetchDescriptor<TimerInterval>()).first(where: { $0.id == id }) {
-                model.isSoftDeleted = true
-                model.syncVersion = version ?? model.syncVersion
-            }
-        case .timerSessions:
-            if let model = try modelContext.fetch(FetchDescriptor<TimerSession>()).first(where: { $0.id == id }) {
-                model.isSoftDeleted = true
-                model.syncVersion = version ?? model.syncVersion
-            }
-        case .timerLaps:
-            if let model = try modelContext.fetch(FetchDescriptor<TimerLap>()).first(where: { $0.id == id }) {
                 model.isSoftDeleted = true
                 model.syncVersion = version ?? model.syncVersion
             }
@@ -1150,43 +1095,6 @@ actor SyncStoreActor {
         }
     }
 
-    private func applyTimerSession(document: [String: JSONValue]) throws {
-        let id = try requiredUUID("id", in: document)
-        let model = try fetchOrCreateTimerSession(id: id)
-        if let startDate = parseDate(document["start_date"]) {
-            model.startDate = startDate
-        }
-        model.endDate = parseDate(document["end_date"])
-        model.templateId = parseUUID(document["timer_template_id"])
-        model.templateName = document["template_name"]?.stringValue
-        model.planDayId = parseUUID(document["plan_day_id"])
-        model.totalElapsedSeconds = document["total_elapsed_seconds"]?.intValue ?? model.totalElapsedSeconds
-        model.completedIntervals = document["completed_intervals"]?.intValue ?? model.completedIntervals
-        model.wasCompleted = document["was_completed"]?.boolValue ?? model.wasCompleted
-        model.dailynotes = document["daily_notes"]?.stringValue
-        applyCommonMetadata(to: model, document: document)
-    }
-
-    private func applyTimerLap(document: [String: JSONValue]) throws {
-        let id = try requiredUUID("id", in: document)
-        let model = try fetchOrCreateTimerLap(id: id)
-        model.lapNumber = document["lap_number"]?.intValue ?? model.lapNumber
-        if let timestamp = parseDate(document["timestamp"]) {
-            model.timestamp = timestamp
-        }
-        model.elapsedSeconds = document["elapsed_seconds"]?.intValue ?? model.elapsedSeconds
-        model.notes = document["notes"]?.stringValue
-        applyCommonMetadata(to: model, document: document)
-
-        if let timerSessionID = parseUUID(document["timer_session_id"]) {
-            let session = try fetchOrCreateTimerSession(id: timerSessionID)
-            if !session.laps.contains(where: { $0.id == model.id }) {
-                session.laps.append(model)
-            }
-            try removeTimerLap(model.id, fromAllExcept: session.id)
-        }
-    }
-
     private func applyClimbEntry(document: [String: JSONValue]) throws {
         let id = try requiredUUID("id", in: document)
         let model = try fetchOrCreateClimbEntry(id: id)
@@ -1304,18 +1212,6 @@ actor SyncStoreActor {
     }
 
     private func applyCommonMetadata(to model: TimerInterval, document: [String: JSONValue]) {
-        model.syncVersion = document["version"]?.intValue ?? model.syncVersion
-        model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
-    }
-
-    private func applyCommonMetadata(to model: TimerSession, document: [String: JSONValue]) {
-        model.syncVersion = document["version"]?.intValue ?? model.syncVersion
-        model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
-        model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
-    }
-
-    private func applyCommonMetadata(to model: TimerLap, document: [String: JSONValue]) {
         model.syncVersion = document["version"]?.intValue ?? model.syncVersion
         model.updatedAtClient = parseDate(document["updated_at_client"]) ?? model.updatedAtClient
         model.isSoftDeleted = document["is_deleted"]?.boolValue ?? model.isSoftDeleted
@@ -1599,24 +1495,6 @@ actor SyncStoreActor {
         return created
     }
 
-    private func fetchOrCreateTimerSession(id: UUID) throws -> TimerSession {
-        if let existing = try modelContext.fetch(FetchDescriptor<TimerSession>()).first(where: { $0.id == id }) {
-            return existing
-        }
-        let created = TimerSession(id: id)
-        modelContext.insert(created)
-        return created
-    }
-
-    private func fetchOrCreateTimerLap(id: UUID) throws -> TimerLap {
-        if let existing = try modelContext.fetch(FetchDescriptor<TimerLap>()).first(where: { $0.id == id }) {
-            return existing
-        }
-        let created = TimerLap(id: id, lapNumber: 1, elapsedSeconds: 0)
-        modelContext.insert(created)
-        return created
-    }
-
     private func fetchOrCreateClimbEntry(id: UUID) throws -> ClimbEntry {
         if let existing = try modelContext.fetch(FetchDescriptor<ClimbEntry>()).first(where: { $0.id == id }) {
             return existing
@@ -1698,15 +1576,6 @@ actor SyncStoreActor {
         }
     }
 
-    private func removeTimerLap(_ lapID: UUID, fromAllExcept sessionID: UUID) throws {
-        let sessions = try modelContext.fetch(FetchDescriptor<TimerSession>())
-        for session in sessions where session.id != sessionID {
-            if let index = session.laps.firstIndex(where: { $0.id == lapID }) {
-                session.laps.remove(at: index)
-            }
-        }
-    }
-
     private func saveIfNeeded() throws {
         if modelContext.hasChanges {
             try modelContext.save()
@@ -1739,8 +1608,6 @@ actor SyncStoreActor {
         try deleteTombstones(of: SessionItem.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
         try deleteTombstones(of: TimerTemplate.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
         try deleteTombstones(of: TimerInterval.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: TimerSession.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
-        try deleteTombstones(of: TimerLap.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
         try deleteTombstones(of: ClimbEntry.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
         try deleteTombstones(of: ClimbStyle.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
         try deleteTombstones(of: ClimbGym.self) { $0.isSoftDeleted && $0.syncVersion > 0 && $0.updatedAtClient < cutoff }
@@ -1786,7 +1653,8 @@ private extension SyncState {
             lastCursor: lastCursor,
             lastSuccessfulSyncAt: lastSuccessfulSyncAt,
             lastBootstrapSnapshotAt: lastBootstrapSnapshotAt,
-            isSyncEnabled: isSyncEnabled
+            isSyncEnabled: isSyncEnabled,
+            didBootstrapLocalSnapshot: didBootstrapLocalSnapshot
         )
     }
 }

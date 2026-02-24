@@ -21,8 +21,6 @@ enum SyncEntityName: String, CaseIterable, Codable, Sendable {
     case sessionItems = "session_items"
     case timerTemplates = "timer_templates"
     case timerIntervals = "timer_intervals"
-    case timerSessions = "timer_sessions"
-    case timerLaps = "timer_laps"
     case climbEntries = "climb_entries"
     case climbStyles = "climb_styles"
     case climbGyms = "climb_gyms"
@@ -224,6 +222,42 @@ struct SyncPushResponse: Codable, Sendable {
     let conflicts: [SyncPushConflict]
     let failed: [SyncPushFailure]
     let newCursor: String
+    let processedCount: Int?
+    let acknowledgedCount: Int?
+    let noopCount: Int?
+    let insertedCount: Int?
+    let updatedCount: Int?
+    let failedCount: Int?
+    let conflictCount: Int?
+    let durationMs: Int?
+
+    init(
+        acknowledgedOpIds: [String],
+        conflicts: [SyncPushConflict],
+        failed: [SyncPushFailure],
+        newCursor: String,
+        processedCount: Int? = nil,
+        acknowledgedCount: Int? = nil,
+        noopCount: Int? = nil,
+        insertedCount: Int? = nil,
+        updatedCount: Int? = nil,
+        failedCount: Int? = nil,
+        conflictCount: Int? = nil,
+        durationMs: Int? = nil
+    ) {
+        self.acknowledgedOpIds = acknowledgedOpIds
+        self.conflicts = conflicts
+        self.failed = failed
+        self.newCursor = newCursor
+        self.processedCount = processedCount
+        self.acknowledgedCount = acknowledgedCount
+        self.noopCount = noopCount
+        self.insertedCount = insertedCount
+        self.updatedCount = updatedCount
+        self.failedCount = failedCount
+        self.conflictCount = conflictCount
+        self.durationMs = durationMs
+    }
 }
 
 struct SyncPullRequest: Codable, Sendable {
@@ -288,6 +322,7 @@ struct SyncStateSnapshot: Sendable {
     let lastSuccessfulSyncAt: Date?
     let lastBootstrapSnapshotAt: Date?
     let isSyncEnabled: Bool
+    let didBootstrapLocalSnapshot: Bool
 }
 
 struct SyncPushProcessingResult: Sendable {
