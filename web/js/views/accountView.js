@@ -1,6 +1,13 @@
 import { renderWorkspaceShell } from "../components/workspaceLayout.js";
 
-export function renderAccountView({ user, onChangePassword, onDeleteAccount, errorMessage = "", noticeMessage = "" }) {
+export function renderAccountView({
+  user,
+  onChangePassword,
+  onDeleteAccount,
+  errorMessage = "",
+  noticeMessage = "",
+  requirePasswordChange = false
+}) {
   const root = document.getElementById("app-view");
   if (!root) {
     return;
@@ -11,6 +18,11 @@ export function renderAccountView({ user, onChangePassword, onDeleteAccount, err
     description: "Manage your account credentials and account lifecycle.",
     pills: ["auth", "user"],
     bodyHTML: `
+      ${
+        requirePasswordChange
+          ? '<section class="pane"><p><strong>Password reset in progress.</strong> You must set a new password before accessing the rest of the app.</p></section>'
+          : ""
+      }
       <div class="workspace-grid" style="grid-template-columns: 1fr 1fr;">
         <section class="pane">
           <h3>Profile</h3>
@@ -32,7 +44,10 @@ export function renderAccountView({ user, onChangePassword, onDeleteAccount, err
         </section>
       </div>
 
-      <section class="pane">
+      ${
+        requirePasswordChange
+          ? ""
+          : `<section class="pane">
         <h3>Delete Account</h3>
         <p class="muted">This permanently deletes your cloud account and cloud-synced data. Local app data on your device remains unless you delete the app.</p>
         <form id="delete-account-form" class="editor-form compact">
@@ -44,7 +59,8 @@ export function renderAccountView({ user, onChangePassword, onDeleteAccount, err
             <span>Delete My Account</span>
           </button>
         </form>
-      </section>
+      </section>`
+      }
 
       <p id="account-notice" class="muted">${noticeMessage ? escapeHTML(noticeMessage) : ""}</p>
       <p id="account-error" class="error">${errorMessage ? escapeHTML(errorMessage) : ""}</p>

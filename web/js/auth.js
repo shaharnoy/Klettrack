@@ -94,7 +94,7 @@ export async function signInWithPassword(identifier, password) {
   return payload;
 }
 
-export async function signUpWithPassword(email, password) {
+export async function signUpWithPassword(email, password, redirectTo = null) {
   if (!supabaseURL || !supabaseKey) {
     throw new Error("Supabase config is missing.");
   }
@@ -111,7 +111,8 @@ export async function signUpWithPassword(email, password) {
     },
     body: JSON.stringify({
       email: normalizedEmail,
-      password
+      password,
+      ...(redirectTo ? { email_redirect_to: redirectTo } : {})
     })
   });
   const payload = await response.json().catch(() => ({}));
@@ -129,15 +130,18 @@ export async function requestPasswordReset(identifier, redirectTo = null) {
     throw new Error("Supabase config is missing.");
   }
   const email = await resolveEmail(identifier);
-  const response = await fetch(`${supabaseURL}/auth/v1/recover`, {
+  const recoverURL = new URL(`${supabaseURL}/auth/v1/recover`);
+  if (redirectTo) {
+    recoverURL.searchParams.set("redirect_to", redirectTo);
+  }
+  const response = await fetch(recoverURL.toString(), {
     method: "POST",
     headers: {
       apikey: supabaseKey,
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      email,
-      ...(redirectTo ? { redirect_to: redirectTo } : {})
+      email
     })
   });
   const payload = await response.json().catch(() => ({}));
@@ -145,6 +149,64 @@ export async function requestPasswordReset(identifier, redirectTo = null) {
     throw new Error(payload?.msg || payload?.error_description || payload?.error || "Password reset request failed.");
   }
   return payload;
+}
+
+export function consumeAuthRedirectFromURL() {
+  const currentURL = new URL(window.location.href);
+  const hash = String(currentURL.hash || "");
+  if (!hash.startsWith("#")) {
+    return {
+      didHandle: false,
+      hasSession: false,
+      flowType: null,
+      nextRoute: null,
+      error: null
+    };
+  }
+
+  const hashParams = new URLSearchParams(hash.slice(1));
+  const accessToken = String(hashParams.get("access_token") || "").trim();
+  const refreshToken = String(hashParams.get("refresh_token") || "").trim();
+  const tokenType = String(hashParams.get("token_type") || "bearer").trim() || "bearer";
+  const flowType = String(hashParams.get("type") || "").trim() || null;
+  const error = String(hashParams.get("error_description") || hashParams.get("error") || "").trim() || null;
+  const hasAuthPayload =
+    Boolean(accessToken) ||
+    Boolean(error) ||
+    Boolean(hashParams.get("expires_in")) ||
+    Boolean(hashParams.get("token_hash"));
+
+  if (!hasAuthPayload) {
+    return {
+      didHandle: false,
+      hasSession: false,
+      flowType: null,
+      nextRoute: null,
+      error: null
+    };
+  }
+
+  if (accessToken) {
+    saveSession({
+      access_token: accessToken,
+      refresh_token: refreshToken || null,
+      token_type: tokenType
+    });
+  }
+
+  const nextRoute = normalizeNextRoute(currentURL.searchParams.get("next"));
+  currentURL.searchParams.delete("next");
+  currentURL.searchParams.delete("flow");
+  currentURL.hash = "";
+  window.history.replaceState({}, "", currentURL.toString());
+
+  return {
+    didHandle: true,
+    hasSession: Boolean(accessToken),
+    flowType,
+    nextRoute,
+    error
+  };
 }
 
 export async function updatePassword(newPassword) {
@@ -313,4 +375,15 @@ function clearStoredSession() {
     window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
     window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
   } catch {}
+}
+
+function normalizeNextRoute(value) {
+  const nextRoute = String(value || "").trim();
+  if (!nextRoute.startsWith("/")) {
+    return null;
+  }
+  if (nextRoute.startsWith("//")) {
+    return null;
+  }
+  return nextRoute;
 }

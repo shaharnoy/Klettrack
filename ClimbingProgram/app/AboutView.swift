@@ -199,15 +199,15 @@ extension AboutView {
 
             ## Open Source & Licenses
             
-            Klettrack © 2025 [Shahar Noy]. All rights reserved.
+            klettrack © 2025 [Shahar Noy]. All rights reserved.
             This binary build is distributed under a proprietary license.
             The source code is available under the GNU GPL v3:
-            https://github.com/shaharnoy/Klettrack
+            https://github.com/shaharnoy/klettrack
 
             ## Trademarks & Attribution
             
             “Kilter Board,” “Tension Board,” , "Aurora Climbing" and other brand names are trademarks of their respective owners.
-            Klettrack is an independent open source project and is not affiliated with, endorsed by, or sponsored by those brands.
+            klettrack is an independent open source project and is not affiliated with, endorsed by, or sponsored by those brands.
             """,
             websiteURL: URL(string: "https://klettrack.com"),
             issuesURL: URL(string: "https://klettrack.featurebase.app/"),
@@ -222,9 +222,9 @@ extension AboutView {
             """
             # Why is Klettrack free?
 
-            Klettrack is built by climbers, for climbers as a community project.
+            klettrack is built by climbers, for climbers as a community project.
             
-            Klettrack is **open-source** and completely **free of ads or tracking**.
+            klettrack is **open-source** and completely **free of ads or tracking**.
             
             We’ve learned so much from the community over the years, so this app is our way of giving something back.  
 
