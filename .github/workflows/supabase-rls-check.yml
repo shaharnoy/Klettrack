@@ -56,9 +56,9 @@ jobs:
           node scripts/supabase/contract/sync_function_contract_tests.mjs
           node scripts/supabase/diagnostics/sync_scale_validation.mjs
 
-      - name: Run iOS test suite (latest available simulator)
+      - name: Run iOS test suite (generic simulator destination)
         run: |
           xcodebuild test \
             -project ClimbingProgram.xcodeproj \
             -scheme ClimbingProgramTests \
-            -destination 'platform=iOS Simulator,OS=latest'
+            -destination 'generic/platform=iOS Simulator'
