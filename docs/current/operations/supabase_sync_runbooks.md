@@ -10,6 +10,12 @@
 - Edge function logs for `sync`
 - Outbox depth in local client diagnostics
 
+## Runtime guardrail: JWT mode
+- Keep `sync` edge function `verify_jwt=false` for current token flow.
+- Auth is enforced inside the function via bearer token validation (`auth.getUser`).
+- If `verify_jwt=true`, gateway-level JWT checks can reject valid app tokens with `401 Invalid JWT` before sync logic runs.
+- Run `node scripts/supabase/contract/sync_function_contract_tests.mjs` after deploys; the auth preflight now fails fast with a targeted `verify_jwt` diagnostic when this mismatch returns.
+
 ## Runbook: Stuck outbox
 1. Confirm user is authenticated and sync rollout is enabled.
 2. Trigger manual sync once.

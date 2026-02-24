@@ -286,6 +286,7 @@ struct SyncStateSnapshot: Sendable {
     let deviceId: String
     let lastCursor: String?
     let lastSuccessfulSyncAt: Date?
+    let lastBootstrapSnapshotAt: Date?
     let isSyncEnabled: Bool
 }
 

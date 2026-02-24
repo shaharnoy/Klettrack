@@ -51,12 +51,15 @@ final class SyncManager {
     func setSyncEnabled(_ isEnabled: Bool, userId: String?) async {
         do {
             try await store.setSyncEnabled(isEnabled, userId: userId)
+            let syncState = try await store.loadOrCreateSyncState()
+            lastSyncAt = Self.persistedLastSyncAt(syncState: syncState)
             if isEnabled {
                 consecutiveFailureCount = 0
                 triggerSync(reason: "sync_enabled")
             } else {
                 consecutiveFailureCount = 0
                 conflicts = []
+                lastSyncAt = nil
                 state = .idle
             }
         } catch {
@@ -243,7 +246,8 @@ final class SyncManager {
         try await pullAllChanges(cursor: syncState.lastCursor)
 
         consecutiveFailureCount = 0
-        lastSyncAt = .now
+        let refreshedSyncState = try await store.loadOrCreateSyncState()
+        lastSyncAt = Self.persistedLastSyncAt(syncState: refreshedSyncState)
         if !pushConflicts.isEmpty {
             state = .conflict(pushConflicts.count)
         } else {
@@ -540,6 +544,13 @@ final class SyncManager {
 
     nonisolated static func shouldPreferServerTombstone(serverDoc: [String: JSONValue]?) -> Bool {
         serverDoc?["is_deleted"]?.boolValue ?? false
+    }
+
+    nonisolated static func persistedLastSyncAt(syncState: SyncStateSnapshot) -> Date? {
+        guard syncState.isSyncEnabled else {
+            return nil
+        }
+        return syncState.lastSuccessfulSyncAt
     }
 
     private nonisolated static func isLongTextValue(_ value: JSONValue) -> Bool {

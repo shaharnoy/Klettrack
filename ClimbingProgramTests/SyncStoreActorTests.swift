@@ -841,4 +841,181 @@ final class SyncStoreActorTests: BaseSwiftDataTestCase {
         XCTAssertEqual(pending[0].entityId, deleteId)
         XCTAssertEqual(pending[0].mutationType, .delete)
     }
+
+    func testBootstrapEnqueueOnlyOncePerAccount() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let activityID = UUID()
+        let context = ModelContext(container)
+        let activity = Activity(id: activityID, name: "Bootstrap Once")
+        activity.syncVersion = 3
+        activity.updatedAtClient = Date(timeIntervalSince1970: 1_700_000_000)
+        context.insert(activity)
+        try context.save()
+
+        try await store.setSyncEnabled(true, userId: "user-a")
+
+        let firstPass = try await store.enqueueLocalSnapshotIfNeeded()
+        XCTAssertTrue(firstPass)
+        var pending = try await store.fetchPendingMutations(limit: 10)
+        XCTAssertEqual(pending.count, 1)
+
+        _ = try await store.processPushResponse(
+            SyncPushResponse(
+                acknowledgedOpIds: [pending[0].opId.uuidString.lowercased()],
+                conflicts: [],
+                failed: [],
+                newCursor: "2026-02-24T20:00:00.000Z"
+            )
+        )
+
+        let secondPass = try await store.enqueueLocalSnapshotIfNeeded()
+        XCTAssertFalse(secondPass)
+        pending = try await store.fetchPendingMutations(limit: 10)
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    func testNoReenqueueWhenWatermarkNilForUnchangedRows() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let activityID = UUID()
+        let context = ModelContext(container)
+        let activity = Activity(id: activityID, name: "No Reenqueue")
+        activity.syncVersion = 5
+        activity.updatedAtClient = Date(timeIntervalSince1970: 1_700_000_000)
+        context.insert(activity)
+        try context.save()
+
+        try await store.setSyncEnabled(true, userId: "user-a")
+
+        let state = try context.fetch(FetchDescriptor<SyncState>()).first
+        XCTAssertNotNil(state)
+        state?.didBootstrapLocalSnapshot = true
+        state?.lastSuccessfulSyncAt = nil
+        state?.lastBootstrapSnapshotAt = Date(timeIntervalSince1970: 1_700_000_100)
+        try context.save()
+
+        let didEnqueue = try await store.enqueueLocalSnapshotIfNeeded()
+        XCTAssertFalse(didEnqueue)
+        let pending = try await store.fetchPendingMutations(limit: 10)
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    func testEditedExistingRowWhileWatermarkNilEnqueuesImmediately() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let activityID = UUID()
+        let seedContext = ModelContext(container)
+        let activity = Activity(id: activityID, name: "Before Edit")
+        activity.syncVersion = 6
+        activity.updatedAtClient = Date(timeIntervalSince1970: 1_700_000_000)
+        seedContext.insert(activity)
+        try seedContext.save()
+
+        try await store.setSyncEnabled(true, userId: "user-a")
+
+        let state = try seedContext.fetch(FetchDescriptor<SyncState>()).first
+        XCTAssertNotNil(state)
+        state?.didBootstrapLocalSnapshot = true
+        state?.lastSuccessfulSyncAt = nil
+        state?.lastBootstrapSnapshotAt = Date(timeIntervalSince1970: 1_700_000_100)
+        try seedContext.save()
+
+        let editContext = ModelContext(container)
+        let editable = try editContext.fetch(
+            FetchDescriptor<Activity>(predicate: #Predicate { $0.id == activityID })
+        ).first
+        XCTAssertNotNil(editable)
+        editable?.name = "After Edit"
+        if let editable {
+            SyncLocalMutation.touch(editable)
+        }
+        try editContext.save()
+
+        let didEnqueue = try await store.enqueueLocalSnapshotIfNeeded()
+        XCTAssertTrue(didEnqueue)
+        let pending = try await store.fetchPendingMutations(limit: 10)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending[0].entity, .activities)
+        XCTAssertEqual(pending[0].entityId, activityID)
+        XCTAssertEqual(pending[0].payload["name"], .string("After Edit"))
+    }
+
+    func testNewRowEnqueuesSingleMutationOnly() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let activityID = UUID()
+        let context = ModelContext(container)
+        let activity = Activity(id: activityID, name: "New Row")
+        activity.syncVersion = 0
+        context.insert(activity)
+        try context.save()
+
+        try await store.setSyncEnabled(true, userId: "user-a")
+
+        let state = try context.fetch(FetchDescriptor<SyncState>()).first
+        XCTAssertNotNil(state)
+        state?.didBootstrapLocalSnapshot = true
+        state?.lastSuccessfulSyncAt = nil
+        state?.lastBootstrapSnapshotAt = .now
+        try context.save()
+
+        let firstPass = try await store.enqueueLocalSnapshotIfNeeded()
+        XCTAssertTrue(firstPass)
+        let secondPass = try await store.enqueueLocalSnapshotIfNeeded()
+        XCTAssertFalse(secondPass)
+
+        let pending = try await store.fetchPendingMutations(limit: 10)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending[0].entity, .activities)
+        XCTAssertEqual(pending[0].entityId, activityID)
+    }
+
+    func testDeleteAlwaysEnqueues() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let context = ModelContext(container)
+        let plan = Plan(name: "Delete Always", kind: nil, startDate: .now)
+        plan.syncVersion = 4
+        plan.isSoftDeleted = true
+        plan.updatedAtClient = Date(timeIntervalSince1970: 1_700_000_000)
+        context.insert(plan)
+        try context.save()
+
+        try await store.setSyncEnabled(true, userId: "user-a")
+
+        let state = try context.fetch(FetchDescriptor<SyncState>()).first
+        XCTAssertNotNil(state)
+        state?.didBootstrapLocalSnapshot = true
+        state?.lastSuccessfulSyncAt = nil
+        state?.lastBootstrapSnapshotAt = Date(timeIntervalSince1970: 1_800_000_000)
+        try context.save()
+
+        let didEnqueue = try await store.enqueueLocalSnapshotIfNeeded()
+        XCTAssertTrue(didEnqueue)
+
+        let pending = try await store.fetchPendingMutations(limit: 10)
+        let deleteMutation = pending.first(where: { $0.entity == .plans && $0.entityId == plan.id })
+        XCTAssertEqual(deleteMutation?.mutationType, .delete)
+    }
+
+    func testAccountSwitchResetsBootstrapState() async throws {
+        let store = SyncStoreActor(modelContainer: container)
+        let context = ModelContext(container)
+        let activity = Activity(id: UUID(), name: "Switch User")
+        activity.syncVersion = 2
+        context.insert(activity)
+        try context.save()
+
+        try await store.setSyncEnabled(true, userId: "user-a")
+        _ = try await store.enqueueLocalSnapshotIfNeeded()
+
+        var state = try context.fetch(FetchDescriptor<SyncState>()).first
+        XCTAssertNotNil(state)
+        XCTAssertEqual(state?.didBootstrapLocalSnapshot, true)
+        XCTAssertNotNil(state?.lastBootstrapSnapshotAt)
+
+        try await store.setSyncEnabled(true, userId: "user-b")
+        state = try context.fetch(FetchDescriptor<SyncState>()).first
+        XCTAssertNotNil(state)
+        XCTAssertEqual(state?.didBootstrapLocalSnapshot, false)
+        XCTAssertNil(state?.lastBootstrapSnapshotAt)
+        XCTAssertNil(state?.lastCursor)
+        XCTAssertNil(state?.lastSuccessfulSyncAt)
+    }
 }

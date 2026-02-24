@@ -45,18 +45,22 @@ actor SyncStoreActor {
     func setSyncEnabled(_ isEnabled: Bool, userId: String?) throws {
         let state = try ensureSyncStateModel()
         let previousUserId = state.userId
+        let isAccountSwitch = previousUserId != userId
         state.isSyncEnabled = isEnabled
         state.userId = userId
-        state.lastSuccessfulSyncAt = nil
 
         // Account switch: reset bootstrap/cursor and drop stale outbox rows.
-        if previousUserId != userId {
+        if isAccountSwitch {
+            state.lastSuccessfulSyncAt = nil
             state.lastCursor = nil
             state.didBootstrapLocalSnapshot = false
+            state.lastBootstrapSnapshotAt = nil
             let mutations = try modelContext.fetch(FetchDescriptor<SyncMutation>())
             for mutation in mutations {
                 modelContext.delete(mutation)
             }
+        } else if !isEnabled {
+            state.lastSuccessfulSyncAt = nil
         }
 
         try saveIfNeeded()
@@ -69,6 +73,7 @@ actor SyncStoreActor {
         state.lastCursor = nil
         state.lastSuccessfulSyncAt = nil
         state.didBootstrapLocalSnapshot = false
+        state.lastBootstrapSnapshotAt = nil
 
         if clearPendingMutations {
             let mutations = try modelContext.fetch(FetchDescriptor<SyncMutation>())
@@ -86,7 +91,14 @@ actor SyncStoreActor {
         let state = try ensureSyncStateModel()
         guard state.isSyncEnabled else { return false }
         let isFullBootstrap = !state.didBootstrapLocalSnapshot
+        let snapshotStartedAt = Date.now
+        if !isFullBootstrap && state.lastBootstrapSnapshotAt == nil {
+            // Legacy states may have didBootstrapLocalSnapshot=true without a bootstrap anchor.
+            // Seed a conservative anchor once to avoid repeated broad re-enqueue cycles.
+            state.lastBootstrapSnapshotAt = state.lastSuccessfulSyncAt ?? .distantPast
+        }
         let watermark = state.lastSuccessfulSyncAt
+        let bootstrapWatermark = watermark ?? state.lastBootstrapSnapshotAt
         let snapshotContext = ModelContext(modelContainer)
 
         let existingMutations = try modelContext.fetch(FetchDescriptor<SyncMutation>())
@@ -95,15 +107,22 @@ actor SyncStoreActor {
         })
         var didEnqueue = false
 
-        func shouldEnqueue(syncVersion: Int, updatedAtClient: Date) -> Bool {
+        func shouldEnqueue(
+            syncVersion: Int,
+            mutationType: SyncMutationType,
+            updatedAtClient: Date
+        ) -> Bool {
             if isFullBootstrap {
+                return true
+            }
+            if mutationType == .delete {
                 return true
             }
             if syncVersion == 0 {
                 return true
             }
-            guard let watermark else { return true }
-            return updatedAtClient > watermark
+            guard let bootstrapWatermark else { return false }
+            return updatedAtClient > bootstrapWatermark
         }
 
         func enqueueIfNeeded(
@@ -114,7 +133,11 @@ actor SyncStoreActor {
             payload: [String: JSONValue],
             updatedAtClient: Date
         ) throws {
-            guard shouldEnqueue(syncVersion: baseVersion, updatedAtClient: updatedAtClient) else {
+            guard shouldEnqueue(
+                syncVersion: baseVersion,
+                mutationType: mutationType,
+                updatedAtClient: updatedAtClient
+            ) else {
                 return
             }
 
@@ -518,6 +541,9 @@ actor SyncStoreActor {
             }
         }
 
+        if isFullBootstrap || state.lastBootstrapSnapshotAt == nil {
+            state.lastBootstrapSnapshotAt = snapshotStartedAt
+        }
         state.didBootstrapLocalSnapshot = true
         try saveIfNeeded()
         return didEnqueue
@@ -1759,6 +1785,7 @@ private extension SyncState {
             deviceId: deviceId,
             lastCursor: lastCursor,
             lastSuccessfulSyncAt: lastSuccessfulSyncAt,
+            lastBootstrapSnapshotAt: lastBootstrapSnapshotAt,
             isSyncEnabled: isSyncEnabled
         )
     }

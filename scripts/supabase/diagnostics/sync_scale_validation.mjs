@@ -19,9 +19,18 @@ const config = {
   apikey: process.env.SUPABASE_PUBLISHABLE_KEY.trim(),
   email: process.env.SUPABASE_TEST_EMAIL.trim(),
   password: process.env.SUPABASE_TEST_PASSWORD,
-  pageLimit: 50,
-  upsertCount: Number(process.env.SUPABASE_SCALE_UPSERT_COUNT || 120)
+  pageLimit: Number(process.env.SUPABASE_SCALE_PULL_LIMIT || 50),
+  upsertCount: Number(process.env.SUPABASE_SCALE_UPSERT_COUNT || 120),
+  fetchAttempts: Number(process.env.SUPABASE_SCALE_FETCH_ATTEMPTS || 4),
+  noOpReplayCount: Number(process.env.SUPABASE_SCALE_NOOP_REPLAY_COUNT || 3),
+  maxEntitySpanSeconds: Number(process.env.SUPABASE_SCALE_MAX_ENTITY_SPAN_SECONDS || 180),
+  maxCycleDurationSeconds: Number(process.env.SUPABASE_SCALE_MAX_CYCLE_DURATION_SECONDS || 600),
+  maxNetworkRetries: Number(process.env.SUPABASE_SCALE_MAX_NETWORK_RETRIES || 25),
+  maxUnchangedRowVersionBumps: Number(process.env.SUPABASE_SCALE_MAX_UNCHANGED_ROW_VERSION_BUMPS || 0)
 };
+
+const startedAtMs = Date.now();
+let networkRetries = 0;
 
 const runTag = `scale-${Date.now()}`;
 const runCursor = new Date(Date.now() - 60_000).toISOString();
@@ -192,6 +201,16 @@ if (matchedClimbEntries.length !== climbEntries.length) {
   throw new Error(`Expected ${climbEntries.length} climb_entries upserts in pull, got ${matchedClimbEntries.length}.`);
 }
 
+const spanByEntity = {
+  session_items: collectSpanSeconds(afterUpsert.changes, "session_items", sessionItems.map((record) => record.id)),
+  timer_laps: collectSpanSeconds(afterUpsert.changes, "timer_laps", timerLaps.map((record) => record.id)),
+  climb_entries: collectSpanSeconds(afterUpsert.changes, "climb_entries", climbEntries.map((record) => record.id))
+};
+
+assertSpanThreshold(spanByEntity.session_items, "session_items", config.maxEntitySpanSeconds);
+assertSpanThreshold(spanByEntity.timer_laps, "timer_laps", config.maxEntitySpanSeconds);
+assertSpanThreshold(spanByEntity.climb_entries, "climb_entries", config.maxEntitySpanSeconds);
+
 const versionsByEntityAndId = new Map();
 for (const change of afterUpsert.changes) {
   if (change?.type !== "upsert" || !change?.entity || !change?.doc?.id) {
@@ -308,6 +327,21 @@ if (deletedClimbEntries.length !== climbEntries.length) {
   throw new Error(`Expected ${climbEntries.length} climb_entries tombstones, got ${deletedClimbEntries.length}.`);
 }
 
+const noOpProbeResult = await runNoOpProbe({ token, startCursor: afterDelete.lastCursor, runTag });
+if (noOpProbeResult.versionBumps > config.maxUnchangedRowVersionBumps) {
+  throw new Error(
+    `No-op unchanged-row version bumps exceeded threshold: ${noOpProbeResult.versionBumps} > ${config.maxUnchangedRowVersionBumps}.`
+  );
+}
+
+const cycleDurationSeconds = Number(((Date.now() - startedAtMs) / 1000).toFixed(1));
+if (cycleDurationSeconds > config.maxCycleDurationSeconds) {
+  throw new Error(`Cycle duration exceeded threshold: ${cycleDurationSeconds}s > ${config.maxCycleDurationSeconds}s.`);
+}
+if (networkRetries > config.maxNetworkRetries) {
+  throw new Error(`Network retries exceeded threshold: ${networkRetries} > ${config.maxNetworkRetries}.`);
+}
+
 console.log(JSON.stringify({
   ok: true,
   runTag,
@@ -320,6 +354,18 @@ console.log(JSON.stringify({
     afterUpsert: afterUpsert.pageCount,
     afterDelete: afterDelete.pageCount
   },
+  spansSeconds: spanByEntity,
+  noOpProbe: noOpProbeResult,
+  diagnostics: {
+    cycleDurationSeconds,
+    networkRetries
+  },
+  thresholds: {
+    maxEntitySpanSeconds: config.maxEntitySpanSeconds,
+    maxCycleDurationSeconds: config.maxCycleDurationSeconds,
+    maxNetworkRetries: config.maxNetworkRetries,
+    maxUnchangedRowVersionBumps: config.maxUnchangedRowVersionBumps
+  },
   checks: {
     sessionItemsUpsertsPulled: true,
     timerLapsUpsertsPulled: true,
@@ -327,7 +373,11 @@ console.log(JSON.stringify({
     sessionItemsDeletesPulled: true,
     timerLapsDeletesPulled: true,
     climbEntriesDeletesPulled: true,
-    paginationExercised: afterUpsert.pageCount > 1 || afterDelete.pageCount > 1
+    paginationExercised: afterUpsert.pageCount > 1 || afterDelete.pageCount > 1,
+    spanThresholdRespected: true,
+    cycleDurationThresholdRespected: true,
+    retryThresholdRespected: true,
+    unchangedRowNoOpThresholdRespected: true
   }
 }, null, 2));
 
@@ -339,8 +389,157 @@ function chunk(values, size) {
   return output;
 }
 
+function collectSpanSeconds(changes, entity, ids) {
+  const idSet = new Set(ids);
+  const rows = changes.filter(
+    (change) => change?.entity === entity && change?.type === "upsert" && idSet.has(change?.doc?.id)
+  );
+
+  const createdAtValues = rows
+    .map((change) => Date.parse(change?.doc?.created_at))
+    .filter((value) => Number.isFinite(value));
+  const updatedAtServerValues = rows
+    .map((change) => Date.parse(change?.doc?.updated_at_server))
+    .filter((value) => Number.isFinite(value));
+
+  return {
+    created: spanInSeconds(createdAtValues),
+    updated_server: spanInSeconds(updatedAtServerValues)
+  };
+}
+
+function spanInSeconds(values) {
+  if (values.length <= 1) {
+    return 0;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return Number(((max - min) / 1000).toFixed(3));
+}
+
+function assertSpanThreshold(spanMetrics, entity, thresholdSeconds) {
+  if (spanMetrics.created > thresholdSeconds) {
+    throw new Error(
+      `${entity} created_at span exceeded threshold: ${spanMetrics.created}s > ${thresholdSeconds}s.`
+    );
+  }
+  if (spanMetrics.updated_server > thresholdSeconds) {
+    throw new Error(
+      `${entity} updated_at_server span exceeded threshold: ${spanMetrics.updated_server}s > ${thresholdSeconds}s.`
+    );
+  }
+}
+
+async function runNoOpProbe({ token, startCursor, runTag }) {
+  const activityId = crypto.randomUUID();
+  const baseName = `${runTag}-noop-probe`;
+
+  await syncPush({
+    url: config.url,
+    token,
+    body: {
+      deviceId: `scale-noop-${runTag}`,
+      baseCursor: startCursor,
+      mutations: [
+        {
+          opId: crypto.randomUUID(),
+          entity: "activities",
+          entityId: activityId,
+          type: "upsert",
+          baseVersion: 0,
+          updatedAtClient: new Date().toISOString(),
+          payload: { name: baseName }
+        }
+      ]
+    }
+  });
+
+  const afterCreate = await pullUntilExhausted({
+    url: config.url,
+    token,
+    startCursor,
+    limit: config.pageLimit
+  });
+  const createdDoc = afterCreate.changes.find(
+    (change) => change?.entity === "activities" && change?.type === "upsert" && change?.doc?.id === activityId
+  )?.doc;
+
+  if (!createdDoc) {
+    throw new Error("No-op probe failed: create pull change missing.");
+  }
+
+  const createdVersion = Number(createdDoc.version || 1);
+
+  for (let index = 0; index < config.noOpReplayCount; index += 1) {
+    const replay = await syncPush({
+      url: config.url,
+      token,
+      body: {
+        deviceId: `scale-noop-${runTag}`,
+        baseCursor: afterCreate.lastCursor,
+        mutations: [
+          {
+            opId: crypto.randomUUID(),
+            entity: "activities",
+            entityId: activityId,
+            type: "upsert",
+            baseVersion: createdVersion,
+            updatedAtClient: new Date().toISOString(),
+            payload: { name: baseName }
+          }
+        ]
+      }
+    });
+    assertNoFailuresOrConflicts(replay, "noop_replay");
+  }
+
+  const afterReplay = await pullUntilExhausted({
+    url: config.url,
+    token,
+    startCursor: afterCreate.lastCursor,
+    limit: config.pageLimit
+  });
+
+  const replayChanges = afterReplay.changes.filter(
+    (change) => change?.entity === "activities" && change?.type === "upsert" && change?.doc?.id === activityId
+  );
+
+  const finalVersion = replayChanges.length > 0
+    ? Number(replayChanges.at(-1)?.doc?.version || createdVersion)
+    : createdVersion;
+
+  const versionBumps = Math.max(0, finalVersion - createdVersion);
+
+  await syncPush({
+    url: config.url,
+    token,
+    body: {
+      deviceId: `scale-noop-${runTag}`,
+      baseCursor: afterReplay.lastCursor,
+      mutations: [
+        {
+          opId: crypto.randomUUID(),
+          entity: "activities",
+          entityId: activityId,
+          type: "delete",
+          baseVersion: finalVersion,
+          updatedAtClient: new Date().toISOString()
+        }
+      ]
+    }
+  });
+
+  return {
+    noOpReplayCount: config.noOpReplayCount,
+    replayPullChanges: replayChanges.length,
+    createdVersion,
+    finalVersion,
+    versionBumps
+  };
+}
+
 async function signInWithPassword({ url, apikey, email, password }) {
-  const response = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+  const response = await fetchWithRetry(`${url}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: {
       apikey,
@@ -358,7 +557,7 @@ async function signInWithPassword({ url, apikey, email, password }) {
 }
 
 async function syncPush({ url, token, body }) {
-  const response = await fetch(`${url}/functions/v1/sync/push`, {
+  const response = await fetchWithRetry(`${url}/functions/v1/sync/push`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -376,7 +575,7 @@ async function syncPush({ url, token, body }) {
 }
 
 async function syncPull({ url, token, cursor, limit }) {
-  const response = await fetch(`${url}/functions/v1/sync/pull`, {
+  const response = await fetchWithRetry(`${url}/functions/v1/sync/pull`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -414,6 +613,30 @@ async function pullUntilExhausted({ url, token, startCursor, limit }) {
     lastCursor: cursor,
     pageCount
   };
+}
+
+async function fetchWithRetry(url, init) {
+  let lastError = null;
+  const attempts = Math.max(1, config.fetchAttempts);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) {
+        break;
+      }
+      networkRetries += 1;
+      await sleep((attempt + 1) * 250);
+    }
+  }
+
+  throw lastError || new Error("fetchWithRetry failed");
+}
+
+async function sleep(delayMs) {
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 function assertNoFailuresOrConflicts(response, label) {

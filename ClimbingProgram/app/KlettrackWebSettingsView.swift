@@ -99,14 +99,14 @@ struct KlettrackWebSettingsView: View {
 
             Section {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Klettrack Web")
+                    Text("klettrack Web")
                         .font(.title3.weight(.semibold))
                     Text("Plan sessions faster on the web and keep your climbing logs synced across devices.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
 
                     if let websiteURL = URL(string: "https://klettrack.com/app.html#/login") {
-                        Link("Open Klettrack Web", destination: websiteURL)
+                        Link("Open klettrack Web", destination: websiteURL)
                             .frame(maxWidth: .infinity, alignment: .center)
                         .buttonStyle(.borderedProminent)
                     }
@@ -152,7 +152,7 @@ struct KlettrackWebSettingsView: View {
                 }
             }
         } message: {
-            Text("You’ll need to sign in again to sync with Klettrack Web.")
+            Text("You’ll need to sign in again to sync with klettrack Web.")
         }
     }
 

@@ -182,7 +182,7 @@ async function handlePush(req: Request, client: SupabaseClient, userId: string, 
 
     const { data: existing, error: fetchError } = await client
       .from(table)
-      .select("id, owner_id, version, is_deleted, last_op_id")
+      .select("*")
       .eq("id", mutation.entityId)
       .eq("owner_id", userId)
       .maybeSingle();
@@ -236,22 +236,26 @@ async function handlePush(req: Request, client: SupabaseClient, userId: string, 
       continue;
     }
 
-    if (mutation.baseVersion !== existing.version) {
-      const { data: serverDoc } = await client
-        .from(table)
-        .select("*")
-        .eq("id", mutation.entityId)
-        .eq("owner_id", userId)
-        .maybeSingle();
-
+    if (mutation.baseVersion !== Number(existing.version ?? 0)) {
       conflicts.push({
         opId: mutation.opId,
         entity: table,
         entityId: mutation.entityId,
         reason: "version_mismatch",
-        serverVersion: existing.version,
-        serverDoc
+        serverVersion: Number(existing.version ?? 0),
+        serverDoc: existing
       });
+      continue;
+    }
+
+    if (
+      shouldAcknowledgeNoOp({
+        existing,
+        mutationType: mutation.type,
+        mutationPayload
+      })
+    ) {
+      acknowledgedOpIds.push(mutation.opId);
       continue;
     }
 
@@ -322,6 +326,60 @@ async function handlePull(req: Request, client: SupabaseClient, userId: string, 
 type MutationValidationResult =
   | { ok: true; payload?: Record<string, unknown> }
   | { ok: false; reason: string };
+
+function shouldAcknowledgeNoOp({
+  existing,
+  mutationType,
+  mutationPayload
+}: {
+  existing: Record<string, unknown>;
+  mutationType: MutationType;
+  mutationPayload?: Record<string, unknown>;
+}): boolean {
+  const isDeleted = existing.is_deleted === true;
+  if (mutationType === "delete") {
+    return isDeleted;
+  }
+
+  if (isDeleted) {
+    return false;
+  }
+
+  const payload = mutationPayload ?? {};
+  for (const [key, incomingValue] of Object.entries(payload)) {
+    if (!areValuesEquivalent(existing[key], incomingValue)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areValuesEquivalent(lhs: unknown, rhs: unknown): boolean {
+  return JSON.stringify(normalizeForComparison(lhs)) === JSON.stringify(normalizeForComparison(rhs));
+}
+
+function normalizeForComparison(value: unknown): unknown {
+  if (value === undefined) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeForComparison(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const objectValue = value as Record<string, unknown>;
+    result[key] = normalizeForComparison(objectValue[key]);
+  }
+  return result;
+}
 
 const ENTITY_FIELD_ALLOWLIST: Record<EntityName, readonly string[]> = {
   plan_kinds: ["key", "name", "total_weeks", "is_repeating", "display_order"],

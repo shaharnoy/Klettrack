@@ -174,4 +174,33 @@ final class SyncManagerTests: XCTestCase {
             )
         )
     }
+
+    func testPersistedLastSyncAtReturnsStoredValueWhenSyncEnabled() {
+        let date = Date(timeIntervalSince1970: 1_234_567)
+        let syncState = SyncStateSnapshot(
+            id: "default",
+            userId: "user-a",
+            deviceId: "device-a",
+            lastCursor: "cursor-1",
+            lastSuccessfulSyncAt: date,
+            lastBootstrapSnapshotAt: nil,
+            isSyncEnabled: true
+        )
+
+        XCTAssertEqual(SyncManager.persistedLastSyncAt(syncState: syncState), date)
+    }
+
+    func testPersistedLastSyncAtClearsWhenSyncDisabled() {
+        let syncState = SyncStateSnapshot(
+            id: "default",
+            userId: "user-a",
+            deviceId: "device-a",
+            lastCursor: "cursor-1",
+            lastSuccessfulSyncAt: Date(timeIntervalSince1970: 1_234_567),
+            lastBootstrapSnapshotAt: nil,
+            isSyncEnabled: false
+        )
+
+        XCTAssertNil(SyncManager.persistedLastSyncAt(syncState: syncState))
+    }
 }
