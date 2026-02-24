@@ -48,6 +48,7 @@ final class SyncManager {
     private let maxAutomaticRetryCount = 5
     private let maxAutomaticRetryDelaySeconds = 60.0
     private let suspiciousResnapshotQueueThreshold = 400
+    private let suspiciousResnapshotQueueObservationCount = 3
     init(apiClient: SyncAPIClient, store: SyncStoreActor, auditStore: SyncConflictAuditStore = .shared) {
         self.apiClient = apiClient
         self.store = store
@@ -247,8 +248,14 @@ final class SyncManager {
         }
 
         let pendingQueueCountAtStart = try await store.pendingMutationCount()
-        let isSteadyState = syncState.didBootstrapLocalSnapshot && syncState.lastSuccessfulSyncAt != nil
-        if isSteadyState && pendingQueueCountAtStart > suspiciousResnapshotQueueThreshold {
+        let shouldFlagSuspiciousResnapshot = Self.shouldFlagSuspiciousResnapshot(
+            pendingQueueCount: pendingQueueCountAtStart,
+            syncState: syncState,
+            queueThreshold: suspiciousResnapshotQueueThreshold,
+            queueObservationCount: suspiciousResnapshotQueueObservationCount,
+            priorCycleDiagnostics: cycleDiagnostics
+        )
+        if shouldFlagSuspiciousResnapshot {
             appendCycleDiagnostics(
                 SyncCycleDiagnostics(
                     queueSizeAtStart: pendingQueueCountAtStart,
@@ -624,6 +631,52 @@ final class SyncManager {
             return nil
         }
         return syncState.lastSuccessfulSyncAt
+    }
+
+    nonisolated static func shouldFlagSuspiciousResnapshot(
+        pendingQueueCount: Int,
+        syncState: SyncStateSnapshot,
+        queueThreshold: Int,
+        queueObservationCount: Int,
+        priorCycleDiagnostics: [SyncCycleDiagnostics]
+    ) -> Bool {
+        guard pendingQueueCount > queueThreshold else {
+            return false
+        }
+        guard syncState.didBootstrapLocalSnapshot else {
+            return false
+        }
+        guard syncState.lastSuccessfulSyncAt != nil else {
+            return false
+        }
+
+        let successfulDiagnostics = priorCycleDiagnostics.filter { diagnostics in
+            diagnostics.failedCount == 0
+        }
+        let successfulSinceBootstrap: [SyncCycleDiagnostics]
+        if let lastBootstrapSnapshotAt = syncState.lastBootstrapSnapshotAt {
+            successfulSinceBootstrap = successfulDiagnostics.filter { diagnostics in
+                diagnostics.timestamp >= lastBootstrapSnapshotAt
+            }
+        } else {
+            successfulSinceBootstrap = successfulDiagnostics
+        }
+
+        let observationCount = max(2, queueObservationCount)
+        let sortedSuccessfulQueues = successfulSinceBootstrap
+            .sorted { $0.timestamp < $1.timestamp }
+            .map(\.queueSizeAtStart)
+        let recentQueues = Array((sortedSuccessfulQueues + [pendingQueueCount]).suffix(observationCount))
+        guard recentQueues.count == observationCount else {
+            return false
+        }
+        guard recentQueues.allSatisfy({ $0 > queueThreshold }) else {
+            return false
+        }
+
+        return zip(recentQueues, recentQueues.dropFirst()).allSatisfy { previous, current in
+            current >= previous
+        }
     }
 
     private nonisolated static func isLongTextValue(_ value: JSONValue) -> Bool {

@@ -43,7 +43,7 @@ struct KlettrackWebSettingsView: View {
                 }
 
                 if authManager.isSignedIn {
-                    Text(syncStatusText(authManager.syncState))
+                    Text(syncStatusText(authManager.syncState, lastSyncAt: authManager.lastSyncAt))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Text(lastSyncText(authManager.lastSyncAt))
@@ -156,10 +156,20 @@ struct KlettrackWebSettingsView: View {
         }
     }
 
-    private func syncStatusText(_ state: SyncManager.State) -> String {
+    private func syncStatusText(_ state: SyncManager.State, lastSyncAt: Date?) -> String {
         switch state {
         case .idle:
-            return "Sync status: idle"
+            guard let lastSyncAt else {
+                return "Sync status: waiting for first sync"
+            }
+            let age = Date.now.timeIntervalSince(lastSyncAt)
+            if age < 90 {
+                return "Sync status: up to date"
+            }
+            let relativeFormatter = RelativeDateTimeFormatter()
+            relativeFormatter.unitsStyle = .full
+            let relativeText = relativeFormatter.localizedString(for: lastSyncAt, relativeTo: .now)
+            return "Sync status: idle (\(relativeText))"
         case .syncing:
             return "Sync status: syncing"
         case .conflict(let count):

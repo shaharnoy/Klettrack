@@ -205,4 +205,92 @@ final class SyncManagerTests: XCTestCase {
 
         XCTAssertNil(SyncManager.persistedLastSyncAt(syncState: syncState))
     }
+
+    func testShouldFlagSuspiciousResnapshotSkipsWhenQueueIsDraining() {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let syncState = SyncStateSnapshot(
+            id: "default",
+            userId: "user-a",
+            deviceId: "device-a",
+            lastCursor: "cursor-1",
+            lastSuccessfulSyncAt: now.addingTimeInterval(-30),
+            lastBootstrapSnapshotAt: now.addingTimeInterval(-300),
+            isSyncEnabled: true,
+            didBootstrapLocalSnapshot: true
+        )
+        let priorDiagnostics = [
+            SyncCycleDiagnostics(
+                timestamp: now.addingTimeInterval(-180),
+                queueSizeAtStart: 650,
+                durationSeconds: 1,
+                acknowledgedCount: 5,
+                noopCount: 0,
+                conflictCount: 0,
+                failedCount: 0
+            ),
+            SyncCycleDiagnostics(
+                timestamp: now.addingTimeInterval(-60),
+                queueSizeAtStart: 520,
+                durationSeconds: 1,
+                acknowledgedCount: 5,
+                noopCount: 0,
+                conflictCount: 0,
+                failedCount: 0
+            )
+        ]
+
+        XCTAssertFalse(
+            SyncManager.shouldFlagSuspiciousResnapshot(
+                pendingQueueCount: 470,
+                syncState: syncState,
+                queueThreshold: 400,
+                queueObservationCount: 3,
+                priorCycleDiagnostics: priorDiagnostics
+            )
+        )
+    }
+
+    func testShouldFlagSuspiciousResnapshotTriggersWhenHighQueueStagnates() {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let syncState = SyncStateSnapshot(
+            id: "default",
+            userId: "user-a",
+            deviceId: "device-a",
+            lastCursor: "cursor-1",
+            lastSuccessfulSyncAt: now.addingTimeInterval(-30),
+            lastBootstrapSnapshotAt: now.addingTimeInterval(-300),
+            isSyncEnabled: true,
+            didBootstrapLocalSnapshot: true
+        )
+        let priorDiagnostics = [
+            SyncCycleDiagnostics(
+                timestamp: now.addingTimeInterval(-180),
+                queueSizeAtStart: 510,
+                durationSeconds: 1,
+                acknowledgedCount: 2,
+                noopCount: 0,
+                conflictCount: 0,
+                failedCount: 0
+            ),
+            SyncCycleDiagnostics(
+                timestamp: now.addingTimeInterval(-60),
+                queueSizeAtStart: 520,
+                durationSeconds: 1,
+                acknowledgedCount: 1,
+                noopCount: 0,
+                conflictCount: 0,
+                failedCount: 0
+            )
+        ]
+
+        XCTAssertTrue(
+            SyncManager.shouldFlagSuspiciousResnapshot(
+                pendingQueueCount: 540,
+                syncState: syncState,
+                queueThreshold: 400,
+                queueObservationCount: 3,
+                priorCycleDiagnostics: priorDiagnostics
+            )
+        )
+    }
 }

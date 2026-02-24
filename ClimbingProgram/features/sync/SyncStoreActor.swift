@@ -207,6 +207,7 @@ actor SyncStoreActor {
         )
 
         for model in planKinds {
+            let sanitizedTotalWeeks = model.totalWeeks.flatMap { $0 > 0 ? $0 : nil }
             try enqueueIfNeeded(
                 entity: .planKinds,
                 entityId: model.id,
@@ -215,7 +216,7 @@ actor SyncStoreActor {
                 payload: [
                     "key": .string(model.key),
                     "name": .string(model.name),
-                    "total_weeks": model.totalWeeks.map { .number(Double($0)) } ?? .null,
+                    "total_weeks": sanitizedTotalWeeks.map { .number(Double($0)) } ?? .null,
                     "is_repeating": .bool(model.isRepeating),
                     "display_order": .number(Double(model.order))
                 ],
@@ -260,13 +261,17 @@ actor SyncStoreActor {
         }
 
         for model in planDays {
+            let planID = planByDayID[model.id]
+            if !model.isSoftDeleted, planID == nil {
+                continue
+            }
             try enqueueIfNeeded(
                 entity: .planDays,
                 entityId: model.id,
                 mutationType: model.isSoftDeleted ? .delete : .upsert,
                 baseVersion: model.syncVersion,
                 payload: [
-                    "plan_id": planByDayID[model.id].map { .string($0.uuidString.lowercased()) } ?? .null,
+                    "plan_id": planID.map { .string($0.uuidString.lowercased()) } ?? .null,
                     "day_date": .string(model.date.iso8601WithFractionalSeconds),
                     "day_type_id": model.type.map { .string($0.id.uuidString.lowercased()) } ?? .null,
                     "chosen_exercise_ids": .array(model.chosenExerciseIDs.map { .string($0.uuidString.lowercased()) }),

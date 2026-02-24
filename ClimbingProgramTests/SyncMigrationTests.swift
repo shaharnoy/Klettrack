@@ -129,4 +129,28 @@ final class SyncMigrationTests: BaseSwiftDataTestCase {
         XCTAssertEqual(timerSession.laps.first?.updatedAtClient.timeIntervalSinceNow ?? -1, 0, accuracy: 5)
         XCTAssertEqual(climb.media.first?.climb.id, climb.id)
     }
+
+    func testBackfillPlanSyncIntegritySanitizesInvalidWeeksAndOrphanDays() throws {
+        let kind = PlanKindModel(key: "daily", name: "Daily", totalWeeks: 0, isRepeating: false, order: 0)
+        let plan = Plan(name: "Plan", kind: kind, startDate: .now)
+        let linkedDay = PlanDay(date: .now)
+        let orphanDay = PlanDay(date: .now.addingTimeInterval(86_400))
+
+        plan.days = [linkedDay]
+
+        context.insert(kind)
+        context.insert(plan)
+        context.insert(linkedDay)
+        context.insert(orphanDay)
+        try context.save()
+
+        XCTAssertEqual(kind.totalWeeks, 0)
+        XCTAssertFalse(orphanDay.isSoftDeleted)
+
+        backfillPlanSyncIntegrity(context)
+
+        XCTAssertNil(kind.totalWeeks)
+        XCTAssertFalse(linkedDay.isSoftDeleted)
+        XCTAssertTrue(orphanDay.isSoftDeleted)
+    }
 }

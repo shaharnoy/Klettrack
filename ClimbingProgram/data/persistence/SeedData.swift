@@ -489,7 +489,7 @@ private func seedPlanKinds(_ context: ModelContext) {
     struct KindSeed { let key: String; let name: String; let totalWeeks: Int?; let isRepeating: Bool; let order: Int }
 
     let seeds: [KindSeed] = [
-        .init(key: "daily",   name: "Daily",              totalWeeks: 0,  isRepeating: false, order: 0),
+        .init(key: "daily",   name: "Daily",              totalWeeks: nil,isRepeating: false, order: 0),
         .init(key: "weekly",  name: "Weekly",             totalWeeks: nil,isRepeating: true,  order: 1),
         .init(key: "3-2-1",   name: "3-2-1 (6 weeks)",    totalWeeks: 6,  isRepeating: false, order: 2),
         .init(key: "4-3-2-1", name: "4-3-2-1 (10 weeks)", totalWeeks: 10, isRepeating: false, order: 3),
@@ -579,6 +579,5 @@ private func reconcilePlanDayTypesIfNeeded(_ context: ModelContext) {
     for d in nilTypeDays { d.type = restType }
     try? context.save()
 }
-
 
 
