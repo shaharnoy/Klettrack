@@ -472,13 +472,14 @@ function bindEvents({
     showToast(`Added ${weeks} week${weeks === 1 ? "" : "s"}`, "success");
   });
 
-  document.getElementById("plan-day-notes")?.addEventListener("input", () => {
+  document.getElementById("plan-day-notes")?.addEventListener("blur", async () => {
     if (!selection.planDayId || !selection.planId) {
       return;
     }
     const orderedIDs = getSelectedExerciseOrder();
     syncPlanDayExerciseDraft(selection.planDayId, orderedIDs);
-    schedulePlanDayAutosave({ store, selection, onSave, orderedIDs });
+    await flushPlanDayAutosave();
+    await persistSelectedExercises({ store, selection, onSave, orderedIDs });
   });
 
   document.querySelectorAll("select[data-calendar-day-id]").forEach((input) => {
