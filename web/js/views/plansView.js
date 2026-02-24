@@ -339,6 +339,10 @@ function bindEvents({
 
   document.getElementById("plan-setup-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
     const mode = selection.planSetupMode === "edit" ? "edit" : "create";
     const name = sanitizedValue("plan-setup-name");
     const startDate = document.getElementById("plan-setup-start")?.value;
@@ -350,21 +354,58 @@ function bindEvents({
     }
     const id = mode === "edit" ? selectedPlan.id : crypto.randomUUID();
     const existingPlan = mode === "edit" ? store.get("plans", id) : null;
-    await onSave({
-      entity: "plans",
-      id,
-      payload: {
-        name,
-        kind_id: optionalValue("plan-setup-kind"),
-        start_date: `${startDate}T00:00:00.000Z`,
-        recurring_chosen_exercises_by_weekday: deepCopyObject(existingPlan?.recurring_chosen_exercises_by_weekday || {}),
-        recurring_exercise_order_by_weekday: deepCopyObject(existingPlan?.recurring_exercise_order_by_weekday || {}),
-        recurring_day_type_id_by_weekday: deepCopyObject(existingPlan?.recurring_day_type_id_by_weekday || {})
+    const kindID = optionalValue("plan-setup-kind");
+    const startDateISO = `${startDate}T00:00:00.000Z`;
+    const planPayload = {
+      name,
+      kind_id: kindID,
+      start_date: startDateISO,
+      recurring_chosen_exercises_by_weekday: deepCopyObject(existingPlan?.recurring_chosen_exercises_by_weekday || {}),
+      recurring_exercise_order_by_weekday: deepCopyObject(existingPlan?.recurring_exercise_order_by_weekday || {}),
+      recurring_day_type_id_by_weekday: deepCopyObject(existingPlan?.recurring_day_type_id_by_weekday || {})
+    };
+    setFormSubmittingState(form, true, mode === "create" ? "Creating plan..." : "Saving plan...");
+    try {
+      if (mode === "create") {
+        const totalDays = daysForPlanKind(planKinds, kindID);
+        const dayMutations = [];
+        const start = safeDate(startDateISO);
+        for (let index = 0; index < totalDays; index += 1) {
+          const dayDate = addDays(start, index);
+          dayMutations.push({
+            entity: "plan_days",
+            id: crypto.randomUUID(),
+            payload: {
+              plan_id: id,
+              day_date: toISODateStart(dayDate),
+              day_type_id: null,
+              chosen_exercise_ids: [],
+              exercise_order_by_id: {},
+              daily_notes: null
+            }
+          });
+        }
+        const mutations = [{ entity: "plans", id, payload: planPayload }, ...dayMutations];
+        if (typeof onSaveMany === "function") {
+          await onSaveMany({ mutations });
+        } else {
+          for (const mutation of mutations) {
+            await onSave(mutation);
+          }
+        }
+      } else {
+        await onSave({
+          entity: "plans",
+          id,
+          payload: planPayload
+        });
       }
-    });
-    onSelect({ planSetupOpen: false });
-    onOpenPlan(id);
-    showToast(mode === "edit" ? "Plan updated" : "Plan saved", "success");
+      onSelect({ planSetupOpen: false });
+      onOpenPlan(id);
+      showToast(mode === "edit" ? "Plan updated" : "Plan saved", "success");
+    } finally {
+      setFormSubmittingState(form, false);
+    }
   });
 
   document.getElementById("plan-setup-delete")?.addEventListener("click", async () => {
@@ -1355,7 +1396,7 @@ function renderPlanSetupPanel({ selectedPlan, selection, planKinds }) {
       : {
           name: "",
           start: dateInputValue(new Date().toISOString()),
-          kindId: ""
+          kindId: defaultCreatePlanKindID(planKinds)
         };
 
   return `
@@ -1390,6 +1431,54 @@ function renderCalendarModeButton(mode, selectedMode) {
   return `<button class="calendar-mode-btn ${mode === selectedMode ? "active" : ""}" type="button" data-calendar-mode="${mode}" aria-pressed="${
     mode === selectedMode ? "true" : "false"
   }">${mode[0].toUpperCase()}${mode.slice(1)}</button>`;
+}
+
+function defaultCreatePlanKindID(planKinds) {
+  if (!Array.isArray(planKinds) || planKinds.length === 0) {
+    return "";
+  }
+  const weekly = planKinds.find((kind) => {
+    const key = normalizePlanKindToken(kind?.key);
+    const name = normalizePlanKindToken(kind?.name);
+    return key === "weekly" || name === "weekly";
+  });
+  return weekly?.id || "";
+}
+
+function normalizePlanKindToken(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replaceAll(/\(.*?\)/g, "")
+    .replaceAll(/[\s_]+/g, "");
+}
+
+function daysForPlanKind(planKinds, kindID) {
+  const selected = planKinds.find((kind) => kind.id === kindID) || null;
+  if (!selected) {
+    return 0;
+  }
+  const totalWeeks = Number.parseInt(String(selected.total_weeks ?? ""), 10);
+  if (Number.isFinite(totalWeeks) && totalWeeks > 0) {
+    return totalWeeks * 7;
+  }
+  if (selected.is_repeating === true) {
+    return 7;
+  }
+  const key = normalizePlanKindToken(selected.key);
+  const name = normalizePlanKindToken(selected.name);
+  if (key === "weekly" || name === "weekly") {
+    return 7;
+  }
+  if (key === "3-2-1" || key === "321" || name === "3-2-1" || name === "321") {
+    return 6 * 7;
+  }
+  if (key === "4-3-2-1" || key === "4321" || name === "4-3-2-1" || name === "4321") {
+    return 10 * 7;
+  }
+  if (key === "4+1" || key === "4plus1" || name === "4+1" || name === "4plus1") {
+    return 5 * 7;
+  }
+  return 0;
 }
 
 function renderCalendarFocus(days, selectedDay, mode, anchorISO, dayTypeByID, dayTypes, periodState, selection) {
@@ -2194,7 +2283,7 @@ function startOfDay(date) {
 
 function toISODateStart(date) {
   const normalized = startOfDay(date);
-  return `${formatDateKey(normalized.toISOString())}T00:00:00.000Z`;
+  return `${formatDateKey(normalized)}T00:00:00.000Z`;
 }
 
 function weekdayIdFromDate(value) {
