@@ -56,9 +56,24 @@ jobs:
           node scripts/supabase/contract/sync_function_contract_tests.mjs
           node scripts/supabase/diagnostics/sync_scale_validation.mjs
 
-      - name: Run iOS test suite (generic simulator destination)
+      - name: Run iOS test suite (concrete simulator device)
         run: |
+          set -euo pipefail
+
+          SIMULATOR_ID="$(
+            xcrun simctl list devices available \
+              | sed -nE 's/.*iPhone[^()]* \(([0-9A-F-]+)\).*/\1/p' \
+              | head -n 1
+          )"
+
+          if [ -z "${SIMULATOR_ID}" ]; then
+            echo "No available iPhone simulator found on runner."
+            xcrun simctl list devices available
+            exit 1
+          fi
+
           xcodebuild test \
             -project ClimbingProgram.xcodeproj \
-            -scheme ClimbingProgramTests \
-            -destination 'generic/platform=iOS Simulator'
+            -scheme ClimbingProgram \
+            -only-testing:ClimbingProgramTests \
+            -destination "id=${SIMULATOR_ID}"
