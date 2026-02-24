@@ -1,6 +1,7 @@
 import { supabaseKey, supabaseURL } from "./supabaseClient.js";
 
 let inMemorySession = null;
+const AUTH_SESSION_STORAGE_KEY = "WEB_AUTH_SESSION";
 
 function normalizeIdentifier(identifier) {
   return identifier.trim().toLowerCase();
@@ -37,20 +38,35 @@ async function resolveEmail(identifier) {
 }
 
 export async function getCurrentUser() {
-  const token = getAccessToken();
+  let token = getAccessToken();
   if (!token || !supabaseURL || !supabaseKey) {
     return null;
   }
 
-  const response = await fetch(`${supabaseURL}/auth/v1/user`, {
+  let response = await fetch(`${supabaseURL}/auth/v1/user`, {
     method: "GET",
     headers: {
       apikey: supabaseKey,
       Authorization: `Bearer ${token}`
     }
   });
+  if (!response.ok && (response.status === 401 || response.status === 403)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed?.access_token) {
+      token = refreshed.access_token;
+      response = await fetch(`${supabaseURL}/auth/v1/user`, {
+        method: "GET",
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${token}`
+        }
+      });
+    }
+  }
   if (!response.ok) {
-    clearSession();
+    if (response.status === 401 || response.status === 403) {
+      clearSession();
+    }
     return null;
   }
   const payload = await response.json().catch(() => null);
@@ -207,6 +223,9 @@ export function getAccessToken() {
 }
 
 function loadSession() {
+  if (!inMemorySession) {
+    inMemorySession = readStoredSession();
+  }
   if (!inMemorySession || typeof inMemorySession !== "object") {
     return null;
   }
@@ -215,16 +234,83 @@ function loadSession() {
 
 function saveSession(sessionLike) {
   const accessToken = String(sessionLike?.access_token || "").trim();
+  const refreshToken = String(sessionLike?.refresh_token || "").trim();
   if (!accessToken) {
     return;
   }
-  // Security hardening: do not persist auth tokens in browser storage.
   inMemorySession = {
     access_token: accessToken,
-    refresh_token: null
+    refresh_token: refreshToken || null
   };
+  writeStoredSession(inMemorySession);
 }
 
 function clearSession() {
   inMemorySession = null;
+  clearStoredSession();
+}
+
+async function refreshAccessToken() {
+  const session = loadSession();
+  const refreshToken = String(session?.refresh_token || "").trim();
+  if (!refreshToken || !supabaseURL || !supabaseKey) {
+    return null;
+  }
+
+  const response = await fetch(`${supabaseURL}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseKey,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.access_token) {
+    clearSession();
+    return null;
+  }
+  saveSession(payload);
+  return loadSession();
+}
+
+function readStoredSession() {
+  try {
+    const raw =
+      window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY) ||
+      window.sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    const accessToken = String(parsed?.access_token || "").trim();
+    const refreshToken = String(parsed?.refresh_token || "").trim();
+    if (!accessToken) {
+      return null;
+    }
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken || null
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSession(sessionLike) {
+  try {
+    const payload = JSON.stringify({
+      access_token: sessionLike.access_token,
+      refresh_token: sessionLike.refresh_token
+    });
+    window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, payload);
+    window.sessionStorage.setItem(AUTH_SESSION_STORAGE_KEY, payload);
+  } catch {}
+}
+
+function clearStoredSession() {
+  try {
+    window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+  } catch {}
 }
