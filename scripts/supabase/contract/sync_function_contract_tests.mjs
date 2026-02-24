@@ -29,9 +29,6 @@ const sessionId = crypto.randomUUID();
 const timerTemplateId = crypto.randomUUID();
 const timerIntervalId = crypto.randomUUID();
 const invalidTimerIntervalId = crypto.randomUUID();
-const timerSessionId = crypto.randomUUID();
-const timerLapId = crypto.randomUUID();
-const invalidTimerLapId = crypto.randomUUID();
 const sessionItemId = crypto.randomUUID();
 const climbEntryId = crypto.randomUUID();
 const climbStyleId = crypto.randomUUID();
@@ -44,6 +41,44 @@ const primarySession = await signInWithPassword({
   email: config.primaryEmail,
   password: config.primaryPassword
 });
+
+const authPreflightResponse = await rawSyncRequest({
+  url: config.url,
+  path: "push",
+  token: primarySession.access_token,
+  body: { deviceId: `contract-preflight-${runId}`, baseCursor: runCursor, mutations: [] }
+});
+assertSyncAuthPreflight(authPreflightResponse);
+
+const unauthPushResponse = await rawSyncRequest({
+  url: config.url,
+  path: "push",
+  body: { deviceId: `contract-no-auth-${runId}`, baseCursor: runCursor, mutations: [] }
+});
+assertStatus(unauthPushResponse, 401, "push_without_bearer");
+
+const unauthPullResponse = await rawSyncRequest({
+  url: config.url,
+  path: "pull",
+  body: { cursor: runCursor, limit: 1 }
+});
+assertStatus(unauthPullResponse, 401, "pull_without_bearer");
+
+const invalidTokenPushResponse = await rawSyncRequest({
+  url: config.url,
+  path: "push",
+  token: "invalid-bearer-token",
+  body: { deviceId: `contract-invalid-auth-${runId}`, baseCursor: runCursor, mutations: [] }
+});
+assertStatus(invalidTokenPushResponse, 401, "push_with_invalid_bearer");
+
+const invalidTokenPullResponse = await rawSyncRequest({
+  url: config.url,
+  path: "pull",
+  token: "invalid-bearer-token",
+  body: { cursor: runCursor, limit: 1 }
+});
+assertStatus(invalidTokenPullResponse, 401, "pull_with_invalid_bearer");
 
 const createOpId = crypto.randomUUID();
 const createResponse = await syncPush({
@@ -99,6 +134,43 @@ const primaryAfterCreate = await pullUntilExhausted({
 const createdDoc = findActivityDoc(primaryAfterCreate.changes, activityId);
 if (!createdDoc) {
   throw new Error("Primary pull did not return newly created activity.");
+}
+if (createdDoc.name !== activityName) {
+  throw new Error("Idempotent replay unexpectedly rewrote the activity payload.");
+}
+
+const noOpOpId = crypto.randomUUID();
+const noOpResponse = await syncPush({
+  url: config.url,
+  token: primarySession.access_token,
+  body: {
+    deviceId: `contract-primary-${runId}`,
+    baseCursor: primaryAfterCreate.lastCursor,
+    mutations: [
+      {
+        opId: noOpOpId,
+        entity: "activities",
+        entityId: activityId,
+        type: "upsert",
+        baseVersion: Number(createdDoc.version ?? 1),
+        updatedAtClient: new Date().toISOString(),
+        payload: { name: activityName }
+      }
+    ]
+  }
+});
+assertAcked(noOpResponse, noOpOpId, "no_op_upsert");
+assertNoConflicts(noOpResponse, "no_op_upsert");
+
+const afterNoOp = await pullUntilExhausted({
+  url: config.url,
+  token: primarySession.access_token,
+  startCursor: primaryAfterCreate.lastCursor,
+  limit: config.limit
+});
+const noOpActivityDoc = findActivityDoc(afterNoOp.changes, activityId);
+if (noOpActivityDoc) {
+  throw new Error("No-op upsert unexpectedly generated a pull change.");
 }
 
 const sessionCreateOpId = crypto.randomUUID();
@@ -178,61 +250,6 @@ const timerIntervalCreateResponse = await syncPush({
 });
 assertAcked(timerIntervalCreateResponse, timerIntervalCreateOpId, "timer_interval_create");
 
-const timerSessionCreateOpId = crypto.randomUUID();
-const timerSessionCreateResponse = await syncPush({
-  url: config.url,
-  token: primarySession.access_token,
-  body: {
-    deviceId: `contract-primary-${runId}`,
-    baseCursor: primaryAfterCreate.lastCursor,
-    mutations: [
-      {
-        opId: timerSessionCreateOpId,
-        entity: "timer_sessions",
-        entityId: timerSessionId,
-        type: "upsert",
-        baseVersion: 0,
-        updatedAtClient: new Date().toISOString(),
-        payload: {
-          start_date: new Date().toISOString(),
-          timer_template_id: timerTemplateId,
-          total_elapsed_seconds: 0,
-          completed_intervals: 0,
-          was_completed: false
-        }
-      }
-    ]
-  }
-});
-assertAcked(timerSessionCreateResponse, timerSessionCreateOpId, "timer_session_create");
-
-const timerLapCreateOpId = crypto.randomUUID();
-const timerLapCreateResponse = await syncPush({
-  url: config.url,
-  token: primarySession.access_token,
-  body: {
-    deviceId: `contract-primary-${runId}`,
-    baseCursor: primaryAfterCreate.lastCursor,
-    mutations: [
-      {
-        opId: timerLapCreateOpId,
-        entity: "timer_laps",
-        entityId: timerLapId,
-        type: "upsert",
-        baseVersion: 0,
-        updatedAtClient: new Date().toISOString(),
-        payload: {
-          timer_session_id: timerSessionId,
-          lap_number: 1,
-          timestamp: new Date().toISOString(),
-          elapsed_seconds: 45
-        }
-      }
-    ]
-  }
-});
-assertAcked(timerLapCreateResponse, timerLapCreateOpId, "timer_lap_create");
-
 const invalidTimerIntervalOpId = crypto.randomUUID();
 const invalidTimerIntervalResponse = await syncPush({
   url: config.url,
@@ -260,33 +277,6 @@ const invalidTimerIntervalResponse = await syncPush({
   }
 });
 assertMutationFailed(invalidTimerIntervalResponse, invalidTimerIntervalOpId, "invalid_parent_reference", "timer_interval_invalid_parent");
-
-const invalidTimerLapOpId = crypto.randomUUID();
-const invalidTimerLapResponse = await syncPush({
-  url: config.url,
-  token: primarySession.access_token,
-  body: {
-    deviceId: `contract-primary-${runId}`,
-    baseCursor: primaryAfterCreate.lastCursor,
-    mutations: [
-      {
-        opId: invalidTimerLapOpId,
-        entity: "timer_laps",
-        entityId: invalidTimerLapId,
-        type: "upsert",
-        baseVersion: 0,
-        updatedAtClient: new Date().toISOString(),
-        payload: {
-          timer_session_id: crypto.randomUUID(),
-          lap_number: 1,
-          timestamp: new Date().toISOString(),
-          elapsed_seconds: 10
-        }
-      }
-    ]
-  }
-});
-assertMutationFailed(invalidTimerLapResponse, invalidTimerLapOpId, "invalid_parent_reference", "timer_lap_invalid_parent");
 
 const sessionItemCreateOpId = crypto.randomUUID();
 const sessionItemCreateResponse = await syncPush({
@@ -446,16 +436,6 @@ if (!timerIntervalDoc) {
     throw new Error("Timer interval upsert verification failed.");
 }
 
-const timerSessionDoc = findEntityDoc(v2AfterCreate.changes, "timer_sessions", timerSessionId);
-if (!timerSessionDoc) {
-    throw new Error("Timer session upsert verification failed.");
-}
-
-const timerLapDoc = findEntityDoc(v2AfterCreate.changes, "timer_laps", timerLapId);
-if (!timerLapDoc) {
-    throw new Error("Timer lap upsert verification failed.");
-}
-
 const sessionItemDoc = findEntityDoc(v2AfterCreate.changes, "session_items", sessionItemId);
 if (!sessionItemDoc) {
     throw new Error("Session item upsert verification failed.");
@@ -518,22 +498,6 @@ const cleanupResponse = await syncPush({
       },
       {
         opId: crypto.randomUUID(),
-        entity: "timer_laps",
-        entityId: timerLapId,
-        type: "delete",
-        baseVersion: Number(timerLapDoc.version ?? 1),
-        updatedAtClient: new Date().toISOString()
-      },
-      {
-        opId: crypto.randomUUID(),
-        entity: "timer_sessions",
-        entityId: timerSessionId,
-        type: "delete",
-        baseVersion: Number(timerSessionDoc.version ?? 1),
-        updatedAtClient: new Date().toISOString()
-      },
-      {
-        opId: crypto.randomUUID(),
         entity: "timer_intervals",
         entityId: timerIntervalId,
         type: "delete",
@@ -574,7 +538,9 @@ console.log(JSON.stringify({
   ok: true,
   runId,
   checks: {
+    authEnforcement: true,
     idempotentReplay: true,
+    noOpSuppression: true,
     versionConflict: true,
     v2EntityContract: true,
     parentValidation: true,
@@ -606,39 +572,44 @@ async function signInWithPassword({ url, apikey, email, password, allowFailure =
 
 
 async function syncPush({ url, token, body }) {
-  const response = await fetch(`${url}/functions/v1/sync/push`, {
+  const response = await rawSyncRequest({ url, path: "push", token, body });
+  if (!response.ok) {
+    throw new Error(buildSyncRequestError(response, "push"));
+  }
+
+  return response.payload;
+}
+
+async function syncPull({ url, token, cursor, limit }) {
+  const response = await rawSyncRequest({
+    url,
+    path: "pull",
+    token,
+    body: { cursor, limit }
+  });
+  if (!response.ok) {
+    throw new Error(buildSyncRequestError(response, "pull"));
+  }
+
+  return response.payload;
+}
+
+async function rawSyncRequest({ url, path, body, token }) {
+  const headers = {
+    "content-type": "application/json"
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${url}/functions/v1/sync/${path}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "content-type": "application/json"
-    },
+    headers,
     body: JSON.stringify(body)
   });
 
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(`Push failed (${response.status}): ${payload?.error || "unknown_error"}`);
-  }
-
-  return payload;
-}
-
-async function syncPull({ url, token, cursor, limit }) {
-  const response = await fetch(`${url}/functions/v1/sync/pull`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({ cursor, limit })
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(`Pull failed (${response.status}): ${payload?.error || "unknown_error"}`);
-  }
-
-  return payload;
+  return { ok: response.ok, status: response.status, payload };
 }
 
 async function pullUntilExhausted({ url, token, startCursor, limit }) {
@@ -689,6 +660,46 @@ function assertMutationFailed(payload, opId, expectedReason, label) {
   if (!matchedFailed) {
     throw new Error(`${label} expected failed reason ${expectedReason}, received: ${JSON.stringify(payload)}`);
   }
+}
+
+function assertStatus(response, expectedStatus, label) {
+  if (response.status !== expectedStatus) {
+    throw new Error(`${label} expected status ${expectedStatus}, received ${response.status}.`);
+  }
+}
+
+function assertSyncAuthPreflight(response) {
+  if (response.ok) {
+    return;
+  }
+
+  throw new Error(buildSyncRequestError(response, "sync auth preflight"));
+}
+
+function buildSyncRequestError(response, label) {
+  if (isLikelyGatewayJwtMismatch(response)) {
+    return `${label} failed (${response.status}): probable gateway JWT verification mismatch. Redeploy the sync function with verify_jwt=false for the current token flow.`;
+  }
+
+  return `${label} failed (${response.status}): ${describeSyncError(response.payload)}`;
+}
+
+function isLikelyGatewayJwtMismatch(response) {
+  if (response.status !== 401) {
+    return false;
+  }
+
+  return describeSyncError(response.payload).toLowerCase().includes("invalid jwt");
+}
+
+function describeSyncError(payload) {
+  const fields = [payload?.error, payload?.message, payload?.msg, payload?.error_description]
+    .filter((value) => typeof value === "string" && value.trim().length > 0);
+  if (fields.length > 0) {
+    return fields.join(" | ");
+  }
+
+  return "unknown_error";
 }
 
 function findActivityDoc(changes, activityId) {

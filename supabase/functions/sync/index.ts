@@ -15,8 +15,6 @@ type EntityName =
   | "session_items"
   | "timer_templates"
   | "timer_intervals"
-  | "timer_sessions"
-  | "timer_laps"
   | "climb_entries"
   | "climb_styles"
   | "climb_gyms";
@@ -58,8 +56,6 @@ const ENTITY_TABLES: ReadonlySet<string> = new Set([
   "session_items",
   "timer_templates",
   "timer_intervals",
-  "timer_sessions",
-  "timer_laps",
   "climb_entries",
   "climb_styles",
   "climb_gyms"
@@ -155,10 +151,15 @@ async function handlePush(req: Request, client: SupabaseClient, userId: string, 
     return jsonResponse(req, { error: "too_many_mutations" }, 413);
   }
 
+  const startedAt = Date.now();
   const acknowledgedOpIds: string[] = [];
   const conflicts: Array<Record<string, unknown>> = [];
   const failed: Array<Record<string, unknown>> = [];
+  let noopCount = 0;
+  let insertedCount = 0;
+  let updatedCount = 0;
 
+  const validMutationsByEntity = new Map<EntityName, Array<{ mutation: PushMutation; payload?: Record<string, unknown> }>>();
   for (const mutation of body.mutations) {
     const validated = validateMutation(mutation);
     if (!validated.ok) {
@@ -166,125 +167,188 @@ async function handlePush(req: Request, client: SupabaseClient, userId: string, 
       continue;
     }
 
-    const table = mutation.entity;
-    const mutationPayload = validated.payload;
+    const existing = validMutationsByEntity.get(mutation.entity) ?? [];
+    existing.push({ mutation, payload: validated.payload });
+    validMutationsByEntity.set(mutation.entity, existing);
+  }
 
-    const parentValidationError = await validateParentReferences({
-      client,
-      userId,
-      entity: mutation.entity,
-      payload: mutationPayload
-    });
-    if (parentValidationError) {
-      failed.push({ opId: mutation.opId, reason: parentValidationError });
-      continue;
-    }
+  for (const [entity, entries] of validMutationsByEntity) {
+    const parentValidationByOpId = new Map<string, string | null>();
+    await Promise.all(entries.map(async ({ mutation, payload }) => {
+      const parentValidationError = await validateParentReferences({
+        client,
+        userId,
+        entity,
+        payload
+      });
+      parentValidationByOpId.set(mutation.opId, parentValidationError);
+    }));
 
-    const { data: existing, error: fetchError } = await client
-      .from(table)
-      .select("id, owner_id, version, is_deleted, last_op_id")
-      .eq("id", mutation.entityId)
+    const ids = Array.from(new Set(entries.map(({ mutation }) => mutation.entityId)));
+    const { data: existingRows, error: existingRowsError } = await client
+      .from(entity)
+      .select("*")
       .eq("owner_id", userId)
-      .maybeSingle();
+      .in("id", ids);
 
-    if (fetchError) {
-      failed.push({ opId: mutation.opId, reason: "fetch_failed" });
+    if (existingRowsError) {
+      for (const { mutation } of entries) {
+        failed.push({ opId: mutation.opId, reason: "fetch_failed" });
+      }
       continue;
     }
 
-    if (existing && existing.last_op_id === mutation.opId) {
-      acknowledgedOpIds.push(mutation.opId);
-      continue;
+    const existingById = new Map<string, Record<string, unknown>>();
+    for (const row of existingRows ?? []) {
+      const id = typeof row.id === "string" ? row.id : "";
+      if (id) {
+        existingById.set(id, row as Record<string, unknown>);
+      }
     }
 
-    if (!existing) {
-      if (mutation.baseVersion !== 0) {
+    const inserts: Array<{
+      opId: string;
+      payload: Record<string, unknown>;
+    }> = [];
+    const updates: Array<{
+      opId: string;
+      entityId: string;
+      payload: Record<string, unknown>;
+    }> = [];
+
+    for (const { mutation, payload: mutationPayload } of entries) {
+      const parentValidationError = parentValidationByOpId.get(mutation.opId) ?? null;
+      if (parentValidationError) {
+        failed.push({ opId: mutation.opId, reason: parentValidationError });
+        continue;
+      }
+
+      const existing = existingById.get(mutation.entityId);
+      if (existing && existing.last_op_id === mutation.opId) {
+        acknowledgedOpIds.push(mutation.opId);
+        continue;
+      }
+
+      if (!existing) {
+        if (mutation.baseVersion !== 0) {
+          conflicts.push({
+            opId: mutation.opId,
+            entity,
+            entityId: mutation.entityId,
+            reason: "version_mismatch",
+            serverVersion: null,
+            serverDoc: null
+          });
+          continue;
+        }
+
+        const insertPayload: Record<string, unknown> = {
+          id: mutation.entityId,
+          owner_id: userId,
+          updated_at_client: mutation.updatedAtClient ?? null,
+          last_op_id: mutation.opId,
+          is_deleted: mutation.type === "delete"
+        };
+
+        if (mutation.type === "upsert" && mutationPayload) {
+          Object.assign(insertPayload, mutationPayload);
+        }
+        inserts.push({ opId: mutation.opId, payload: insertPayload });
+        continue;
+      }
+
+      if (mutation.baseVersion !== Number(existing.version ?? 0)) {
         conflicts.push({
           opId: mutation.opId,
-          entity: table,
+          entity,
           entityId: mutation.entityId,
           reason: "version_mismatch",
-          serverVersion: null,
-          serverDoc: null
+          serverVersion: Number(existing.version ?? 0),
+          serverDoc: existing
         });
         continue;
       }
 
-      const insertPayload: Record<string, unknown> = {
-        id: mutation.entityId,
-        owner_id: userId,
-        updated_at_client: mutation.updatedAtClient ?? null,
-        last_op_id: mutation.opId,
-        is_deleted: mutation.type === "delete"
-      };
-
-      if (mutation.type === "upsert" && mutationPayload) {
-        Object.assign(insertPayload, mutationPayload);
-      }
-
-      const { error: insertError } = await client.from(table).insert(insertPayload);
-      if (insertError) {
-        if (table === "boulder_combination_exercises" && insertError.code === "23505") {
-          acknowledgedOpIds.push(mutation.opId);
-          continue;
-        }
-        failed.push({ opId: mutation.opId, reason: "insert_failed" });
+      if (
+        shouldAcknowledgeNoOp({
+          existing,
+          mutationType: mutation.type,
+          mutationPayload
+        })
+      ) {
+        acknowledgedOpIds.push(mutation.opId);
+        noopCount += 1;
         continue;
       }
 
-      acknowledgedOpIds.push(mutation.opId);
-      continue;
+      const updatePayload: Record<string, unknown> = {
+        updated_at_client: mutation.updatedAtClient ?? null,
+        last_op_id: mutation.opId
+      };
+      if (mutation.type === "delete") {
+        updatePayload.is_deleted = true;
+      } else if (mutationPayload) {
+        Object.assign(updatePayload, mutationPayload);
+        updatePayload.is_deleted = false;
+      }
+      updates.push({ opId: mutation.opId, entityId: mutation.entityId, payload: updatePayload });
     }
 
-    if (mutation.baseVersion !== existing.version) {
-      const { data: serverDoc } = await client
-        .from(table)
-        .select("*")
-        .eq("id", mutation.entityId)
-        .eq("owner_id", userId)
-        .maybeSingle();
-
-      conflicts.push({
-        opId: mutation.opId,
-        entity: table,
-        entityId: mutation.entityId,
-        reason: "version_mismatch",
-        serverVersion: existing.version,
-        serverDoc
-      });
-      continue;
+    if (inserts.length > 0) {
+      const { error: bulkInsertError } = await client.from(entity).insert(inserts.map((entry) => entry.payload));
+      if (!bulkInsertError) {
+        insertedCount += inserts.length;
+        acknowledgedOpIds.push(...inserts.map((entry) => entry.opId));
+      } else {
+        for (const insertEntry of inserts) {
+          const { error: insertError } = await client.from(entity).insert(insertEntry.payload);
+          if (insertError) {
+            if (entity === "boulder_combination_exercises" && insertError.code === "23505") {
+              acknowledgedOpIds.push(insertEntry.opId);
+              continue;
+            }
+            failed.push({ opId: insertEntry.opId, reason: "insert_failed" });
+            continue;
+          }
+          insertedCount += 1;
+          acknowledgedOpIds.push(insertEntry.opId);
+        }
+      }
     }
 
-    const updatePayload: Record<string, unknown> = {
-      updated_at_client: mutation.updatedAtClient ?? null,
-      last_op_id: mutation.opId
-    };
+    if (updates.length > 0) {
+      const updateResults = await Promise.all(updates.map(async (updateEntry) => {
+        const { error: updateError } = await client
+          .from(entity)
+          .update(updateEntry.payload)
+          .eq("id", updateEntry.entityId)
+          .eq("owner_id", userId);
+        return { opId: updateEntry.opId, error: updateError };
+      }));
 
-    if (mutation.type === "delete") {
-      updatePayload.is_deleted = true;
-    } else if (mutationPayload) {
-      Object.assign(updatePayload, mutationPayload);
-      updatePayload.is_deleted = false;
+      for (const updateResult of updateResults) {
+        if (updateResult.error) {
+          failed.push({ opId: updateResult.opId, reason: "update_failed" });
+          continue;
+        }
+        updatedCount += 1;
+        acknowledgedOpIds.push(updateResult.opId);
+      }
     }
-
-    const { error: updateError } = await client
-      .from(table)
-      .update(updatePayload)
-      .eq("id", mutation.entityId)
-      .eq("owner_id", userId);
-
-    if (updateError) {
-      failed.push({ opId: mutation.opId, reason: "update_failed" });
-      continue;
-    }
-
-    acknowledgedOpIds.push(mutation.opId);
   }
 
   return jsonResponse(req, {
     acknowledgedOpIds,
     conflicts,
     failed,
+    processedCount: body.mutations.length,
+    acknowledgedCount: acknowledgedOpIds.length,
+    noopCount,
+    insertedCount,
+    updatedCount,
+    failedCount: failed.length,
+    conflictCount: conflicts.length,
+    durationMs: Date.now() - startedAt,
     newCursor: new Date().toISOString()
   });
 }
@@ -323,6 +387,60 @@ type MutationValidationResult =
   | { ok: true; payload?: Record<string, unknown> }
   | { ok: false; reason: string };
 
+function shouldAcknowledgeNoOp({
+  existing,
+  mutationType,
+  mutationPayload
+}: {
+  existing: Record<string, unknown>;
+  mutationType: MutationType;
+  mutationPayload?: Record<string, unknown>;
+}): boolean {
+  const isDeleted = existing.is_deleted === true;
+  if (mutationType === "delete") {
+    return isDeleted;
+  }
+
+  if (isDeleted) {
+    return false;
+  }
+
+  const payload = mutationPayload ?? {};
+  for (const [key, incomingValue] of Object.entries(payload)) {
+    if (!areValuesEquivalent(existing[key], incomingValue)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areValuesEquivalent(lhs: unknown, rhs: unknown): boolean {
+  return JSON.stringify(normalizeForComparison(lhs)) === JSON.stringify(normalizeForComparison(rhs));
+}
+
+function normalizeForComparison(value: unknown): unknown {
+  if (value === undefined) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeForComparison(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const objectValue = value as Record<string, unknown>;
+    result[key] = normalizeForComparison(objectValue[key]);
+  }
+  return result;
+}
+
 const ENTITY_FIELD_ALLOWLIST: Record<EntityName, readonly string[]> = {
   plan_kinds: ["key", "name", "total_weeks", "is_repeating", "display_order"],
   day_types: ["key", "name", "display_order", "color_key", "is_default", "is_hidden"],
@@ -344,8 +462,6 @@ const ENTITY_FIELD_ALLOWLIST: Record<EntityName, readonly string[]> = {
   session_items: ["session_id", "source_tag", "exercise_name", "sort_order", "plan_source_id", "plan_name", "reps", "sets", "weight_kg", "grade", "notes", "duration"],
   timer_templates: ["name", "template_description", "total_time_seconds", "is_repeating", "repeat_count", "rest_time_between_intervals", "created_date", "last_used_date", "use_count"],
   timer_intervals: ["timer_template_id", "name", "work_time_seconds", "rest_time_seconds", "repetitions", "display_order"],
-  timer_sessions: ["start_date", "end_date", "timer_template_id", "template_name", "plan_day_id", "total_elapsed_seconds", "completed_intervals", "was_completed", "daily_notes"],
-  timer_laps: ["timer_session_id", "lap_number", "timestamp", "elapsed_seconds", "notes"],
   climb_entries: [
     "climb_type",
     "rope_climb_type",
@@ -380,8 +496,6 @@ const REQUIRED_UPSERT_FIELDS: Partial<Record<EntityName, readonly string[]>> = {
   session_items: ["exercise_name"],
   timer_templates: ["name", "created_date", "is_repeating", "use_count"],
   timer_intervals: ["name", "work_time_seconds", "rest_time_seconds", "repetitions"],
-  timer_sessions: ["start_date", "total_elapsed_seconds", "completed_intervals", "was_completed"],
-  timer_laps: ["lap_number", "timestamp", "elapsed_seconds"],
   climb_entries: ["climb_type", "grade", "style", "gym", "date_logged", "is_work_in_progress"],
   climb_styles: ["name", "is_default"],
   climb_gyms: ["name", "is_default"]
@@ -457,13 +571,25 @@ async function validateParentReferences(args: {
     return null;
   }
 
-  const parentChecks: Array<Promise<boolean>> = [];
+  const parentChecks = collectParentChecks(entity, payload);
 
+  if (parentChecks.length === 0) {
+    return null;
+  }
+
+  const results = await Promise.all(parentChecks.map((check) => validateOwnerLinkedRow(client, userId, check.table, check.id)));
+  return results.every(Boolean) ? null : "invalid_parent_reference";
+}
+
+function collectParentChecks(entity: EntityName, payload?: Record<string, unknown>): Array<{ table: EntityName; id: string }> {
+  if (!payload) {
+    return [];
+  }
+  const checks: Array<{ table: EntityName; id: string }> = [];
   const pushCheck = (table: EntityName, value: unknown) => {
-    if (typeof value !== "string" || value.length < 10) {
-      return;
+    if (typeof value === "string" && value.length >= 10) {
+      checks.push({ table, id: value });
     }
-    parentChecks.push(validateOwnerLinkedRow(client, userId, table, value));
   };
 
   switch (entity) {
@@ -493,23 +619,10 @@ async function validateParentReferences(args: {
     case "timer_intervals":
       pushCheck("timer_templates", payload.timer_template_id);
       break;
-    case "timer_sessions":
-      pushCheck("timer_templates", payload.timer_template_id);
-      pushCheck("plan_days", payload.plan_day_id);
-      break;
-    case "timer_laps":
-      pushCheck("timer_sessions", payload.timer_session_id);
-      break;
     default:
       break;
   }
-
-  if (parentChecks.length === 0) {
-    return null;
-  }
-
-  const results = await Promise.all(parentChecks);
-  return results.every(Boolean) ? null : "invalid_parent_reference";
+  return checks;
 }
 
 async function validateOwnerLinkedRow(

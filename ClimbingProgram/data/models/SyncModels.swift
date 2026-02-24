@@ -15,6 +15,7 @@ final class SyncState {
     var deviceId: String = UUID().uuidString
     var lastCursor: String? = nil
     var lastSuccessfulSyncAt: Date? = nil
+    var lastBootstrapSnapshotAt: Date? = nil
     var isSyncEnabled: Bool = false
     var didBootstrapLocalSnapshot: Bool = false
 
@@ -24,6 +25,7 @@ final class SyncState {
         deviceId: String = UUID().uuidString,
         lastCursor: String? = nil,
         lastSuccessfulSyncAt: Date? = nil,
+        lastBootstrapSnapshotAt: Date? = nil,
         isSyncEnabled: Bool = false,
         didBootstrapLocalSnapshot: Bool = false
     ) {
@@ -32,6 +34,7 @@ final class SyncState {
         self.deviceId = deviceId
         self.lastCursor = lastCursor
         self.lastSuccessfulSyncAt = lastSuccessfulSyncAt
+        self.lastBootstrapSnapshotAt = lastBootstrapSnapshotAt
         self.isSyncEnabled = isSyncEnabled
         self.didBootstrapLocalSnapshot = didBootstrapLocalSnapshot
     }

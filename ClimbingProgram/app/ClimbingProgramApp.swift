@@ -45,7 +45,9 @@ struct ClimbingProgramApp: App {
                 Task { await authManager.handleAppDidBecomeActive() }
             case .background:
                 SyncBackgroundRefreshScheduler.scheduleNextRefresh()
+                authManager.handleAppDidEnterBackground()
             case .inactive:
+                authManager.handleAppDidEnterBackground()
                 break
             @unknown default:
                 break

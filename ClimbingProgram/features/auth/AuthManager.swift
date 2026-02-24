@@ -32,6 +32,8 @@ final class AuthManager {
     private var syncManager: SyncManager?
     private let foregroundSyncDebouncer = SyncDebouncer()
     private let syncTokenRefreshLeadTime: TimeInterval = 120
+    private var foregroundSyncHeartbeatTask: Task<Void, Never>?
+    private let foregroundSyncHeartbeatInterval: Duration = .seconds(30)
 
     private init() {}
 
@@ -122,10 +124,12 @@ final class AuthManager {
             userID = session.userID
             state = .signedIn(email: session.email)
             await syncManager.setSyncEnabled(isSyncAvailable, userId: session.userID)
+            startForegroundSyncHeartbeatIfNeeded()
         } catch {
             try? await sessionStore.clearSession()
             try? await syncStore.prepareForSignedOutState(clearPendingMutations: true)
             await syncManager.setSyncEnabled(false, userId: nil)
+            stopForegroundSyncHeartbeat()
             userID = nil
             state = .signedOut
         }
@@ -146,6 +150,7 @@ final class AuthManager {
             userID = session.userID
             state = .signedIn(email: session.email)
             await syncManager.setSyncEnabled(isSyncAvailable, userId: session.userID)
+            startForegroundSyncHeartbeatIfNeeded()
             return true
         } catch {
             state = .failed(error.localizedDescription)
@@ -166,6 +171,7 @@ final class AuthManager {
         try? await sessionStore.clearSession()
         try? await syncStore.prepareForSignedOutState(clearPendingMutations: true)
         await syncManager.setSyncEnabled(false, userId: nil)
+        stopForegroundSyncHeartbeat()
         userID = nil
         state = .signedOut
     }
@@ -205,6 +211,11 @@ final class AuthManager {
         await foregroundSyncDebouncer.schedule(after: .seconds(1)) { [weak self] in
             await self?.syncManager?.runSyncNow(reason: "foreground_active")
         }
+        startForegroundSyncHeartbeatIfNeeded()
+    }
+
+    func handleAppDidEnterBackground() {
+        stopForegroundSyncHeartbeat()
     }
 
     func handleBackgroundRefreshTask() async {
@@ -236,5 +247,25 @@ final class AuthManager {
             throw SupabaseSessionStoreError.missingAccessToken
         }
         return session.accessToken
+    }
+
+    private func startForegroundSyncHeartbeatIfNeeded() {
+        guard foregroundSyncHeartbeatTask == nil else { return }
+        guard isSyncAvailable else { return }
+        guard isSignedIn else { return }
+
+        foregroundSyncHeartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                try? await Task.sleep(for: self.foregroundSyncHeartbeatInterval)
+                guard self.isSignedIn, self.isSyncAvailable else { continue }
+                await self.syncManager?.runSyncNow(reason: "foreground_heartbeat")
+            }
+        }
+    }
+
+    private func stopForegroundSyncHeartbeat() {
+        foregroundSyncHeartbeatTask?.cancel()
+        foregroundSyncHeartbeatTask = nil
     }
 }

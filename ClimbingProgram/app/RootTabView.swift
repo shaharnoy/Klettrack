@@ -162,6 +162,9 @@ struct RootTabView: View {
             runOnce(per: "sync_v2_relationship_backfill_2026-02-14") {
                 backfillSyncV2RelationshipsAndMetadata(context)
             }
+            runOnce(per: "plan_sync_integrity_backfill_2026-02-24") {
+                backfillPlanSyncIntegrity(context)
+            }
             runOnce(per: "daytypedefaultflags_backfill_2025-11-08") {
                 backfillDefaultFlags(context)
             }
