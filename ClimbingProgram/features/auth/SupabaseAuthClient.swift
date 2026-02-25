@@ -8,24 +8,59 @@
 import Foundation
 
 enum SupabaseAuthError: Error, Sendable, LocalizedError {
-    case invalidConfiguration
+    enum UnauthorizedReason: Sendable {
+        case credentialsInvalid
+        case sessionInvalid
+        case unknown
+    }
+
     case invalidResponse
-    case unauthorized
+    case unauthorized(reason: UnauthorizedReason)
+    case transientNetwork
+    case transientServer(statusCode: Int)
+    case requestFailed(statusCode: Int, reason: String?)
     case signInFailed
     case usernameResolutionFailed
 
     var errorDescription: String? {
         switch self {
-        case .invalidConfiguration:
-            return "Supabase auth configuration is missing."
         case .invalidResponse:
             return "Supabase auth returned an invalid response."
-        case .unauthorized:
-            return "Authentication failed. Check your credentials."
+        case .unauthorized(let reason):
+            switch reason {
+            case .credentialsInvalid:
+                return "Authentication failed. Check your credentials."
+            case .sessionInvalid:
+                return "Your session has expired. Please sign in again."
+            case .unknown:
+                return "Authentication failed."
+            }
+        case .transientNetwork:
+            return "Unable to reach authentication service. Check your connection and try again."
+        case .transientServer:
+            return "Authentication service is temporarily unavailable. Please try again."
+        case .requestFailed(_, let reason):
+            return reason ?? "Supabase auth request failed."
         case .signInFailed:
             return "Unable to sign in with Supabase Auth."
         case .usernameResolutionFailed:
             return "Unable to resolve username to email."
+        }
+    }
+
+    var requiresReauthentication: Bool {
+        if case .unauthorized(reason: .sessionInvalid) = self {
+            return true
+        }
+        return false
+    }
+
+    var isTransient: Bool {
+        switch self {
+        case .transientNetwork, .transientServer:
+            return true
+        default:
+            return false
         }
     }
 }
@@ -36,6 +71,13 @@ struct SupabaseAuthUser: Decodable, Sendable {
 }
 
 actor SupabaseAuthClient {
+    private enum Endpoint {
+        case signIn
+        case refresh
+        case fetchUser
+        case usernameResolver
+    }
+
     private let configuration: SupabaseAuthConfiguration
     private let session: URLSession
 
@@ -71,15 +113,12 @@ actor SupabaseAuthClient {
         ]
         request.httpBody = try JSONEncoder().encode(payload)
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await performRequest(request)
         guard let http = response as? HTTPURLResponse else {
             throw SupabaseAuthError.invalidResponse
         }
-        if http.statusCode == 400 || http.statusCode == 401 {
-            throw SupabaseAuthError.unauthorized
-        }
         guard 200..<300 ~= http.statusCode else {
-            throw SupabaseAuthError.signInFailed
+            throw mapHTTPError(statusCode: http.statusCode, data: data, endpoint: .signIn)
         }
 
         let decoded = try JSONDecoder().decode(TokenResponse.self, from: data)
@@ -99,12 +138,12 @@ actor SupabaseAuthClient {
         request.setValue(configuration.publishableKey, forHTTPHeaderField: "apikey")
         request.httpBody = try JSONEncoder().encode(["refresh_token": refreshToken])
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await performRequest(request)
         guard let http = response as? HTTPURLResponse else {
             throw SupabaseAuthError.invalidResponse
         }
         guard 200..<300 ~= http.statusCode else {
-            throw SupabaseAuthError.unauthorized
+            throw mapHTTPError(statusCode: http.statusCode, data: data, endpoint: .refresh)
         }
 
         let decoded = try JSONDecoder().decode(TokenResponse.self, from: data)
@@ -122,12 +161,12 @@ actor SupabaseAuthClient {
         request.setValue(configuration.publishableKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await performRequest(request)
         guard let http = response as? HTTPURLResponse else {
             throw SupabaseAuthError.invalidResponse
         }
         guard 200..<300 ~= http.statusCode else {
-            throw SupabaseAuthError.unauthorized
+            throw mapHTTPError(statusCode: http.statusCode, data: data, endpoint: .fetchUser)
         }
 
         return try JSONDecoder().decode(SupabaseAuthUser.self, from: data)
@@ -169,17 +208,134 @@ actor SupabaseAuthClient {
         request.httpMethod = "GET"
         request.setValue(configuration.publishableKey, forHTTPHeaderField: "apikey")
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await performRequest(request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            if let http = response as? HTTPURLResponse {
+                throw mapHTTPError(statusCode: http.statusCode, data: data, endpoint: .usernameResolver)
+            }
             throw SupabaseAuthError.usernameResolutionFailed
         }
         let payload = try JSONDecoder().decode(UsernameResolutionResponse.self, from: data)
         return payload.email
     }
+
+    private func performRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch is CancellationError {
+            throw SupabaseAuthError.transientNetwork
+        } catch let urlError as URLError {
+            switch urlError.code {
+            case .notConnectedToInternet,
+                    .networkConnectionLost,
+                    .cannotFindHost,
+                    .cannotConnectToHost,
+                    .dnsLookupFailed,
+                    .timedOut,
+                    .internationalRoamingOff,
+                    .callIsActive,
+                    .dataNotAllowed:
+                throw SupabaseAuthError.transientNetwork
+            default:
+                throw SupabaseAuthError.requestFailed(statusCode: 0, reason: urlError.localizedDescription)
+            }
+        } catch {
+            throw SupabaseAuthError.requestFailed(statusCode: 0, reason: error.localizedDescription)
+        }
+    }
+
+    private func mapHTTPError(statusCode: Int, data: Data, endpoint: Endpoint) -> SupabaseAuthError {
+        let payload = decodeErrorPayload(from: data)
+        let reasonText = payload?.reasonText
+        let normalizedReason = reasonText?.localizedLowercase ?? ""
+
+        if statusCode >= 500 {
+            return .transientServer(statusCode: statusCode)
+        }
+
+        if endpoint == .signIn && (statusCode == 400 || statusCode == 401 || statusCode == 403) {
+            return .unauthorized(reason: .credentialsInvalid)
+        }
+
+        if endpoint == .refresh {
+            if statusCode == 400 || statusCode == 401 || statusCode == 403 {
+                if normalizedReason.localizedStandardContains("refresh token")
+                    || normalizedReason.localizedStandardContains("invalid_grant")
+                    || normalizedReason.localizedStandardContains("session not found") {
+                    return .unauthorized(reason: .sessionInvalid)
+                }
+                return .unauthorized(reason: .unknown)
+            }
+        }
+
+        if endpoint == .fetchUser && (statusCode == 401 || statusCode == 403) {
+            if normalizedReason.localizedStandardContains("session not found")
+                || normalizedReason.localizedStandardContains("jwt expired")
+                || normalizedReason.localizedStandardContains("invalid jwt") {
+                return .unauthorized(reason: .sessionInvalid)
+            }
+            return .unauthorized(reason: .unknown)
+        }
+
+        if statusCode == 429 {
+            return .transientServer(statusCode: statusCode)
+        }
+
+        if endpoint == .usernameResolver {
+            return .usernameResolutionFailed
+        }
+
+        if endpoint == .signIn {
+            return .signInFailed
+        }
+
+        return .requestFailed(statusCode: statusCode, reason: reasonText)
+    }
+
+    private func decodeErrorPayload(from data: Data) -> AuthErrorPayload? {
+        guard !data.isEmpty else { return nil }
+        return try? JSONDecoder().decode(AuthErrorPayload.self, from: data)
+    }
 }
 
 private struct UsernameResolutionResponse: Decodable {
     let email: String
+}
+
+private struct AuthErrorPayload: Decodable {
+    let error: String?
+    let errorDescription: String?
+    let code: String?
+    let message: String?
+    let msg: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case error
+        case errorDescription = "error_description"
+        case code
+        case message
+        case msg
+    }
+
+    var reasonText: String? {
+        firstNonEmpty([
+            errorDescription,
+            message,
+            msg,
+            error,
+            code
+        ])
+    }
+
+    private func firstNonEmpty(_ values: [String?]) -> String? {
+        for value in values {
+            guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+                continue
+            }
+            return trimmed
+        }
+        return nil
+    }
 }
 
 private struct TokenResponse: Decodable {
