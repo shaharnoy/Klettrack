@@ -989,8 +989,8 @@ struct PlanDayEditor: View {
             let o1 = day.exerciseOrder[name1]
             let o2 = day.exerciseOrder[name2]
             if let o1, let o2, o1 != o2 { return o1 < o2 }
-            if let o1 { return true }
-            if let o2 { return false }
+            if o1 != nil { return true }
+            if o2 != nil { return false }
 
             let isLogged1 = isExerciseQuickLogged(name: name1)
             let isLogged2 = isExerciseQuickLogged(name: name2)
