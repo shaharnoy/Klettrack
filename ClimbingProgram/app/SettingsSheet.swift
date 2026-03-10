@@ -13,10 +13,14 @@ struct SettingsSheet: View {
         var id: String { rawValue }
     }
 
+    @Environment(\.openURL) private var openURL
     @State private var sheetRoute: SheetRoute?
 
     @State private var hasRequestedReviewThisSession = false
     @AppStorage(FeatureFlags.klettrackWebSettings) private var klettrackWebSettings = false
+
+    private let appStoreReviewURL = URL(string: "itms-apps://apps.apple.com/app/id6754015176?action=write-review")
+    private let webReviewURL = URL(string: "https://apps.apple.com/app/id6754015176?action=write-review")
     
     var body: some View {
         List {
@@ -145,10 +149,7 @@ struct SettingsSheet: View {
                 //rate the app
                 Button {
                     if !hasRequestedReviewThisSession {
-                        if let url = URL(string: "itms-apps://apps.apple.com/app/id6754015176?action=write-review") {
-                            UIApplication.shared.open(url)
-                            hasRequestedReviewThisSession = true
-                        }
+                        openReviewPage()
                     }
                 } label: {
                     HStack(spacing: 8) {
@@ -225,6 +226,23 @@ struct SettingsSheet: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { sheetRoute = nil }
                     }
+                }
+            }
+        }
+    }
+
+    private func openReviewPage() {
+        guard let appStoreReviewURL, let webReviewURL else { return }
+
+        openURL(appStoreReviewURL) { accepted in
+            if accepted {
+                hasRequestedReviewThisSession = true
+                return
+            }
+
+            openURL(webReviewURL) { webAccepted in
+                if webAccepted {
+                    hasRequestedReviewThisSession = true
                 }
             }
         }
