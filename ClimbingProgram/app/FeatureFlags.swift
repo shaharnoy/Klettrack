@@ -10,6 +10,7 @@ enum FeatureFlags {
     static let forcePreferMyGradeInProgress = "featureFlag.forcePreferMyGradeInProgress"
     static let showNotesWhenGymMissing = "featureFlag.showNotesWhenGymMissing"
     static let persistProgressFilters = "featureFlag.persistProgressFilters"
+    static let klettrackWebSettings = "featureFlag.klettrackWebSettings"
 }
 
 enum FeatureFlagRules {
