@@ -40,50 +40,48 @@ struct CatalogView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(activities) { activity in
-                        activityCard(for: activity)
-                    }
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(activities) { activity in
+                    activityCard(for: activity)
+                }
 
-                    Button {
-                        guard isDataReady else { return }
-                        draftActivityName = ""
-                        sheetRoute = .newActivity
-                    } label: {
-                        Label("Add Category", systemImage: "plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.accentColor)
-                    .padding(.top, 6)
-                    .disabled(!isDataReady)
+                Button {
+                    guard isDataReady else { return }
+                    draftActivityName = ""
+                    sheetRoute = .newActivity
+                } label: {
+                    Label("Add Category", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+                .padding(.top, 6)
+                .disabled(!isDataReady)
             }
-            // New Category
-            .sheet(item: $sheetRoute) { route in
-                switch route {
-                case .newActivity:
-                NameOnlySheet(title: "New Category", placeholder: "e.g. Core, Antagonist & Stabilizer…", name: $draftActivityName) {
-                    guard !draftActivityName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                    let a = Activity(name: draftActivityName.trimmingCharacters(in: .whitespaces))
-                    SyncLocalMutation.touch(a)
-                    context.insert(a)
-                    try? context.save()
-                }
-                }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        // New Category
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .newActivity:
+            NameOnlySheet(title: "New Category", placeholder: "e.g. Core, Antagonist & Stabilizer…", name: $draftActivityName) {
+                guard !draftActivityName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                let a = Activity(name: draftActivityName.trimmingCharacters(in: .whitespaces))
+                SyncLocalMutation.touch(a)
+                context.insert(a)
+                try? context.save()
             }
+            }
+        }
 
-            // Rename Category
-            .sheet(item: $renamingActivity) { toRename in
-                NameOnlySheet(title: "Rename Category", placeholder: "New name", name: $draftActivityName) {
-                    toRename.name = draftActivityName.trimmingCharacters(in: .whitespaces)
-                    SyncLocalMutation.touch(toRename)
-                    try? context.save()
-                }
+        // Rename Category
+        .sheet(item: $renamingActivity) { toRename in
+            NameOnlySheet(title: "Rename Category", placeholder: "New name", name: $draftActivityName) {
+                toRename.name = draftActivityName.trimmingCharacters(in: .whitespaces)
+                SyncLocalMutation.touch(toRename)
+                try? context.save()
             }
         }
         .navigationTitle("CATALOG")
@@ -525,6 +523,7 @@ struct TrainingTypeDetailView: View {
         draftNotes = ex.notes ?? ""
         editingExercise = ex
     }
+
 }
 
 // MARK: - Combination detail (Bouldering)

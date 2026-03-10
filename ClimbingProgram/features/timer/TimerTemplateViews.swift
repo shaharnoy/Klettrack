@@ -804,6 +804,14 @@ struct TimerTemplateEditor: View {
                             showingDeleteConfirmation = true
                         }
                         .foregroundStyle(.red)
+                        .confirmationDialog("Delete Template", isPresented: $showingDeleteConfirmation) {
+                            Button("Delete", role: .destructive) {
+                                deleteTemplate()
+                            }
+                            Button("Cancel", role: .cancel) { }
+                        } message: {
+                            Text("Are you sure you want to delete this template? This action cannot be undone.")
+                        }
                     }
                 }
             }
@@ -820,14 +828,6 @@ struct TimerTemplateEditor: View {
                     }
                     .disabled(!isValidTemplate)
                 }
-            }
-            .confirmationDialog("Delete Template", isPresented: $showingDeleteConfirmation) {
-                Button("Delete", role: .destructive) {
-                    deleteTemplate()
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("Are you sure you want to delete this template? This action cannot be undone.")
             }
         }
         .onAppear {

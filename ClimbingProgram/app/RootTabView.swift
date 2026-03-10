@@ -122,7 +122,9 @@ struct RootTabView: View {
         .sheet(item: $sheetRoute) { route in
             switch route {
             case .settings:
-                SettingsSheet()
+                NavigationStack {
+                    SettingsSheet()
+                }
             }
         }
     }

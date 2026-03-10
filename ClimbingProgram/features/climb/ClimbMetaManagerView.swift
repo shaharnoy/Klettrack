@@ -59,9 +59,7 @@ struct ClimbMetaManagerView: View {
     @State private var changingDayColor: DayTypeModel? = nil
 
     var body: some View {
-        NavigationStack {
-            mainList
-        }
+        mainList
     }
     
     private var mainList: some View {

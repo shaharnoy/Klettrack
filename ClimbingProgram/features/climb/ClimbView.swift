@@ -178,29 +178,10 @@ struct ClimbView: View {
     }
     
     var body: some View {
-        NavigationStack {
-            if climbEntries.isEmpty { // base dataset empty (not just filters)
-                emptyStateCard
-            } else {
-                List {
-                    filterSection
-                    addClimbSection
-                    climbsSection
-                }
-                .listStyle(.plain)
-                .listRowSpacing(4)
-                .scrollContentBackground(.hidden)
-                .padding(.horizontal, 16)
-            }
-        }
+        content
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    onSyncTapped()
-                } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                }
-                .disabled(!isDataReady || isSyncing)
+                syncToolbarButton
             }
 
             // Replaces the old lock button
@@ -347,12 +328,6 @@ struct ClimbView: View {
                 .padding(.bottom, 12)
             }
         }
-        // Board picker dialog
-        .confirmationDialog("Sync", isPresented: $showingBoardPicker, titleVisibility: .visible) {
-            Button("TB2") { startSync(board: .tension) }
-            Button("Kilter") { startSync(board: .kilter) }
-            Button("Cancel", role: .cancel) { }
-        }
         // Attach the scene's UndoManager to SwiftData and also to our delete handler
         .onAppear {
             dumpUndoContext("onAppear.before")
@@ -379,6 +354,37 @@ struct ClimbView: View {
         }
         .task(id: climbFilterVersion) {
             filteredClimbs = buildFilteredClimbs()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if climbEntries.isEmpty { // base dataset empty (not just filters)
+            emptyStateCard
+        } else {
+            List {
+                filterSection
+                addClimbSection
+                climbsSection
+            }
+            .listStyle(.plain)
+            .listRowSpacing(4)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private var syncToolbarButton: some View {
+        Button {
+            onSyncTapped()
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath")
+        }
+        .disabled(!isDataReady || isSyncing)
+        .confirmationDialog("Sync", isPresented: $showingBoardPicker, titleVisibility: .visible) {
+            Button("TB2") { startSync(board: .tension) }
+            Button("Kilter") { startSync(board: .kilter) }
+            Button("Cancel", role: .cancel) { }
         }
     }
     

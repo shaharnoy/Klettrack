@@ -44,6 +44,7 @@ struct FeatureFlagsView: View {
                             .lineLimit(2)
                     }
                 }
+
                 Toggle(isOn: $klettrackWebSettings) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("klettrack Web")
