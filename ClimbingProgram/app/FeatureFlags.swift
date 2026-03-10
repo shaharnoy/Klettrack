@@ -11,6 +11,10 @@ enum FeatureFlags {
     static let showNotesWhenGymMissing = "featureFlag.showNotesWhenGymMissing"
     static let persistProgressFilters = "featureFlag.persistProgressFilters"
     static let klettrackWebSettings = "featureFlag.klettrackWebSettings"
+
+    static var isKlettrackWebSettingsEnabled: Bool {
+        UserDefaults.standard.bool(forKey: klettrackWebSettings)
+    }
 }
 
 enum FeatureFlagRules {

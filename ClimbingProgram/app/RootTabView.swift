@@ -184,8 +184,10 @@ struct RootTabView: View {
             // Ensure all changes are committed
             try context.save()
 
-            authManager.configureIfNeeded(modelContainer: context.container)
-            await authManager.restoreSession()
+            if FeatureFlags.isKlettrackWebSettingsEnabled {
+                authManager.configureIfNeeded(modelContainer: context.container)
+                await authManager.restoreSession()
+            }
             
             // Additional delay to ensure everything is settled
             try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds

@@ -66,10 +66,17 @@ final class AuthManager {
     }
 
     var isSyncAvailable: Bool {
-        isConfigured
+        FeatureFlags.isKlettrackWebSettingsEnabled && isConfigured
     }
 
     func configureIfNeeded(modelContainer: ModelContainer) {
+        guard FeatureFlags.isKlettrackWebSettingsEnabled else {
+            stopForegroundSyncHeartbeat()
+            state = .signedOut
+            userID = nil
+            restoreWarning = nil
+            return
+        }
         guard !isConfigured else { return }
         guard let configuration = SupabaseAuthConfiguration.load() else {
             state = .unconfigured
@@ -167,6 +174,10 @@ final class AuthManager {
 
     @discardableResult
     func signIn(identifier: String, password: String) async -> Bool {
+        guard FeatureFlags.isKlettrackWebSettingsEnabled else {
+            state = .signedOut
+            return false
+        }
         guard let sessionStore, let authClient, let syncManager else {
             state = .unconfigured
             return false
