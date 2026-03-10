@@ -41,17 +41,28 @@ private struct ExerciseSelection: Identifiable, Equatable {
     var id: String { name }
 }
 
+private enum LogNavigationRoute: Hashable {
+    case day(Date)
+    case session(UUID)
+    case editItem(UUID)
+}
+
 // MARK: - Log (list of sessions)
 
 struct LogView: View {
     private enum ModalRoute: Hashable {
-        case newSession
         case exportCSV
         case importCSV
     }
 
+    private enum SheetRoute: String, Identifiable {
+        case newSession
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.isDataReady) private var isDataReady
+    @Environment(TimerAppState.self) private var timerAppState
     @Query(
         filter: #Predicate<Session> { !$0.isSoftDeleted },
         sort: [SortDescriptor(\Session.date, order: .reverse)]
@@ -62,7 +73,7 @@ struct LogView: View {
     ) private var climbEntries: [ClimbEntry]
 
     @State private var modalRoute: ModalRoute?
-    @State private var navigationPath = NavigationPath()
+    @State private var sheetRoute: SheetRoute?
 
 
     // Export
@@ -80,34 +91,19 @@ struct LogView: View {
     @State private var resultMessage: String? = nil
 
     var body: some View {
-            NavigationStack(path: $navigationPath) {
-                CombinedLogList(sessions: sessions, climbEntries: climbEntries)
-                    .toolbar { trailingToolbar }
-                    .sheet(isPresented: newSessionPresentedBinding) {
-                        NewSessionSheet { createdDay in
-                            navigationPath.append(createdDay)
-                        }
+        CombinedLogList(sessions: sessions, climbEntries: climbEntries)
+            .toolbar { trailingToolbar }
+            .sheet(item: $sheetRoute) { route in
+                switch route {
+                case .newSession:
+                    NewSessionSheet { createdDay in
+                        timerAppState.logNavigationPath.append(LogNavigationRoute.day(createdDay))
                     }
-                    .navigationTitle("LOG")
-                    .navigationBarTitleDisplayMode(.large)
-                    .navigationDestination(for: Date.self) { day in
-                        let dayKey = Calendar.current.startOfDay(for: day)
-
-                        let sessionForDay = sessions.first(where: {
-                            Calendar.current.startOfDay(for: $0.date) == dayKey
-                        })
-
-                        let climbsForDay = climbEntries.filter {
-                            Calendar.current.startOfDay(for: $0.dateLogged) == dayKey
-                        }
-
-                        CombinedDayDetailView(
-                            date: dayKey,
-                            session: sessionForDay,
-                            climbEntries: climbsForDay
-                        )
-                    }
+                }
             }
+            .navigationTitle("LOG")
+            .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(for: LogNavigationRoute.self, destination: destinationView)
         // Exporter
         .fileExporter(
             isPresented: exportPresentedBinding,
@@ -144,13 +140,6 @@ struct LogView: View {
         .overlay { if importing { ImportProgressOverlay(progress: importProgress) } }
     }
 
-    private var newSessionPresentedBinding: Binding<Bool> {
-        Binding(
-            get: { modalRoute == .newSession },
-            set: { if !$0 { modalRoute = nil } }
-        )
-    }
-
     private var exportPresentedBinding: Binding<Bool> {
         Binding(
             get: { modalRoute == .exportCSV },
@@ -182,7 +171,7 @@ struct LogView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 guard isDataReady else { return }
-                modalRoute = .newSession
+                sheetRoute = .newSession
             } label: {
                 Image(systemName: "plus")
             }
@@ -266,6 +255,49 @@ struct LogView: View {
             resultMessage = "Import failed: \(error.localizedDescription)"
         }
     }
+
+    @ViewBuilder
+    private func destinationView(for route: LogNavigationRoute) -> some View {
+        switch route {
+        case .day(let day):
+            let dayKey = Calendar.current.startOfDay(for: day)
+            let sessionForDay = sessions.first(where: {
+                Calendar.current.startOfDay(for: $0.date) == dayKey
+            })
+            let climbsForDay = climbEntries.filter {
+                Calendar.current.startOfDay(for: $0.dateLogged) == dayKey
+            }
+
+            CombinedDayDetailView(
+                date: dayKey,
+                session: sessionForDay,
+                climbEntries: climbsForDay
+            )
+
+        case .session(let sessionID):
+            if let session = sessions.first(where: { $0.id == sessionID }) {
+                SessionDetailView(session: session)
+            } else {
+                Text("Session not found")
+            }
+
+        case .editItem(let itemID):
+            if let item = sessionItem(withID: itemID) {
+                EditSessionItemView(item: item)
+            } else {
+                Text("Exercise not found")
+            }
+        }
+    }
+
+    private func sessionItem(withID itemID: UUID) -> SessionItem? {
+        for session in sessions {
+            if let item = session.items.first(where: { $0.id == itemID && !$0.isSoftDeleted }) {
+                return item
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: - Subviews kept tiny (helps the type-checker)
@@ -277,7 +309,7 @@ private struct SessionsList: View {
     var body: some View {
         List {
             ForEach(sessions) { s in
-                NavigationLink { SessionDetailView(session: s) } label: {
+                NavigationLink(value: LogNavigationRoute.session(s.id)) {
                     SessionRow(session: s)
                 }
             }
@@ -732,9 +764,7 @@ struct SessionDetailView: View {
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
-                            NavigationLink {
-                                EditSessionItemView(item: item)
-                            } label: {
+                            NavigationLink(value: LogNavigationRoute.editItem(item.id)) {
                                 Label("Edit", systemImage: "pencil")
                             }
                             .tint(.blue)
@@ -1041,13 +1071,7 @@ private struct CombinedLogList: View {
         List {
             ForEach(sortedDates, id: \.self) { date in
                 let dayData = groupedData[date]!
-                NavigationLink {
-                    CombinedDayDetailView(
-                        date: date,
-                        session: dayData.session,
-                        climbEntries: dayData.climbEntries
-                    )
-                } label: {
+                NavigationLink(value: LogNavigationRoute.day(date)) {
                     CombinedDayRow(
                         date: date,
                         exerciseCount: dayData.exercises,
@@ -1205,9 +1229,7 @@ private struct CombinedDayDetailView: View {
                                     Label("Delete", systemImage: "trash")
                                 }
                                 
-                                NavigationLink {
-                                    EditSessionItemView(item: item)
-                                } label: {
+                                NavigationLink(value: LogNavigationRoute.editItem(item.id)) {
                                     Label("Edit", systemImage: "pencil")
                                 }
                                 .tint(.blue)

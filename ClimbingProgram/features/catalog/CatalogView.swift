@@ -7,6 +7,18 @@
 import SwiftUI
 import SwiftData
 
+private enum CatalogRoute: Hashable {
+    case activity(UUID)
+}
+
+private enum ActivityDetailRoute: Hashable {
+    case trainingType(UUID)
+}
+
+private enum TrainingTypeDetailRoute: Hashable {
+    case combination(UUID)
+}
+
 // MARK: - Root Catalog (Categories = Activity)
 
 struct CatalogView: View {
@@ -40,60 +52,57 @@ struct CatalogView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(activities) { activity in
-                        activityCard(for: activity)
-                    }
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(activities) { activity in
+                    activityCard(for: activity)
+                }
 
-                    Button {
-                        guard isDataReady else { return }
-                        draftActivityName = ""
-                        sheetRoute = .newActivity
-                    } label: {
-                        Label("Add Category", systemImage: "plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.accentColor)
-                    .padding(.top, 6)
-                    .disabled(!isDataReady)
+                Button {
+                    guard isDataReady else { return }
+                    draftActivityName = ""
+                    sheetRoute = .newActivity
+                } label: {
+                    Label("Add Category", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+                .padding(.top, 6)
+                .disabled(!isDataReady)
             }
-            // New Category
-            .sheet(item: $sheetRoute) { route in
-                switch route {
-                case .newActivity:
-                NameOnlySheet(title: "New Category", placeholder: "e.g. Core, Antagonist & Stabilizer…", name: $draftActivityName) {
-                    guard !draftActivityName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                    let a = Activity(name: draftActivityName.trimmingCharacters(in: .whitespaces))
-                    SyncLocalMutation.touch(a)
-                    context.insert(a)
-                    try? context.save()
-                }
-                }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        // New Category
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .newActivity:
+            NameOnlySheet(title: "New Category", placeholder: "e.g. Core, Antagonist & Stabilizer…", name: $draftActivityName) {
+                guard !draftActivityName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                let a = Activity(name: draftActivityName.trimmingCharacters(in: .whitespaces))
+                SyncLocalMutation.touch(a)
+                context.insert(a)
+                try? context.save()
             }
+            }
+        }
 
-            // Rename Category
-            .sheet(item: $renamingActivity) { toRename in
-                NameOnlySheet(title: "Rename Category", placeholder: "New name", name: $draftActivityName) {
-                    toRename.name = draftActivityName.trimmingCharacters(in: .whitespaces)
-                    SyncLocalMutation.touch(toRename)
-                    try? context.save()
-                }
+        // Rename Category
+        .sheet(item: $renamingActivity) { toRename in
+            NameOnlySheet(title: "Rename Category", placeholder: "New name", name: $draftActivityName) {
+                toRename.name = draftActivityName.trimmingCharacters(in: .whitespaces)
+                SyncLocalMutation.touch(toRename)
+                try? context.save()
             }
         }
         .navigationTitle("CATALOG")
         .navigationBarTitleDisplayMode(.large)
+        .navigationDestination(for: CatalogRoute.self, destination: catalogDestination)
     }
     
     private func activityCard(for activity: Activity) -> some View {
-        NavigationLink {
-            ActivityDetailView(activity: activity)
-        } label: {
+        NavigationLink(value: CatalogRoute.activity(activity.id)) {
             let exerciseCount = totalExerciseCount(for: activity)
             let typeCountText = "\(activity.types.count) training type\(activity.types.count == 1 ? "" : "s")"
             let exerciseCountText = "\(exerciseCount) exercise\(exerciseCount == 1 ? "" : "s")"
@@ -118,6 +127,18 @@ struct CatalogView: View {
                 try? context.save()
             } label: {
                 Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func catalogDestination(for route: CatalogRoute) -> some View {
+        switch route {
+        case .activity(let activityID):
+            if let activity = activities.first(where: { $0.id == activityID }) {
+                ActivityDetailView(activity: activity)
+            } else {
+                Text("Category not found")
             }
         }
     }
@@ -148,9 +169,7 @@ struct ActivityDetailView: View {
         List {
             Section {
                 ForEach(activeTypes) { t in
-                    NavigationLink {
-                        TrainingTypeDetailView(trainingType: t, tint: activity.hue.color)
-                    } label: {
+                    NavigationLink(value: ActivityDetailRoute.trainingType(t.id)) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(t.name).font(.headline)
                             if let area = t.area, !area.isEmpty {
@@ -247,6 +266,19 @@ struct ActivityDetailView: View {
                 try? context.save()
             }
         }
+        .navigationDestination(for: ActivityDetailRoute.self, destination: activityDestination)
+    }
+
+    @ViewBuilder
+    private func activityDestination(for route: ActivityDetailRoute) -> some View {
+        switch route {
+        case .trainingType(let trainingTypeID):
+            if let trainingType = activeTypes.first(where: { $0.id == trainingTypeID }) {
+                TrainingTypeDetailView(trainingType: trainingType, tint: activity.hue.color)
+            } else {
+                Text("Training type not found")
+            }
+        }
     }
 }
 
@@ -325,9 +357,7 @@ struct TrainingTypeDetailView: View {
             if !SyncLocalMutation.active(trainingType.combinations).isEmpty {
                 Section("Combinations") {
                     ForEach(SyncLocalMutation.active(trainingType.combinations)) { combo in
-                        NavigationLink {
-                            CombinationDetailView(combo: combo, tint: tint)
-                        } label: {
+                        NavigationLink(value: TrainingTypeDetailRoute.combination(combo.id)) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(combo.name).font(.headline)
                                 if let cd = combo.comboDescription, !cd.isEmpty {
@@ -508,6 +538,7 @@ struct TrainingTypeDetailView: View {
                 try? context.save()
             }
         }
+        .navigationDestination(for: TrainingTypeDetailRoute.self, destination: trainingTypeDestination)
     }
 
     private func startNewExercise() {
@@ -524,6 +555,19 @@ struct TrainingTypeDetailView: View {
         draftRest = ex.restText ?? ""
         draftNotes = ex.notes ?? ""
         editingExercise = ex
+    }
+
+    @ViewBuilder
+    private func trainingTypeDestination(for route: TrainingTypeDetailRoute) -> some View {
+        switch route {
+        case .combination(let combinationID):
+            let combinations = SyncLocalMutation.active(trainingType.combinations)
+            if let combination = combinations.first(where: { $0.id == combinationID }) {
+                CombinationDetailView(combo: combination, tint: tint)
+            } else {
+                Text("Combination not found")
+            }
+        }
     }
 }
 

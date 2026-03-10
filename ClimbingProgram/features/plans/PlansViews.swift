@@ -122,64 +122,59 @@ struct PlansListView: View {
 
 
     var body: some View {
-        NavigationStack(path: Binding(
-            get: { timerAppState.plansNavigationPath },
-            set: { timerAppState.plansNavigationPath = $0 }
-        )) {
-            plansList
-                .listStyle(.insetGrouped)
-                .navigationTitle("TRAIN")
-                .navigationBarTitleDisplayMode(.large)
-                .plansDestinations(plans: plans, timerAppState: timerAppState)
-                .plansToolbar(
-                    isDataReady: isDataReady,
-                    showingNew: Binding(
-                        get: { sheetRoute == .newPlan },
-                        set: { newValue in
-                            if newValue {
-                                sheetRoute = .newPlan
-                            } else if sheetRoute == .newPlan {
-                                sheetRoute = nil
-                            }
+        plansList
+            .listStyle(.insetGrouped)
+            .navigationTitle("TRAIN")
+            .navigationBarTitleDisplayMode(.large)
+            .plansDestinations(plans: plans, timerAppState: timerAppState)
+            .plansToolbar(
+                isDataReady: isDataReady,
+                showingNew: Binding(
+                    get: { sheetRoute == .newPlan },
+                    set: { newValue in
+                        if newValue {
+                            sheetRoute = .newPlan
+                        } else if sheetRoute == .newPlan {
+                            sheetRoute = nil
                         }
-                    ),
-                    newPlanInitialMode: $newPlanInitialMode,
-                    showingPlanExportPicker: $showingPlanExportPicker
-                )
-                .sheet(item: $sheetRoute) { route in
-                    switch route {
-                    case .newPlan:
-                        NewPlanSheet(initialMode: newPlanInitialMode)
                     }
+                ),
+                newPlanInitialMode: $newPlanInitialMode,
+                showingPlanExportPicker: $showingPlanExportPicker
+            )
+            .sheet(item: $sheetRoute) { route in
+                switch route {
+                case .newPlan:
+                    NewPlanSheet(initialMode: newPlanInitialMode)
                 }
-                .fileExporter(
-                    isPresented: $showPlanExporter,
-                    document: planExportDoc,
-                    contentType: .commaSeparatedText,
-                    defaultFilename: planExportFilename
-                ) { result in
-                    switch result {
-                    case .success:
-                        resultMessage = "CSV exported."
-                    case .failure(let err):
-                        resultMessage = "Export failed: \(err.localizedDescription)"
-                    }
+            }
+            .fileExporter(
+                isPresented: $showPlanExporter,
+                document: planExportDoc,
+                contentType: .commaSeparatedText,
+                defaultFilename: planExportFilename
+            ) { result in
+                switch result {
+                case .success:
+                    resultMessage = "CSV exported."
+                case .failure(let err):
+                    resultMessage = "Export failed: \(err.localizedDescription)"
                 }
-                .sheet(isPresented: $showingPlanExportPicker) {
-                    PlanExportSelectionSheet(
-                        plans: plans,
-                        selectedPlanID: $selectedPlanForExportID
-                    ) { selectedPlanID in
-                        preparePlanExport(for: selectedPlanID)
-                    }
+            }
+            .sheet(isPresented: $showingPlanExportPicker) {
+                PlanExportSelectionSheet(
+                    plans: plans,
+                    selectedPlanID: $selectedPlanForExportID
+                ) { selectedPlanID in
+                    preparePlanExport(for: selectedPlanID)
                 }
-                .alert(resultMessage ?? "", isPresented: Binding(
-                    get: { resultMessage != nil },
-                    set: { if !$0 { resultMessage = nil } }
-                )) {
-                    Button("OK", role: .cancel) { }
-                }
-        }
+            }
+            .alert(resultMessage ?? "", isPresented: Binding(
+                get: { resultMessage != nil },
+                set: { if !$0 { resultMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { }
+            }
     }
 
     private var plansList: some View {
