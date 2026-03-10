@@ -15,20 +15,10 @@ struct FeatureFlagsView: View {
     var body: some View {
         List {
             Section {
-                Toggle(isOn: $klettrackWebSettings) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Enable Klettrack Web")
-                        Text("Shows the Klettrack Web settings entry on the main settings page.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-
                 Toggle(isOn: $forcePreferMyGradeInProgress) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Default Prefer My Grade (Progress)")
-                        Text("Turns on Prefer My Grade by default in Progress filters.")
+                        Text("Turns on Prefer My Grade by default in Progress filters")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -38,7 +28,7 @@ struct FeatureFlagsView: View {
                 Toggle(isOn: $showNotesWhenGymMissing) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Show Notes When Gym Missing")
-                        Text("In climb rows, show notes if gym is not selected.")
+                        Text("In climb rows, show notes if gym is not selected")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -48,7 +38,16 @@ struct FeatureFlagsView: View {
                 Toggle(isOn: $persistProgressFilters) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Remember Progress Filters")
-                        Text("Saves and restores the last used filters on the Progress screen.")
+                        Text("Saves and restores the last used filters on the Progress screen")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Toggle(isOn: $klettrackWebSettings) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("klettrack Web")
+                        Text("Experimental feature! Enables interaction with and access to various features through a web interface")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
