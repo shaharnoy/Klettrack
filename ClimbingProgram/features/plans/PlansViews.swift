@@ -125,29 +125,6 @@ private final class PlanDayEditorCache {
     }
 }
 
-// Shared exercise hit type for catalog search results (file-scope, internal)
-struct ExerciseHit: Identifiable {
-    let id: UUID
-    let name: String
-    let subtitle: String?
-    let tint: Color
-    let repsText: String?
-    let setsText: String?
-    let restText: String?
-    let durationText: String?
-
-    init(ex: Exercise, tint: Color) {
-        self.id = ex.id
-        self.name = ex.name
-        self.subtitle = ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes
-        self.tint = tint
-        self.repsText = ex.repsText
-        self.setsText = ex.setsText
-        self.restText = ex.restText
-        self.durationText = ex.durationText
-    }
-}
-
 // Date formatting helpers
 private extension Date {
     var shortFormat: String {
@@ -809,42 +786,38 @@ struct PlanDetailView: View {
             List {
                 ForEach(groupedByWeek, id: \.weekStart) { week in
                     Section {
-                        ForEach(week.days.map(\.id), id: \.self) { dayId in
-                            if let idx = plan.days.firstIndex(where: { $0.id == dayId }) {
-                                let day = plan.days[idx]
-
-                                Button {
-                                    timerAppState.plansNavigationPath.append(
-                                        EditablePlanDayNav(
-                                            planId: plan.id,
-                                            planDayId: dayId
-                                        )
+                        ForEach(week.days) { day in
+                            Button {
+                                timerAppState.plansNavigationPath.append(
+                                    EditablePlanDayNav(
+                                        planId: plan.id,
+                                        planDayId: day.id
                                     )
-                                } label: {
-                                    HStack {
-                                        Circle()
-                                            .fill(dayTypeColor(for: day))
-                                            .frame(width: 10, height: 10)
+                                )
+                            } label: {
+                                HStack {
+                                    Circle()
+                                        .fill(dayTypeColor(for: day))
+                                        .frame(width: 10, height: 10)
 
-                                        Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
+                                    Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
 
-                                        Spacer()
+                                    Spacer()
 
-                                        Text(day.type?.name ?? "Unknown")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 16)
-                                    .background {
-                                        if isToday(day.date) {
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .fill(Color.yellow.opacity(0.15))
-                                        }
+                                    Text(day.type?.name ?? "Unknown")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background {
+                                    if isToday(day.date) {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(Color.yellow.opacity(0.15))
                                     }
                                 }
-                                .buttonStyle(.plain)
-                                .id(dayId)
                             }
+                            .buttonStyle(.plain)
+                            .id(day.id)
                         }
                     } header: {
                         Text(week.weekStart.formatted(date: .abbreviated, time: .omitted))
@@ -1004,42 +977,34 @@ struct PlanDayEditor: View {
         cache.loggedItemsForDay
     }
 
-    // Helper to get exercises grouped by activity type
-    private func groupedChosenExercises() -> [(activityName: String, activityColor: Color, exercises: [String])] {
+    // Helper to get exercises in a single global order for the day.
+    private func orderedChosenExercises() -> [String] {
         let catalogInfoByExerciseName = cache.catalogInfoByExerciseName
 
-        // Group chosen exercises by activity
-        let groupedByActivity = Dictionary(grouping: day.chosenExercises) { exerciseName in
-                catalogInfoByExerciseName[exerciseName]?.activityName ?? "Unknown"
-            }
+        let sortedNames = day.chosenExercises.sorted { name1, name2 in
+            let o1 = day.exerciseOrder[name1]
+            let o2 = day.exerciseOrder[name2]
+            if let o1, let o2, o1 != o2 { return o1 < o2 }
+            if o1 != nil { return true }
+            if o2 != nil { return false }
 
-            var result: [(String, Color, [String])] = []
-            for (activityName, exerciseNames) in groupedByActivity {
-                let activityColor = exerciseNames
-                    .compactMap { catalogInfoByExerciseName[$0]?.activityColor }
-                    .first ?? .gray
+            let isLogged1 = isExerciseQuickLogged(name: name1)
+            let isLogged2 = isExerciseQuickLogged(name: name2)
+            if isLogged1 != isLogged2 { return !isLogged1 }
 
-                let sortedExercises = exerciseNames.sorted { name1, name2 in
-                    // 1) Override with per-day manual order if available
-                    let o1 = day.exerciseOrder[name1]
-                    let o2 = day.exerciseOrder[name2]
-                    if let o1, let o2, o1 != o2 { return o1 < o2 }
+            let c1 = catalogInfoByExerciseName[name1]?.order ?? Int.max
+            let c2 = catalogInfoByExerciseName[name2]?.order ?? Int.max
+            if c1 != c2 { return c1 < c2 }
 
-                    // 2) Fallback: unlogged first
-                    let isLogged1 = isExerciseQuickLogged(name: name1)
-                    let isLogged2 = isExerciseQuickLogged(name: name2)
-                    if isLogged1 != isLogged2 { return !isLogged1 }
+            let a1 = catalogInfoByExerciseName[name1]?.activityName ?? "Unknown"
+            let a2 = catalogInfoByExerciseName[name2]?.activityName ?? "Unknown"
+            if a1 != a2 { return a1.localizedStandardCompare(a2) == .orderedAscending }
 
-                    // 3) Fallback: catalog order
-                    let c1 = catalogInfoByExerciseName[name1]?.order ?? Int.max
-                    let c2 = catalogInfoByExerciseName[name2]?.order ?? Int.max
-                    return c1 < c2
-                }
-                result.append((activityName, activityColor, sortedExercises))
-            }
-            result.sort { $0.0 < $1.0 }
-            return result
+            return name1.localizedStandardCompare(name2) == .orderedAscending
         }
+
+        return sortedNames
+    }
     
     // Break down exercise row into its own view builder
     @ViewBuilder
@@ -1047,6 +1012,7 @@ struct PlanDayEditor: View {
 
 
         let isQuickLogged = isExerciseQuickLogged(name: name)
+        let activityColor = cache.catalogInfoByExerciseName[name]?.activityColor ?? .clear
         // Guidance: use real values only when caches are ready, otherwise a stable placeholder.
         let exerciseInfo = cache.isWarm
             ? getExerciseInfo(name: name)
@@ -1056,8 +1022,15 @@ struct PlanDayEditor: View {
 
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Text(name)
-                    .lineLimit(2)
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(activityColor)
+                        .frame(width: 8, height: 8)
+                        .opacity(cache.isWarm ? 1 : 0)
+
+                    Text(name)
+                        .lineLimit(2)
+                }
 
                 Spacer()
 
@@ -1251,17 +1224,13 @@ struct PlanDayEditor: View {
                 }
                 .padding(.vertical, 8)
             } else {
-
-                let groupedExercises = groupedChosenExercises()
-                ForEach(groupedExercises, id: \.activityName) { group in
-                    ActivityGroupView(
-                        group: group,
-                        day: $day,
-                        context: context,
-                        exerciseRowBuilder: exerciseRow,
-                        onReorder: { didReorder = true }
-                    )
-                }
+                OrderedChosenExercisesView(
+                    exercises: orderedChosenExercises(),
+                    day: $day,
+                    context: context,
+                    exerciseRowBuilder: exerciseRow,
+                    onReorder: { didReorder = true }
+                )
             }
             
             Button {
@@ -2148,644 +2117,6 @@ struct QuickExerciseProgress: View {
     }
 }
 
-// MARK: Catalog picker (Activity → TrainingType → [Combinations] → Exercises)
-
-struct CatalogExercisePicker: View {
-    @Binding var selected: [String]
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var context
-    @Query(filter: #Predicate<Activity> { !$0.isSoftDeleted }, sort: \Activity.name) private var activities: [Activity]
-    @State private var searchText: String = ""
-    @State private var isSearchPresented: Bool = false
-    
-    // Instead of relying on isDataReady environment, check if we have data directly
-    private var hasData: Bool {
-        !activities.isEmpty
-    }
-    
-    // Flatten all exercises (including combos) with their activity tint
-    private var allExerciseHits: [ExerciseHit] {
-        var hits: [ExerciseHit] = []
-        for activity in activities {
-            let tint = activity.hue.color
-            for t in activity.types {
-                // direct exercises
-                for ex in t.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
-                // combo exercises
-                for combo in t.combinations {
-                    for ex in combo.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
-                }
-            }
-        }
-        // de-dup by exercise id in case an exercise appears multiple places
-        var seen: Set<UUID> = []
-        return hits.filter { seen.insert($0.id).inserted }
-    }
-    
-    // Filter by search text across exercise name + subtitle
-    private var filteredExerciseHits: [ExerciseHit] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return [] }
-        return allExerciseHits.filter {
-            $0.name.localizedStandardContains(q)
-            || ($0.subtitle?.localizedStandardContains(q) ?? false)
-        }
-    }
-    
-    // Provide a reusable section builder for search results to reuse in subviews
-    @ViewBuilder
-    private func resultsSection(doneAction: @escaping () -> Void) -> some View {
-        if !searchText.isEmpty {
-            if filteredExerciseHits.isEmpty {
-                ContentUnavailableView(
-                    "No matches",
-                    systemImage: "magnifyingglass",
-                    description: Text("Try a different search term.")
-                )
-            } else {
-                Section {
-                    ForEach(filteredExerciseHits) { hit in
-                        ExercisePickRow(
-                            name: hit.name,
-                            subtitle: hit.subtitle,
-                            reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
-                            tint: hit.tint,
-                            isSelected: selected.contains(hit.name)
-                        ) {
-                            toggleSelection(hit.name)
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Text("Results")
-                        Spacer()
-                        Button("Done") {
-                            isSearchPresented = false // collapse search UI
-                            doneAction()              // allow caller to dismiss if desired
-                        }
-                        .font(.subheadline)
-                    }
-                }
-            }
-        }
-    }
-    
-    var body: some View {
-        NavigationStack {
-            if !hasData {
-                VStack(spacing: 16) {
-                    ProgressView()
-                    Text("Loading catalog...")
-                        .foregroundStyle(.secondary)
-                    // Debug info
-                    Text("Debug: activities.count = \(activities.count)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear {
-                    print("🔴 CatalogExercisePicker: activities.count = \(activities.count)")
-                }
-                // Add a refresh mechanism
-                .task {
-                    try? await Task.sleep(for: .milliseconds(100))
-                }
-            } else {
-                List {
-                    // While searching: show only results, hide navigation content
-                    if !searchText.isEmpty {
-                        resultsSection(doneAction: { dismiss() })
-                    } else {
-                        // Normal content (root: activities)
-                        ForEach(activities) { activity in
-                            NavigationLink {
-                                TypesList(
-                                    activity: activity,
-                                    selected: $selected,
-                                    tint: activity.hue.color,
-                                    onDone: { dismiss() },     // close from any level
-                                    allHits: allExerciseHits
-                                )
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Circle().fill(activity.hue.color).frame(width: 8, height: 8)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(activity.name).font(.headline)
-                                        Text("\(activity.types.count) types")
-                                            .font(.footnote).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                .onAppear {
-                    print("🟢 CatalogExercisePicker: activities.count = \(activities.count)")
-                }
-                .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-            }
-        }
-        .navigationTitle("Catalog")
-        .toolbar {
-            // Existing Done to close the picker
-            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-
-            // Extra Done that *exits search* (only visible while searching)
-            ToolbarItem(placement: .topBarTrailing) {
-                if isSearchPresented {
-                    Button("Done") {
-                        isSearchPresented = false        // collapses search, dismisses keyboard
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-    private func toggleSelection(_ name: String) {
-        if let idx = selected.firstIndex(of: name) {
-            selected.remove(at: idx)
-        } else {
-            selected.append(name)
-        }
-    }
-}
-
-// TypesList uses local search state and shared precomputed exercise hits.
-struct TypesList: View {
-    let activity: Activity
-    @Binding var selected: [String]
-    let tint: Color
-    let onDone: () -> Void
-    let allHits: [ExerciseHit]
-    @State private var searchText: String = ""
-    @State private var isSearchPresented: Bool = false
-
-    private var filteredHits: [ExerciseHit] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return [] }
-        return allHits.filter {
-            $0.name.localizedStandardContains(q)
-              || ($0.subtitle?.localizedStandardContains(q) ?? false)
-          }
-    }
-    
-    var body: some View {
-        List {
-            // While searching: show only results, hide navigation content
-            if !searchText.isEmpty {
-                if filteredHits.isEmpty {
-                    ContentUnavailableView(
-                        "No matches",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try a different search term.")
-                    )
-                } else {
-                    Section {
-                        ForEach(filteredHits) { hit in
-                            ExercisePickRow(
-                                name: hit.name,
-                                subtitle: hit.subtitle,
-                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
-                                tint: hit.tint,
-                                isSelected: selected.contains(hit.name)
-                            ) {
-                                toggle(hit.name)
-                            }
-                        }
-                    } header: {
-                        HStack {
-                            Text("Results")
-                            Spacer()
-                            Button("Done") {
-                                isSearchPresented = false
-                                onDone()
-                            }
-                            .font(.subheadline)
-                        }
-                    }
-                }
-            } else {
-                // Normal content
-                ForEach(activity.types) { t in
-                    NavigationLink {
-                        if !t.combinations.isEmpty {
-                            CombosList(
-                                trainingType: t,
-                                selected: $selected,
-                                tint: tint,
-                                onDone: onDone,
-                                allHits: allHits
-                            )
-                        } else {
-                            ExercisesList(
-                                trainingType: t,
-                                selected: $selected,
-                                tint: tint,
-                                onDone: onDone,
-                                allHits: allHits
-                            )
-                        }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(t.name).font(.headline)
-                            if let d = t.typeDescription, !d.isEmpty {
-                                Text(d).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(activity.name)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
-        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
-        .autocorrectionDisabled()
-        .textInputAutocapitalization(.never)
-    }
-    
-    private func toggle(_ name: String) {
-        if let idx = selected.firstIndex(of: name) {
-            selected.remove(at: idx)
-        } else {
-            selected.append(name)
-        }
-    }
-}
-
-struct CombosList: View {
-    let trainingType: TrainingType
-    @Binding var selected: [String]
-    let tint: Color
-    let onDone: () -> Void
-    let allHits: [ExerciseHit]
-    @State private var searchText: String = ""
-    @State private var isSearchPresented: Bool = false
-
-    private var filteredHits: [ExerciseHit] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return [] }
-        return allHits.filter {
-            $0.name.localizedStandardContains(q)
-              || ($0.subtitle?.localizedStandardContains(q) ?? false)
-          }
-    }
-
-    var body: some View {
-        List {
-            // While searching: show only results, hide navigation content
-            if !searchText.isEmpty {
-                if filteredHits.isEmpty {
-                    ContentUnavailableView(
-                        "No matches",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try a different search term.")
-                    )
-                } else {
-                    Section {
-                        ForEach(filteredHits) { hit in
-                            ExercisePickRow(
-                                name: hit.name,
-                                subtitle: hit.subtitle,
-                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
-                                tint: hit.tint,
-                                isSelected: selected.contains(hit.name)
-                            ) {
-                                toggle(hit.name)
-                            }
-                        }
-                    } header: {
-                        HStack {
-                            Text("Results")
-                            Spacer()
-                            Button("Done") {
-                                isSearchPresented = false
-                                onDone()
-                            }
-                            .font(.subheadline)
-                        }
-                    }
-                }
-            } else {
-                // Normal content (combinations)
-                ForEach(trainingType.combinations) { combo in
-                    NavigationLink {
-                        ComboExercisesList(
-                            combo: combo,
-                            selected: $selected,
-                            tint: tint,
-                            onDone: onDone,
-                            allHits: allHits
-                        )
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(combo.name).font(.headline)
-                            if let d = combo.comboDescription, !d.isEmpty {
-                                Text(d).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(trainingType.name)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
-        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
-        .autocorrectionDisabled()
-        .textInputAutocapitalization(.never)
-    }
-    
-    private func toggle(_ name: String) {
-        if let idx = selected.firstIndex(of: name) {
-            selected.remove(at: idx)
-        } else {
-            selected.append(name)
-        }
-    }
-}
-
-struct ComboExercisesList: View {
-    let combo: BoulderCombination
-    @Binding var selected: [String]
-    let tint: Color
-    let onDone: () -> Void
-    let allHits: [ExerciseHit]
-    @State private var searchText: String = ""
-    @State private var isSearchPresented: Bool = false
-
-    private var filteredHits: [ExerciseHit] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return [] }
-        return allHits.filter {
-            $0.name.localizedStandardContains(q)
-              || ($0.subtitle?.localizedStandardContains(q) ?? false)
-          }
-    }
-
-    var body: some View {
-        List {
-            // While searching: show only results, hide navigation content
-            if !searchText.isEmpty {
-                if filteredHits.isEmpty {
-                    ContentUnavailableView(
-                        "No matches",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try a different search term.")
-                    )
-                } else {
-                    Section {
-                        ForEach(filteredHits) { hit in
-                            ExercisePickRow(
-                                name: hit.name,
-                                subtitle: hit.subtitle,
-                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
-                                tint: hit.tint,
-                                isSelected: selected.contains(hit.name)
-                            ) {
-                                toggle(hit.name)
-                            }
-                        }
-                    } header: {
-                        HStack {
-                            Text("Results")
-                            Spacer()
-                            Button("Done") {
-                                isSearchPresented = false
-                                onDone()
-                            }
-                            .font(.subheadline)
-                        }
-                    }
-                }
-            } else {
-                // Normal content (combo’s exercises)
-                ForEach(combo.exercises.sorted { $0.order < $1.order }) { ex in
-                    ExercisePickRow(
-                        name: ex.name,
-                        subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                        reps: ex.repsText, sets: ex.setsText, rest: ex.restText, duration: ex.durationText,
-                        tint: tint,
-                        isSelected: selected.contains(ex.name)
-                    ) {
-                        toggle(ex.name)
-                    }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(combo.name)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
-        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
-        .autocorrectionDisabled()
-        .textInputAutocapitalization(.never)
-    }
-
-    private func toggle(_ name: String) {
-        if let idx = selected.firstIndex(of: name) {
-            selected.remove(at: idx)
-        } else {
-            selected.append(name)
-        }
-    }
-}
-
-struct ExercisesList: View {
-    let trainingType: TrainingType
-    @Binding var selected: [String]
-    let tint: Color
-    let onDone: () -> Void
-    let allHits: [ExerciseHit]
-    @State private var searchText: String = ""
-    @State private var isSearchPresented: Bool = false
-
-    private var filteredHits: [ExerciseHit] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return [] }
-        return allHits.filter {
-            $0.name.localizedStandardContains(q)
-              || ($0.subtitle?.localizedStandardContains(q) ?? false)
-          }
-    }
-
-    // Group exercises by area similar to CatalogView
-    private var exercisesByArea: [(String, [Exercise])] {
-        let grouped = Dictionary(grouping: trainingType.exercises) { $0.area ?? "" }
-        if grouped.keys.contains("Fingers") || grouped.keys.contains("Pull") {
-            // For climbing-specific exercises, maintain Fingers/Pull order
-            return ["Fingers", "Pull"].compactMap { area in
-                if let exercises = grouped[area], !exercises.isEmpty {
-                    return (area, exercises.sorted { $0.order < $1.order })
-                }
-                return nil
-            }
-        } else {
-            // For other types, just group if there are areas
-            return grouped
-                .filter { !$0.key.isEmpty }
-                .map { ($0.key, $0.value.sorted { $0.order < $1.order }) }
-                .sorted(by: { $0.0 < $1.0 })
-        }
-    }
-
-    private var ungroupedExercises: [Exercise] {
-        trainingType.exercises.filter { $0.area == nil }.sorted { $0.order < $1.order }
-    }
-
-    var body: some View {
-        List {
-            // While searching: show only results, hide navigation content
-            if !searchText.isEmpty {
-                if filteredHits.isEmpty {
-                    ContentUnavailableView(
-                        "No matches",
-                        systemImage: "magnifyingglass",
-                        description: Text("Try a different search term.")
-                    )
-                } else {
-                    Section {
-                        ForEach(filteredHits) { hit in
-                            ExercisePickRow(
-                                name: hit.name,
-                                subtitle: hit.subtitle,
-                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,duration: hit.durationText,
-                                tint: hit.tint,
-                                isSelected: selected.contains(hit.name)
-                            ) {
-                                toggle(hit.name)
-                            }
-                        }
-                    } header: {
-                        HStack {
-                            Text("Results")
-                            Spacer()
-                            Button("Done") {
-                                isSearchPresented = false
-                                onDone()
-                            }
-                            .font(.subheadline)
-                        }
-                    }
-                }
-            } else {
-                // Normal content
-                if !exercisesByArea.isEmpty {
-                    ForEach(exercisesByArea, id: \.0) { area, exercises in
-                        Section(area) {
-                            ForEach(exercises) { ex in
-                                ExercisePickRow(
-                                    name: ex.name,
-                                    subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                                    reps: ex.repsText, sets: ex.setsText, rest: ex.restText, duration: ex.durationText,
-                                    tint: tint,
-                                    isSelected: selected.contains(ex.name)
-                                ) {
-                                    toggle(ex.name)
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                if !ungroupedExercises.isEmpty {
-                    Section(exercisesByArea.isEmpty ? "Exercises" : "Other") {
-                        ForEach(ungroupedExercises) { ex in
-                            ExercisePickRow(
-                                name: ex.name,
-                                subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
-                                reps: ex.repsText, sets: ex.setsText, rest: ex.restText,duration: ex.durationText,
-                                tint: tint,
-                                isSelected: selected.contains(ex.name)
-                            ) {
-                                toggle(ex.name)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(trainingType.name)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) { Button("Done") { onDone() } }
-        }
-        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
-        .autocorrectionDisabled()
-        .textInputAutocapitalization(.never)
-    }
-
-    private func toggle(_ name: String) {
-        if let idx = selected.firstIndex(of: name) {
-            selected.remove(at: idx)
-        } else {
-            selected.append(name)
-        }
-    }
-}
-
-// MARK: - Compact row + MetricRow
-
-private struct ExercisePickRow: View {
-    let name: String
-    let subtitle: String?
-    let reps: String?
-    let sets: String?
-    let rest: String?
-    let duration: String?
-    let tint: Color
-    let isSelected: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Circle().fill(tint).frame(width: 8, height: 8)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(name).font(.subheadline).bold()
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    }
-                    MetricRow(reps: reps, sets: sets, rest: rest, duration: duration)
-                }
-                Spacer()
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .imageScale(.large)
-            }
-            .padding(.vertical, 6)
-        }
-        .buttonStyle(.plain)
-        .padding(.vertical, 6)
-    }
-}
-
-private struct MetricRow: View {
-    let reps: String?
-    let sets: String?
-    let rest: String?
-    let duration: String?
-
-    var body: some View {
-        HStack(spacing: 12) {
-            metric("Reps", reps)
-            metric("Sets", sets)
-            metric("Time", duration)
-            metric("Rest", rest)
-        }
-        .font(.caption.monospacedDigit())
-    }
-
-    @ViewBuilder
-    private func metric(_ label: String, _ value: String?) -> some View {
-        HStack(spacing: 4) {
-            Text(label).bold().foregroundStyle(.secondary)
-            Text(value ?? "—")
-        }
-    }
-}
-
-
 private struct LogMetricRow: View {
     let reps: String?
     let sets: String?
@@ -3124,9 +2455,9 @@ private struct CloneRecurringSheet: View {
 
 
 
-// MARK: Activity Group View Component
-private struct ActivityGroupView<RowContent: View>: View {
-    let group: (activityName: String, activityColor: Color, exercises: [String])
+// MARK: Ordered Exercise List Component
+private struct OrderedChosenExercisesView<RowContent: View>: View {
+    let exercises: [String]
     @Binding var day: PlanDay
     let context: ModelContext
     @ViewBuilder let exerciseRowBuilder: (String) -> RowContent
@@ -3136,89 +2467,73 @@ private struct ActivityGroupView<RowContent: View>: View {
     @State private var localOrder: [String]
 
     init(
-        group: (activityName: String, activityColor: Color, exercises: [String]),
+        exercises: [String],
         day: Binding<PlanDay>,
         context: ModelContext,
         @ViewBuilder exerciseRowBuilder: @escaping (String) -> RowContent,
         onReorder: @escaping () -> Void
     ) {
-        self.group = group
+        self.exercises = exercises
         self._day = day
         self.context = context
         self.exerciseRowBuilder = exerciseRowBuilder
         self.onReorder = onReorder
-        self._localOrder = State(initialValue: group.exercises)
+        self._localOrder = State(initialValue: exercises)
     }
 
     var body: some View {
-        Section {
-            ForEach(localOrder, id: \.self) { name in
-                exerciseRowBuilder(name)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            delete(names: [name])
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
+        ForEach(localOrder, id: \.self) { name in
+            exerciseRowBuilder(name)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        delete(names: [name])
+                    } label: {
+                        Label("Delete", systemImage: "trash")
                     }
-            }
-            .onMove { source, destination in
-                var tx = Transaction(); tx.disablesAnimations = true
-                withTransaction(tx) {
-                    var arr = localOrder
-                    arr.move(fromOffsets: source, toOffset: destination)
-                    localOrder = arr
                 }
-            }
-            .moveDisabled(false)
-        } header: {
-            HStack(spacing: 8) {
-                Circle().fill(group.activityColor).frame(width: 12, height: 12)
-                Text(group.activityName).font(.subheadline).fontWeight(.medium).foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.vertical, 4)
         }
+        .onMove { source, destination in
+            var tx = Transaction(); tx.disablesAnimations = true
+            withTransaction(tx) {
+                var arr = localOrder
+                arr.move(fromOffsets: source, toOffset: destination)
+                localOrder = arr
+            }
+        }
+        .moveDisabled(false)
         .onChange(of: editMode?.wrappedValue) { _, newValue in
-            // Commit when leaving edit mode
             if newValue != .active { commitOrder() }
         }
         .onDisappear {
-            // Also commit when navigating away (e.g., still in edit mode)
             commitOrder()
         }
-        .onChange(of: group.exercises) { _, newValue in
-            // Keep localOrder in sync when data changes from outside edit sessions
+        .onChange(of: exercises) { _, newValue in
             if editMode?.wrappedValue != .active {
                 localOrder = newValue
             }
         }
         .onAppear {
-            if localOrder.isEmpty { localOrder = group.exercises }
+            if localOrder.isEmpty {
+                localOrder = exercises
+            }
         }
     }
-    
+
     private func commitOrder() {
-        // Only write if something changed
-        guard localOrder != group.exercises else { return }
+        guard localOrder != exercises else { return }
         for (idx, name) in localOrder.enumerated() { day.exerciseOrder[name] = idx }
         onReorder()
         try? context.save()
     }
-    
+
     private func delete(names: [String]) {
-        //Update local UI list
         localOrder.removeAll { names.contains($0) }
-        //Remove from chosenExercises
         day.chosenExercises.removeAll { names.contains($0) }
-        
-        //Clean up per-day order map
+
         for n in names { day.exerciseOrder.removeValue(forKey: n) }
-        //Reindex remaining names in this group to keep contiguous order
         for (idx, name) in localOrder.enumerated() {
             day.exerciseOrder[name] = idx
         }
-        // Persist and notify
         onReorder()
         try? context.save()
     }

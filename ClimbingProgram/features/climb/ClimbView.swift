@@ -26,6 +26,9 @@ struct ClimbView: View {
         sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]
     ) private var climbEntries: [ClimbEntry]
     @State private var addClimbRoute: AddClimbRoute? = nil
+    @State private var climbToClone: ClimbEntry? = nil
+    @State private var showingCloneDatePrompt = false
+    @State private var cloneTargetDate = Date()
     @State private var editingClimb: ClimbEntry? = nil
     
     // Filters
@@ -64,9 +67,25 @@ struct ClimbView: View {
     @AppStorage("klettrack.successfulSyncCount") private var successfulSyncCount = 0
     @AppStorage("klettrack.didRequestReviewAfterSync") private var didRequestReviewAfterSync = false
     @State private var pendingReviewReason: String? = nil
-    
-    // Computed filtered climbs
-    private var filteredClimbs: [ClimbEntry] {
+
+    @State private var filteredClimbs: [ClimbEntry] = []
+
+    private struct ClimbFilterVersion: Equatable {
+        struct EntryVersion: Equatable {
+            let id: UUID
+            let updatedAtClient: Date
+            let dateLogged: Date
+        }
+
+        let entries: [EntryVersion]
+        let dateRange: DateRange
+        let wipFilter: WipFilter
+        let climbTypeFilter: ClimbTypeFilter
+        let resendFilter: ResendFilter
+        let searchQuery: String
+    }
+
+    private func buildFilteredClimbs() -> [ClimbEntry] {
         var result = climbEntries
 
         // Date range
@@ -119,6 +138,19 @@ struct ClimbView: View {
         }
 
         return result
+    }
+
+    private var climbFilterVersion: ClimbFilterVersion {
+        ClimbFilterVersion(
+            entries: climbEntries.map {
+                .init(id: $0.id, updatedAtClient: $0.updatedAtClient, dateLogged: $0.dateLogged)
+            },
+            dateRange: dateRange,
+            wipFilter: wipFilter,
+            climbTypeFilter: climbTypeFilter,
+            resendFilter: resendFilter,
+            searchQuery: searchQuery
+        )
     }
 
     
@@ -175,6 +207,8 @@ struct ClimbView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     guard isDataReady else { return }
+                    climbToClone = nil
+                    cloneTargetDate = Date()
                     bulkClimbCountText = "4"
                     showingBulkClimbPrompt = true
                 } label: {
@@ -184,11 +218,36 @@ struct ClimbView: View {
                 .accessibilityLabel("Bulk add climbs")
             }
         }
-        .sheet(item: $addClimbRoute) { _ in
-            AddClimbView(bulkCount: pendingBulkClimbCount, onSave: { _ in
+        .sheet(item: $addClimbRoute, onDismiss: {
+            pendingBulkClimbCount = 1
+            climbToClone = nil
+        }) { _ in
+            AddClimbView(
+                prefillClimb: climbToClone,
+                initialDate: cloneTargetDate,
+                bulkCount: pendingBulkClimbCount,
+                onSave: { _ in
                 ensureDateRangeInitialized()
                 pendingBulkClimbCount = 1 // reset for next time
-            })
+                climbToClone = nil
+                }
+            )
+        }
+        .sheet(isPresented: $showingCloneDatePrompt) {
+            CloneClimbDateSheet(
+                targetDate: $cloneTargetDate,
+                onCancel: {
+                    showingCloneDatePrompt = false
+                    climbToClone = nil
+                },
+                onClone: {
+                    showingCloneDatePrompt = false
+                    pendingBulkClimbCount = 1
+                    addClimbRoute = .add
+                }
+            )
+            .presentationDetents([.height(220)])
+            .presentationDragIndicator(.visible)
         }
 
         .sheet(item: $editingClimb) { climb in
@@ -258,6 +317,8 @@ struct ClimbView: View {
             message: "How many climbs to add?"
         ) { count in
             pendingBulkClimbCount = count
+            climbToClone = nil
+            cloneTargetDate = Date()
             addClimbRoute = .add
         }
         .opacity(isDataReady ? 1 : 0)
@@ -315,6 +376,9 @@ struct ClimbView: View {
         .onChange(of: climbEntries.count) { _, _ in
             dumpUndoContext("entries.count.change")
             ensureDateRangeInitialized()
+        }
+        .task(id: climbFilterVersion) {
+            filteredClimbs = buildFilteredClimbs()
         }
     }
     
@@ -429,6 +493,8 @@ struct ClimbView: View {
                 guard isDataReady else {
                     return
                 }
+                climbToClone = nil
+                cloneTargetDate = Date()
                 addClimbRoute = .add
             } label: {
                 Text("Log a Climb")
@@ -460,7 +526,12 @@ struct ClimbView: View {
                 .listRowSeparator(.hidden)
             } else {
                 ForEach(filteredClimbs) { climb in
-                    ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) }, onEdit: { editingClimb = climb })
+                    ClimbRowCard(
+                        climb: climb,
+                        onDelete: { deleteClimb(climb) },
+                        onEdit: { editingClimb = climb },
+                        onClone: { cloneClimb(climb) }
+                    )
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
@@ -682,7 +753,11 @@ struct ClimbView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             
-            Button(action: { addClimbRoute = .add }) {
+            Button(action: {
+                climbToClone = nil
+                cloneTargetDate = Date()
+                addClimbRoute = .add
+            }) {
                 Label("Add Your First Climb", systemImage: "plus.circle.fill")
                     .font(.headline)
                     .foregroundStyle(.white)
@@ -716,10 +791,50 @@ struct ClimbView: View {
         }
     }
 
+    private func cloneClimb(_ climb: ClimbEntry) {
+        guard isDataReady else { return }
+        climbToClone = climb
+        cloneTargetDate = Date()
+        showingCloneDatePrompt = true
+    }
+
     
     private func handleUndoTap() {
         // If you still call this from anywhere, route through the snackbar controller
         undoSnackbar.performUndo()
+    }
+}
+
+private struct CloneClimbDateSheet: View {
+    @Binding var targetDate: Date
+    let onCancel: () -> Void
+    let onClone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                DatePicker("Clone date", selection: $targetDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+
+                Text("The cloned climb will be created with this date.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Clone Climb")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Clone", action: onClone)
+                }
+            }
+        }
     }
 }
 
@@ -744,6 +859,7 @@ struct ClimbRowCard: View {
     let climb: ClimbEntry
     let onDelete: () -> Void
     let onEdit: () -> Void
+    let onClone: () -> Void
     @AppStorage(FeatureFlags.showNotesWhenGymMissing) private var showNotesWhenGymMissing = false
     
     private var climbTypeColor: Color {
@@ -879,10 +995,8 @@ struct ClimbRowCard: View {
                 .stroke(climbTypeColor.opacity(0.25), lineWidth: 1)
         )
         .contextMenu {
-            Button(role: .destructive) {
-                onDelete()
-            } label: {
-                Label("Delete", systemImage: "trash")
+            Button(action: onClone) {
+                Label("Clone", systemImage: "plus.square.on.square")
             }
         }
     }
