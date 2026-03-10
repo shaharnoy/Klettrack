@@ -1505,10 +1505,24 @@ function renderCalendarFocus(days, selectedDay, mode, anchorISO, dayTypeByID, da
   } else {
     const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
     const monthEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+    const gridStart = startOfWeek(monthStart);
+    const trailingDays = (7 - ((monthEnd.getDay() + 6) % 7) - 1 + 7) % 7;
+    const gridEnd = addDays(monthEnd, trailingDays);
     title = monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-    for (let dayNumber = 1; dayNumber <= monthEnd.getDate(); dayNumber += 1) {
-      const current = new Date(monthStart.getFullYear(), monthStart.getMonth(), dayNumber);
-      cells.push(renderCalendarCell({ date: current, inCurrentPeriod: true, dayMap, selectedDayKey, todayKey, dayTypeByID, dayTypes, mode }));
+    for (let current = new Date(gridStart); current <= gridEnd; current = addDays(current, 1)) {
+      const inCurrentPeriod = current >= monthStart && current <= monthEnd;
+      cells.push(
+        renderCalendarCell({
+          date: current,
+          inCurrentPeriod,
+          dayMap,
+          selectedDayKey,
+          todayKey,
+          dayTypeByID,
+          dayTypes,
+          mode
+        })
+      );
     }
   }
 
