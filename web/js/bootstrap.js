@@ -18,6 +18,16 @@ const syncOnboardingBannerNode = document.getElementById("sync-onboarding-banner
 const logoutButton = document.getElementById("logout-btn");
 const syncButton = document.getElementById("sync-btn");
 const getCurrentUser = auth.getCurrentUser;
+const consumeAuthRedirectFromURL =
+  typeof auth.consumeAuthRedirectFromURL === "function"
+    ? auth.consumeAuthRedirectFromURL
+    : () => ({
+        didHandle: false,
+        hasSession: false,
+        flowType: null,
+        nextRoute: null,
+        error: null
+      });
 const signInWithPassword = auth.signInWithPassword;
 const signUpWithPassword =
   typeof auth.signUpWithPassword === "function"
@@ -44,6 +54,7 @@ const deleteCurrentAccount =
     : async () => {
         throw new Error("Account deletion is unavailable until the page cache refreshes.");
       };
+const FORCE_PASSWORD_CHANGE_KEY = "auth_force_password_change";
 
 const store = createSyncStore();
 const defaultSelections = () => ({
@@ -95,6 +106,7 @@ const state = {
   loginNotice: "",
   accountError: "",
   accountNotice: "",
+  mustChangePassword: false,
   isSyncing: false,
   syncError: "",
   conflicts: [],
@@ -145,7 +157,26 @@ void startApp();
 
 async function startApp() {
   try {
+    const authRedirect = consumeAuthRedirectFromURL();
+    if (authRedirect.error) {
+      state.loginError = authRedirect.error;
+    }
+    if (authRedirect.flowType === "recovery") {
+      state.accountNotice = "Reset link verified. Enter a new password below.";
+    }
+    state.mustChangePassword = localStorage.getItem(FORCE_PASSWORD_CHANGE_KEY) === "true";
     await restoreSession();
+    if (authRedirect.didHandle && authRedirect.hasSession && authRedirect.flowType === "recovery") {
+      state.mustChangePassword = true;
+      localStorage.setItem(FORCE_PASSWORD_CHANGE_KEY, "true");
+    }
+    if (authRedirect.didHandle && authRedirect.hasSession) {
+      const targetRoute =
+        authRedirect.nextRoute || (authRedirect.flowType === "recovery" ? "/account" : null);
+      if (targetRoute) {
+        navigate(targetRoute);
+      }
+    }
     await render();
   } catch (error) {
     renderFatalError(error);
@@ -217,7 +248,12 @@ async function render() {
     return;
   }
   if (isAuthed && (route === "/login" || route === "/register")) {
-    navigate("/catalog");
+    navigate(state.mustChangePassword ? "/account" : "/catalog");
+    return;
+  }
+
+  if (isAuthed && state.mustChangePassword && route !== "/account") {
+    navigate("/account");
     return;
   }
 
@@ -244,7 +280,8 @@ async function render() {
           try {
             state.loginError = "";
             state.loginNotice = "";
-            const payload = await signUpWithPassword(email, password);
+            const redirectTo = new URL("/app.html", window.location.origin).toString();
+            const payload = await signUpWithPassword(email, password, redirectTo);
             if (payload?.session?.access_token) {
               state.user = await getCurrentUser();
               if (state.user) {
@@ -255,7 +292,7 @@ async function render() {
                 return;
               }
             }
-            state.loginNotice = "Account created. If email confirmation is enabled, check your inbox.";
+            state.loginNotice = "Account created. Check your inbox to confirm.";
           } catch (error) {
             state.loginError = normalizeAuthMessage(error, "Registration failed.");
           }
@@ -290,7 +327,7 @@ async function render() {
         try {
           state.loginError = "";
           state.loginNotice = "";
-          const redirectTo = `${window.location.origin}/app.html#/login`;
+          const redirectTo = new URL("/app.html", window.location.origin).toString();
           await requestPasswordReset(identifier, redirectTo);
           showToast("Password reset email sent. Check your inbox.", "success");
         } catch (error) {
@@ -479,6 +516,7 @@ async function render() {
   if (route === "/account") {
     renderAccountView({
       user: state.user,
+      requirePasswordChange: state.mustChangePassword,
       errorMessage: state.accountError,
       noticeMessage: state.accountNotice,
       onChangePassword: async (newPassword) => {
@@ -486,6 +524,15 @@ async function render() {
           state.accountError = "";
           state.accountNotice = "";
           await updatePassword(newPassword);
+          if (state.mustChangePassword) {
+            state.mustChangePassword = false;
+            localStorage.removeItem(FORCE_PASSWORD_CHANGE_KEY);
+            state.accountNotice = "Password updated successfully.";
+            showToast("Password updated. Redirecting...", "success");
+            navigate("/catalog");
+            await render();
+            return;
+          }
           state.accountNotice = "Password updated successfully.";
           showToast("Password updated.", "success");
         } catch (error) {
@@ -764,6 +811,8 @@ function resetSessionState() {
   state.loginNotice = "";
   state.accountError = "";
   state.accountNotice = "";
+  state.mustChangePassword = false;
+  localStorage.removeItem(FORCE_PASSWORD_CHANGE_KEY);
   state.isSyncing = false;
   state.syncError = "";
   state.conflicts = [];

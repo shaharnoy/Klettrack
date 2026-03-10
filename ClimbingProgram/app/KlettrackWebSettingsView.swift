@@ -49,6 +49,11 @@ struct KlettrackWebSettingsView: View {
                     Text(lastSyncText(authManager.lastSyncAt))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    if let restoreWarning = authManager.restoreWarning {
+                        Text(restoreWarning)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 if !authManager.isSignedIn {

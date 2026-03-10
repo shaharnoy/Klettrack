@@ -23,8 +23,6 @@ SYNC_TABLES=(
   "session_items"
   "timer_templates"
   "timer_intervals"
-  "timer_sessions"
-  "timer_laps"
   "climb_entries"
   "climb_styles"
   "climb_gyms"

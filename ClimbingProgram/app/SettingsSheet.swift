@@ -70,7 +70,7 @@ struct SettingsSheet: View {
                             Text("Enable or disable specific behaviors")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                            .lineLimit(2)
                         }
                     }
                     .padding(.vertical, 1)
@@ -120,11 +120,11 @@ struct SettingsSheet: View {
                                     .font(.body)
                                 Text("Manage cloud sync and account")
                                     .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
                             }
+                            .padding(.vertical, 1)
                         }
-                        .padding(.vertical, 1)
                     }
                 }
                 NavigationLink {

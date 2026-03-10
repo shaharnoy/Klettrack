@@ -42,6 +42,10 @@ jobs:
         if: ${{ env.SUPABASE_URL != '' && env.SUPABASE_PUBLISHABLE_KEY != '' && env.SUPABASE_TEST_EMAIL != '' && env.SUPABASE_TEST_PASSWORD != '' }}
         env:
           SUPABASE_SCALE_UPSERT_COUNT: "120"
+          SUPABASE_SCALE_MAX_ENTITY_SPAN_SECONDS: "180"
+          SUPABASE_SCALE_MAX_CYCLE_DURATION_SECONDS: "600"
+          SUPABASE_SCALE_MAX_NETWORK_RETRIES: "25"
+          SUPABASE_SCALE_MAX_UNCHANGED_ROW_VERSION_BUMPS: "0"
         run: |
           node scripts/supabase/smoke/sync_web_hydration_smoke.mjs
           node scripts/supabase/smoke/auth_register_smoke.mjs
@@ -52,9 +56,24 @@ jobs:
           node scripts/supabase/contract/sync_function_contract_tests.mjs
           node scripts/supabase/diagnostics/sync_scale_validation.mjs
 
-      - name: Run iOS test suite (iPhone 17 simulator)
+      - name: Run iOS test suite (concrete simulator device)
         run: |
+          set -euo pipefail
+
+          SIMULATOR_ID="$(
+            xcrun simctl list devices available \
+              | sed -nE 's/.*iPhone[^()]* \(([0-9A-F-]+)\).*/\1/p' \
+              | head -n 1
+          )"
+
+          if [ -z "${SIMULATOR_ID}" ]; then
+            echo "No available iPhone simulator found on runner."
+            xcrun simctl list devices available
+            exit 1
+          fi
+
           xcodebuild test \
             -project ClimbingProgram.xcodeproj \
-            -scheme ClimbingProgramTests \
-            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest'
+            -scheme ClimbingProgram \
+            -only-testing:ClimbingProgramTests \
+            -destination "id=${SIMULATOR_ID}"
