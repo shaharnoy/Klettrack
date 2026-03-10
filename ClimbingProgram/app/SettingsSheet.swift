@@ -16,6 +16,7 @@ struct SettingsSheet: View {
     @State private var sheetRoute: SheetRoute?
 
     @State private var hasRequestedReviewThisSession = false
+    @AppStorage(FeatureFlags.klettrackWebSettings) private var klettrackWebSettings = false
     
     var body: some View {
         List {
@@ -47,6 +48,22 @@ struct SettingsSheet: View {
                             Text("Data Manager")
                                 .font(.body)
                             Text("Edit day types, styles, and gyms")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(.vertical, 1)
+                }
+                NavigationLink {
+                    FeatureFlagsView()
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "switch.2")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Feature Flags")
+                                .font(.body)
+                            Text("Enable or disable specific behaviors")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
@@ -88,21 +105,23 @@ struct SettingsSheet: View {
                     }
                     .padding(.vertical, 1)
                 }
-                NavigationLink {
-                    KlettrackWebSettingsView()
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: "cloud")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("klettrack web")
-                                .font(.body)
-                            Text("Manage cloud sync and account")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                if klettrackWebSettings {
+                    NavigationLink {
+                        KlettrackWebSettingsView()
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "cloud")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("klettrack web")
+                                    .font(.body)
+                                Text("Manage cloud sync and account")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
+                        .padding(.vertical, 1)
                     }
-                    .padding(.vertical, 1)
                 }
                 NavigationLink {
                     BoardCredentialsSettingsView()

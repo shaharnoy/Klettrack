@@ -7,10 +7,6 @@
 import SwiftUI
 
 struct KlettrackWebSettingsView: View {
-    private enum WebRoute: Hashable {
-        case featureFlags
-    }
-
     @State private var supabaseIdentifier = ""
     @State private var supabasePassword = ""
     @State private var authManager = AuthManager.shared
@@ -47,7 +43,7 @@ struct KlettrackWebSettingsView: View {
                 }
 
                 if authManager.isSignedIn {
-                    Text(syncStatusText(authManager.syncState))
+                    Text(syncStatusText(authManager.syncState, lastSyncAt: authManager.lastSyncAt))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Text(lastSyncText(authManager.lastSyncAt))
@@ -103,14 +99,14 @@ struct KlettrackWebSettingsView: View {
 
             Section {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Klettrack Web")
+                    Text("klettrack Web")
                         .font(.title3.weight(.semibold))
                     Text("Plan sessions faster on the web and keep your climbing logs synced across devices.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
 
                     if let websiteURL = URL(string: "https://klettrack.com/app.html#/login") {
-                        Link("Open Klettrack Web", destination: websiteURL)
+                        Link("Open klettrack Web", destination: websiteURL)
                             .frame(maxWidth: .infinity, alignment: .center)
                         .buttonStyle(.borderedProminent)
                     }
@@ -124,34 +120,9 @@ struct KlettrackWebSettingsView: View {
             } header: {
                 Text("klettrack web")
             }
-
-            Section {
-                NavigationLink(value: WebRoute.featureFlags) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: "switch.2")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Feature Flags")
-                                .font(.body)
-                            Text("Internal app toggles for in-progress behavior")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    .padding(.vertical, 1)
-                }
-            } header: {
-                Text("Advanced")
-            }
         }
         .navigationTitle("klettrack web")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: WebRoute.self) { route in
-            switch route {
-            case .featureFlags:
-                FeatureFlagsView()
-            }
-        }
         .toolbar {
             if authManager.isSignedIn {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -181,14 +152,24 @@ struct KlettrackWebSettingsView: View {
                 }
             }
         } message: {
-            Text("You’ll need to sign in again to sync with Klettrack Web.")
+            Text("You’ll need to sign in again to sync with klettrack Web.")
         }
     }
 
-    private func syncStatusText(_ state: SyncManager.State) -> String {
+    private func syncStatusText(_ state: SyncManager.State, lastSyncAt: Date?) -> String {
         switch state {
         case .idle:
-            return "Sync status: idle"
+            guard let lastSyncAt else {
+                return "Sync status: waiting for first sync"
+            }
+            let age = Date.now.timeIntervalSince(lastSyncAt)
+            if age < 90 {
+                return "Sync status: up to date"
+            }
+            let relativeFormatter = RelativeDateTimeFormatter()
+            relativeFormatter.unitsStyle = .full
+            let relativeText = relativeFormatter.localizedString(for: lastSyncAt, relativeTo: .now)
+            return "Sync status: idle (\(relativeText))"
         case .syncing:
             return "Sync status: syncing"
         case .conflict(let count):
