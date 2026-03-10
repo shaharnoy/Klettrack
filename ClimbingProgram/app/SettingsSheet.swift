@@ -13,15 +13,6 @@ struct SettingsSheet: View {
         var id: String { rawValue }
     }
 
-    private enum SettingsRoute: Hashable {
-        case catalog
-        case dataManager
-        case gallery
-        case timerTemplates
-        case webSettings
-        case boardCredentials
-    }
-
     @State private var sheetRoute: SheetRoute?
 
     @State private var hasRequestedReviewThisSession = false
@@ -29,7 +20,9 @@ struct SettingsSheet: View {
     var body: some View {
         List {
             Section {
-                NavigationLink(value: SettingsRoute.catalog) {
+                NavigationLink {
+                    CatalogView()
+                } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "square.grid.2x2")
                         VStack(alignment: .leading, spacing: 2) {
@@ -45,7 +38,9 @@ struct SettingsSheet: View {
                 }
                 
                 //metadata manager
-                NavigationLink(value: SettingsRoute.dataManager) {
+                NavigationLink {
+                    ClimbMetaManagerView()
+                } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "slider.horizontal.3")
                         VStack(alignment: .leading, spacing: 2) {
@@ -60,7 +55,9 @@ struct SettingsSheet: View {
                     .padding(.vertical, 1)
                 }
                 //Media Manager
-                NavigationLink(value: SettingsRoute.gallery) {
+                NavigationLink {
+                    MediaManagerView()
+                } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "photo.stack")
                         VStack(alignment: .leading, spacing: 2) {
@@ -75,7 +72,9 @@ struct SettingsSheet: View {
                     .padding(.vertical, 1)
                 }
                 
-                NavigationLink(value: SettingsRoute.timerTemplates) {
+                NavigationLink {
+                    TimerTemplatesListView()
+                } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "timer")
                         VStack(alignment: .leading, spacing: 2) {
@@ -89,7 +88,9 @@ struct SettingsSheet: View {
                     }
                     .padding(.vertical, 1)
                 }
-                NavigationLink(value: SettingsRoute.webSettings) {
+                NavigationLink {
+                    KlettrackWebSettingsView()
+                } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "cloud")
                         VStack(alignment: .leading, spacing: 2) {
@@ -103,7 +104,9 @@ struct SettingsSheet: View {
                     }
                     .padding(.vertical, 1)
                 }
-                NavigationLink(value: SettingsRoute.boardCredentials) {
+                NavigationLink {
+                    BoardCredentialsSettingsView()
+                } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "lock.circle")
                         VStack(alignment: .leading, spacing: 2) {
@@ -188,22 +191,6 @@ struct SettingsSheet: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: SettingsRoute.self) { route in
-            switch route {
-            case .catalog:
-                CatalogView()
-            case .dataManager:
-                ClimbMetaManagerView()
-            case .gallery:
-                MediaManagerView()
-            case .timerTemplates:
-                TimerTemplatesListView()
-            case .webSettings:
-                KlettrackWebSettingsView()
-            case .boardCredentials:
-                BoardCredentialsSettingsView()
-            }
-        }
         // About / Contribute sheet
         .sheet(item: $sheetRoute) { route in
             NavigationStack {

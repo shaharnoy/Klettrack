@@ -7,6 +7,10 @@
 import SwiftUI
 
 struct KlettrackWebSettingsView: View {
+    private enum WebRoute: Hashable {
+        case featureFlags
+    }
+
     @State private var supabaseIdentifier = ""
     @State private var supabasePassword = ""
     @State private var authManager = AuthManager.shared
@@ -120,9 +124,34 @@ struct KlettrackWebSettingsView: View {
             } header: {
                 Text("klettrack web")
             }
+
+            Section {
+                NavigationLink(value: WebRoute.featureFlags) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "switch.2")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Feature Flags")
+                                .font(.body)
+                            Text("Internal app toggles for in-progress behavior")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(.vertical, 1)
+                }
+            } header: {
+                Text("Advanced")
+            }
         }
         .navigationTitle("klettrack web")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: WebRoute.self) { route in
+            switch route {
+            case .featureFlags:
+                FeatureFlagsView()
+            }
+        }
         .toolbar {
             if authManager.isSignedIn {
                 ToolbarItemGroup(placement: .topBarTrailing) {

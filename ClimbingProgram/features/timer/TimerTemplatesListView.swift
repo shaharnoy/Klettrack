@@ -29,55 +29,52 @@ struct TimerTemplatesListView: View {
 
     
     var body: some View {
-        NavigationStack {
-            List {
-                if templates.isEmpty {
-                    ContentUnavailableView(
-                        "No Timer Templates",
-                        systemImage: "timer",
-                        description: Text("Create your first timer template to get started")
-                    )
-                } else {
-                    ForEach(templates) { template in
-                        TimerTemplateListRow(template: template)
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    delete(template)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-
-                                Button {
-                                    editingTemplate = template
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                                .tint(.blue)
+        List {
+            if templates.isEmpty {
+                ContentUnavailableView(
+                    "No Timer Templates",
+                    systemImage: "timer",
+                    description: Text("Create your first timer template to get started")
+                )
+            } else {
+                ForEach(templates) { template in
+                    TimerTemplateListRow(template: template)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                delete(template)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
                             }
-                    }
 
+                            Button {
+                                editingTemplate = template
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
                 }
             }
-            .navigationTitle("Timer Templates")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("New") {
-                        guard isDataReady else { return }
-                        sheetRoute = .newTemplate
-                    }
-                    .disabled(!isDataReady)
+        }
+        .navigationTitle("Timer Templates")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("New") {
+                    guard isDataReady else { return }
+                    sheetRoute = .newTemplate
                 }
+                .disabled(!isDataReady)
             }
-            .sheet(item: $sheetRoute) { route in
-                switch route {
-                case .newTemplate:
-                    TimerTemplateEditor()
-                }
+        }
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .newTemplate:
+                TimerTemplateEditor()
             }
-            .sheet(item: $editingTemplate) { template in
-                TimerTemplateEditor(existingTemplate: template)
-            }
+        }
+        .sheet(item: $editingTemplate) { template in
+            TimerTemplateEditor(existingTemplate: template)
         }
     }
     
