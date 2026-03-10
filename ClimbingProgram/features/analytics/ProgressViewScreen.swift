@@ -44,6 +44,27 @@ public struct ProgressViewScreen: View {
     @State private var hasRequestedReviewThisSession = false
     @AppStorage("filterReviewTriggerCount") private var filterCount = 0
 
+    private struct StatsInputVersion: Equatable {
+        struct SessionVersion: Equatable {
+            let id: UUID
+            let updatedAtClient: Date
+        }
+
+        struct ClimbVersion: Equatable {
+            let id: UUID
+            let updatedAtClient: Date
+        }
+
+        struct PlanVersion: Equatable {
+            let id: UUID
+            let updatedAtClient: Date
+        }
+
+        let sessions: [SessionVersion]
+        let climbs: [ClimbVersion]
+        let plans: [PlanVersion]
+    }
+
 
     public init() {}
     
@@ -76,30 +97,27 @@ public struct ProgressViewScreen: View {
         }
         .navigationTitle("PROGRESS")
         .navigationBarTitleDisplayMode(.large)
-        .onAppear {
-            let data = StatsInputData(
-                sessions: allSessions,
-                climbs: allClimbEntries,
-                plans: allPlans
-            )
-            climbVM.updateInput(data)
-            exerciseVM.updateInput(data)
+        .task(id: statsInputVersion) {
+            syncViewModels()
         }
-        .onChange(of: allSessions) { _, _ in
-            let data = StatsInputData(sessions: allSessions, climbs: allClimbEntries, plans: allPlans)
-            climbVM.updateInput(data)
-            exerciseVM.updateInput(data)
-        }
-        .onChange(of: allClimbEntries) { _, _ in
-            let data = StatsInputData(sessions: allSessions, climbs: allClimbEntries, plans: allPlans)
-            climbVM.updateInput(data)
-            exerciseVM.updateInput(data)
-        }
-        .onChange(of: allPlans) { _, _ in
-            let data = StatsInputData(sessions: allSessions, climbs: allClimbEntries, plans: allPlans)
-            climbVM.updateInput(data)
-            exerciseVM.updateInput(data)
-        }
+    }
+
+    private var statsInputVersion: StatsInputVersion {
+        StatsInputVersion(
+            sessions: allSessions.map { .init(id: $0.id, updatedAtClient: $0.updatedAtClient) },
+            climbs: allClimbEntries.map { .init(id: $0.id, updatedAtClient: $0.updatedAtClient) },
+            plans: allPlans.map { .init(id: $0.id, updatedAtClient: $0.updatedAtClient) }
+        )
+    }
+
+    private func syncViewModels() {
+        let data = StatsInputData(
+            sessions: allSessions,
+            climbs: allClimbEntries,
+            plans: allPlans
+        )
+        climbVM.updateInput(data)
+        exerciseVM.updateInput(data)
     }
 }
 

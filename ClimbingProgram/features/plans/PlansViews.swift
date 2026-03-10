@@ -786,42 +786,38 @@ struct PlanDetailView: View {
             List {
                 ForEach(groupedByWeek, id: \.weekStart) { week in
                     Section {
-                        ForEach(week.days.map(\.id), id: \.self) { dayId in
-                            if let idx = plan.days.firstIndex(where: { $0.id == dayId }) {
-                                let day = plan.days[idx]
-
-                                Button {
-                                    timerAppState.plansNavigationPath.append(
-                                        EditablePlanDayNav(
-                                            planId: plan.id,
-                                            planDayId: dayId
-                                        )
+                        ForEach(week.days) { day in
+                            Button {
+                                timerAppState.plansNavigationPath.append(
+                                    EditablePlanDayNav(
+                                        planId: plan.id,
+                                        planDayId: day.id
                                     )
-                                } label: {
-                                    HStack {
-                                        Circle()
-                                            .fill(dayTypeColor(for: day))
-                                            .frame(width: 10, height: 10)
+                                )
+                            } label: {
+                                HStack {
+                                    Circle()
+                                        .fill(dayTypeColor(for: day))
+                                        .frame(width: 10, height: 10)
 
-                                        Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
+                                    Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
 
-                                        Spacer()
+                                    Spacer()
 
-                                        Text(day.type?.name ?? "Unknown")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 16)
-                                    .background {
-                                        if isToday(day.date) {
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .fill(Color.yellow.opacity(0.15))
-                                        }
+                                    Text(day.type?.name ?? "Unknown")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background {
+                                    if isToday(day.date) {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(Color.yellow.opacity(0.15))
                                     }
                                 }
-                                .buttonStyle(.plain)
-                                .id(dayId)
                             }
+                            .buttonStyle(.plain)
+                            .id(day.id)
                         }
                     } header: {
                         Text(week.weekStart.formatted(date: .abbreviated, time: .omitted))
