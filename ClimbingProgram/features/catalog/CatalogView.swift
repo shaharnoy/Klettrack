@@ -7,18 +7,6 @@
 import SwiftUI
 import SwiftData
 
-private enum CatalogRoute: Hashable {
-    case activity(UUID)
-}
-
-private enum ActivityDetailRoute: Hashable {
-    case trainingType(UUID)
-}
-
-private enum TrainingTypeDetailRoute: Hashable {
-    case combination(UUID)
-}
-
 // MARK: - Root Catalog (Categories = Activity)
 
 struct CatalogView: View {
@@ -98,11 +86,12 @@ struct CatalogView: View {
         }
         .navigationTitle("CATALOG")
         .navigationBarTitleDisplayMode(.large)
-        .navigationDestination(for: CatalogRoute.self, destination: catalogDestination)
     }
     
     private func activityCard(for activity: Activity) -> some View {
-        NavigationLink(value: CatalogRoute.activity(activity.id)) {
+        NavigationLink {
+            ActivityDetailView(activity: activity)
+        } label: {
             let exerciseCount = totalExerciseCount(for: activity)
             let typeCountText = "\(activity.types.count) training type\(activity.types.count == 1 ? "" : "s")"
             let exerciseCountText = "\(exerciseCount) exercise\(exerciseCount == 1 ? "" : "s")"
@@ -127,18 +116,6 @@ struct CatalogView: View {
                 try? context.save()
             } label: {
                 Label("Delete", systemImage: "trash")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func catalogDestination(for route: CatalogRoute) -> some View {
-        switch route {
-        case .activity(let activityID):
-            if let activity = activities.first(where: { $0.id == activityID }) {
-                ActivityDetailView(activity: activity)
-            } else {
-                Text("Category not found")
             }
         }
     }
@@ -169,7 +146,9 @@ struct ActivityDetailView: View {
         List {
             Section {
                 ForEach(activeTypes) { t in
-                    NavigationLink(value: ActivityDetailRoute.trainingType(t.id)) {
+                    NavigationLink {
+                        TrainingTypeDetailView(trainingType: t, tint: activity.hue.color)
+                    } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(t.name).font(.headline)
                             if let area = t.area, !area.isEmpty {
@@ -266,19 +245,6 @@ struct ActivityDetailView: View {
                 try? context.save()
             }
         }
-        .navigationDestination(for: ActivityDetailRoute.self, destination: activityDestination)
-    }
-
-    @ViewBuilder
-    private func activityDestination(for route: ActivityDetailRoute) -> some View {
-        switch route {
-        case .trainingType(let trainingTypeID):
-            if let trainingType = activeTypes.first(where: { $0.id == trainingTypeID }) {
-                TrainingTypeDetailView(trainingType: trainingType, tint: activity.hue.color)
-            } else {
-                Text("Training type not found")
-            }
-        }
     }
 }
 
@@ -357,7 +323,9 @@ struct TrainingTypeDetailView: View {
             if !SyncLocalMutation.active(trainingType.combinations).isEmpty {
                 Section("Combinations") {
                     ForEach(SyncLocalMutation.active(trainingType.combinations)) { combo in
-                        NavigationLink(value: TrainingTypeDetailRoute.combination(combo.id)) {
+                        NavigationLink {
+                            CombinationDetailView(combo: combo, tint: tint)
+                        } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(combo.name).font(.headline)
                                 if let cd = combo.comboDescription, !cd.isEmpty {
@@ -538,7 +506,6 @@ struct TrainingTypeDetailView: View {
                 try? context.save()
             }
         }
-        .navigationDestination(for: TrainingTypeDetailRoute.self, destination: trainingTypeDestination)
     }
 
     private func startNewExercise() {
@@ -557,18 +524,6 @@ struct TrainingTypeDetailView: View {
         editingExercise = ex
     }
 
-    @ViewBuilder
-    private func trainingTypeDestination(for route: TrainingTypeDetailRoute) -> some View {
-        switch route {
-        case .combination(let combinationID):
-            let combinations = SyncLocalMutation.active(trainingType.combinations)
-            if let combination = combinations.first(where: { $0.id == combinationID }) {
-                CombinationDetailView(combo: combination, tint: tint)
-            } else {
-                Text("Combination not found")
-            }
-        }
-    }
 }
 
 // MARK: - Combination detail (Bouldering)
