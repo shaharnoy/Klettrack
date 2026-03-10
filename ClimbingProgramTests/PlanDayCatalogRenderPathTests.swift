@@ -63,6 +63,45 @@ final class PlanDayCatalogRenderPathTests: BaseSwiftDataTestCase {
         XCTAssertEqual(afterRename.first?.activityName, "Renamed")
     }
 
+    func testGlobalOrderAllowsCrossActivityPlacement() throws {
+        let general = Activity(name: "General Strength")
+        context.insert(general)
+        let generalType = TrainingType(name: "Strength Type")
+        general.types.append(generalType)
+        generalType.exercises.append(Exercise(name: "GS 1", order: 0))
+        generalType.exercises.append(Exercise(name: "GS 2", order: 1))
+        generalType.exercises.append(Exercise(name: "GS 3", order: 2))
+        generalType.exercises.append(Exercise(name: "GS 4", order: 3))
+        generalType.exercises.append(Exercise(name: "GS 5", order: 4))
+        generalType.exercises.append(Exercise(name: "GS 6", order: 5))
+
+        let core = Activity(name: "Core")
+        context.insert(core)
+        let coreType = TrainingType(name: "Core Type")
+        core.types.append(coreType)
+        coreType.exercises.append(Exercise(name: "Plank", order: 0))
+
+        let day = PlanDay(date: .now)
+        day.chosenExercises = ["GS 1", "GS 2", "GS 3", "GS 4", "GS 5", "GS 6", "Plank"]
+        day.exerciseOrder = [
+            "GS 1": 0,
+            "GS 2": 1,
+            "GS 3": 2,
+            "Plank": 3,
+            "GS 4": 4,
+            "GS 5": 5,
+            "GS 6": 6
+        ]
+
+        let ordered = globallyOrderedExercises(day: day, loggedExerciseNames: Set())
+
+        XCTAssertEqual(
+            ordered.map(\.name),
+            ["GS 1", "GS 2", "GS 3", "Plank", "GS 4", "GS 5", "GS 6"]
+        )
+        XCTAssertEqual(ordered[3].activityName, "Core")
+    }
+
     func testGroupingHeavyLoadPerformance() throws {
         let allExerciseNames = seedLargeCatalogForRenderPathStress(
             activityCount: 40,
@@ -89,6 +128,7 @@ final class PlanDayCatalogRenderPathTests: BaseSwiftDataTestCase {
     // MARK: - Helpers
 
     private typealias GroupedExercises = (activityName: String, exercises: [String])
+    private typealias OrderedExercise = (name: String, activityName: String)
 
     private func groupedChosenExercises(day: PlanDay, loggedExerciseNames: Set<String>) -> [GroupedExercises] {
         let activityDescriptor = FetchDescriptor<Activity>()
@@ -147,6 +187,71 @@ final class PlanDayCatalogRenderPathTests: BaseSwiftDataTestCase {
         }
 
         return result.sorted { $0.activityName < $1.activityName }
+    }
+
+    private func globallyOrderedExercises(day: PlanDay, loggedExerciseNames: Set<String>) -> [OrderedExercise] {
+        let activityDescriptor = FetchDescriptor<Activity>()
+        let allActivities = (try? context.fetch(activityDescriptor)) ?? []
+
+        var exerciseToActivityMap: [String: (activityName: String, order: Int)] = [:]
+
+        for activity in allActivities {
+            for trainingType in activity.types {
+                for exercise in trainingType.exercises {
+                    upsertExerciseMapping(
+                        map: &exerciseToActivityMap,
+                        exerciseName: exercise.name,
+                        activityName: activity.name,
+                        order: exercise.order
+                    )
+                }
+
+                for combination in trainingType.combinations {
+                    for exercise in combination.exercises {
+                        upsertExerciseMapping(
+                            map: &exerciseToActivityMap,
+                            exerciseName: exercise.name,
+                            activityName: activity.name,
+                            order: exercise.order
+                        )
+                    }
+                }
+            }
+        }
+
+        let orderedNames = day.chosenExercises.sorted { lhs, rhs in
+            let manualLeft = day.exerciseOrder[lhs]
+            let manualRight = day.exerciseOrder[rhs]
+            if let manualLeft, let manualRight, manualLeft != manualRight {
+                return manualLeft < manualRight
+            }
+            if manualLeft != nil { return true }
+            if manualRight != nil { return false }
+
+            let leftIsLogged = loggedExerciseNames.contains(lhs)
+            let rightIsLogged = loggedExerciseNames.contains(rhs)
+            if leftIsLogged != rightIsLogged {
+                return !leftIsLogged
+            }
+
+            let orderLeft = exerciseToActivityMap[lhs]?.order ?? Int.max
+            let orderRight = exerciseToActivityMap[rhs]?.order ?? Int.max
+            if orderLeft != orderRight {
+                return orderLeft < orderRight
+            }
+
+            let activityLeft = exerciseToActivityMap[lhs]?.activityName ?? "Unknown"
+            let activityRight = exerciseToActivityMap[rhs]?.activityName ?? "Unknown"
+            if activityLeft != activityRight {
+                return activityLeft < activityRight
+            }
+
+            return lhs < rhs
+        }
+
+        return orderedNames.map { name in
+            (name: name, activityName: exerciseToActivityMap[name]?.activityName ?? "Unknown")
+        }
     }
 
     private func upsertExerciseMapping(
