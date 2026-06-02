@@ -13,9 +13,18 @@ import AVFoundation
 import StoreKit
 
 struct ClimbView: View {
-    private enum AddClimbRoute: String, Identifiable {
+    private enum AddClimbRoute: Identifiable {
         case add
-        var id: String { rawValue }
+        case clone(id: UUID, climb: ClimbEntry, date: Date)
+
+        var id: String {
+            switch self {
+            case .add:
+                return "add"
+            case .clone(let id, _, let date):
+                return "clone-\(id.uuidString)-\(date.timeIntervalSinceReferenceDate)"
+            }
+        }
     }
 
     private struct CloneDateRoute: Identifiable {
@@ -29,7 +38,6 @@ struct ClimbView: View {
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
     @State private var addClimbRoute: AddClimbRoute? = nil
     @State private var cloneDateRoute: CloneDateRoute? = nil
-    @State private var climbToClone: ClimbEntry? = nil
     @State private var cloneTargetDate = Date()
     @State private var editingClimb: ClimbEntry? = nil
     
@@ -191,30 +199,40 @@ struct ClimbView: View {
         }
         .sheet(item: $addClimbRoute, onDismiss: {
             pendingBulkClimbCount = 1
-            climbToClone = nil
-        }) { _ in
-            AddClimbView(
-                prefillClimb: climbToClone,
-                initialDate: cloneTargetDate,
-                bulkCount: pendingBulkClimbCount,
-                onSave: { _ in
-                ensureDateRangeInitialized()
-                pendingBulkClimbCount = 1 // reset for next time
-                climbToClone = nil
-            })
+        }) { route in
+            switch route {
+            case .add:
+                AddClimbView(bulkCount: pendingBulkClimbCount, onSave: { _ in
+                    ensureDateRangeInitialized()
+                    pendingBulkClimbCount = 1 // reset for next time
+                })
+            case .clone(_, let climb, let date):
+                AddClimbView(
+                    prefillClimb: climb,
+                    initialDate: date,
+                    bulkCount: 1,
+                    onSave: { _ in
+                        ensureDateRangeInitialized()
+                        pendingBulkClimbCount = 1
+                    }
+                )
+            }
         }
         .sheet(item: $cloneDateRoute) { route in
             CloneClimbDateSheet(
                 targetDate: $cloneTargetDate,
                 onCancel: {
                     cloneDateRoute = nil
-                    climbToClone = nil
                 },
                 onClone: {
-                    climbToClone = route.climb
+                    let date = cloneTargetDate
+                    let climb = route.climb
                     cloneDateRoute = nil
                     pendingBulkClimbCount = 1
-                    addClimbRoute = .add
+                    Task { @MainActor in
+                        await Task.yield()
+                        addClimbRoute = .clone(id: climb.id, climb: climb, date: date)
+                    }
                 }
             )
             .presentationDetents([.height(220)])

@@ -3087,7 +3087,9 @@ private struct OrderedChosenExercisesView<RowContent: View>: View {
     }
 
     private func commitOrder() {
-        guard localOrder != exercises else { return }
+        guard !localOrder.isEmpty else { return }
+        day.chosenExercises = localOrder
+        day.exerciseOrder = day.exerciseOrder.filter { localOrder.contains($0.key) }
         for (idx, name) in localOrder.enumerated() {
             day.exerciseOrder[name] = idx
         }
