@@ -28,16 +28,16 @@ struct CustomTabBar: View {
                     VStack(spacing: 4) {
                         Image(systemName: tab.icon)
                             .font(.system(size: 20, weight: .medium))
-                            .foregroundColor(selectedTab == tab.tag ? .blue : .secondary)
+                            .foregroundStyle(selectedTab == tab.tag ? .blue : .secondary)
                         
                         Text(tab.title)
                             .font(.caption2)
-                            .foregroundColor(selectedTab == tab.tag ? .blue : .secondary)
+                            .foregroundStyle(selectedTab == tab.tag ? .blue : .secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 }
-                .buttonStyle(PlainButtonStyle())
+                .buttonStyle(.plain)
             }
         }
         .background(

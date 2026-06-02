@@ -78,6 +78,24 @@ struct PlanFactory {
             return (try? context.fetch(d))?.first
         }
 
+        func exerciseIDs(for names: [String], order: [String: Int]) -> ([UUID], [String: Int]) {
+            let descriptor = FetchDescriptor<Exercise>()
+            let exercises = (try? context.fetch(descriptor)) ?? []
+            var idByName: [String: UUID] = [:]
+            for exercise in exercises where idByName[exercise.name] == nil {
+                idByName[exercise.name] = exercise.id
+            }
+
+            var ids: [UUID] = []
+            var orderByID: [String: Int] = [:]
+            for (fallbackIndex, name) in names.enumerated() {
+                guard let id = idByName[name] else { continue }
+                ids.append(id)
+                orderByID[id.uuidString] = order[name] ?? fallbackIndex
+            }
+            return (ids, orderByID)
+        }
+
         for w in 0..<count {
             for i in 0..<7 {
                 let date = cal.date(byAdding: .day, value: w*7 + i, to: startNext)!
@@ -89,6 +107,9 @@ struct PlanFactory {
                 if let chosen = plan.recurringChosenExercisesByWeekday[weekday] {
                     day.chosenExercises = chosen
                     day.exerciseOrder = plan.recurringExerciseOrderByWeekday[weekday] ?? [:]
+                    let idFields = exerciseIDs(for: day.chosenExercises, order: day.exerciseOrder)
+                    day.chosenExerciseIDs = idFields.0
+                    day.exerciseOrderByID = idFields.1
                     day.type = resolveDayType(plan.recurringDayTypeIdByWeekday[weekday]) ?? day.type
                 }
 

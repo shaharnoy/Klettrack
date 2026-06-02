@@ -9,13 +9,18 @@ import SwiftData
 
 // MARK: - Timer Template Selector
 struct TimerTemplateSelector: View {
+    private enum SheetRoute: String, Identifiable {
+        case newTemplate
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query(sort: [SortDescriptor(\TimerTemplate.lastUsedDate, order: .reverse)]) private var templates: [TimerTemplate]
     
     let onTemplateSelected: (TimerTemplate) -> Void
     
-    @State private var showingNewTemplate = false
+    @State private var sheetRoute: SheetRoute?
     @State private var editingTemplate: TimerTemplate? = nil
     
     var body: some View {
@@ -58,12 +63,15 @@ struct TimerTemplateSelector: View {
                 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New") {
-                        showingNewTemplate = true
+                        sheetRoute = .newTemplate
                     }
                 }
             }
-            .sheet(isPresented: $showingNewTemplate) {
-                TimerTemplateEditor()
+            .sheet(item: $sheetRoute) { route in
+                switch route {
+                case .newTemplate:
+                    TimerTemplateEditor()
+                }
             }
             .sheet(item: $editingTemplate) { template in
                 TimerTemplateEditor(existingTemplate: template)
@@ -89,21 +97,21 @@ struct TimerTemplateRow: View {
                 HStack {
                     Text(template.name)
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     
                     Spacer()
                     
                     if template.useCount > 0 {
                         Text("Used \(template.useCount) times")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 
                 if let description = template.templateDescription {
                     Text(description)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 
@@ -138,7 +146,7 @@ struct TimerTemplateRow: View {
                     }
                 }
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 
                 if let lastUsed = template.lastUsedDate {
                     Text("Last used: \(lastUsed.formatted(date: .abbreviated, time: .shortened))")
@@ -270,15 +278,15 @@ struct CustomTimerSetup: View {
     
     private var intervalsSection: some View {
         Section("Intervals") {
-            ForEach(intervals.indices, id: \.self) { index in
+            ForEach(Array(intervals.enumerated()), id: \.element.id) { index, item in
                 IntervalInputRow(
                     interval: $intervals[index],
                     onDelete: {
-                        intervals.remove(at: index)
+                        intervals.removeAll { $0.id == item.id }
                     }
                 )
             }
-            
+
             Button("Add Interval") {
                 intervals.append(IntervalInput())
             }
@@ -476,15 +484,15 @@ struct CustomTimerSetupWithContext: View {
     
     private var intervalsSection: some View {
         Section("Intervals") {
-            ForEach(intervals.indices, id: \.self) { index in
+            ForEach(Array(intervals.enumerated()), id: \.element.id) { index, item in
                 IntervalInputRow(
                     interval: $intervals[index],
                     onDelete: {
-                        intervals.remove(at: index)
+                        intervals.removeAll { $0.id == item.id }
                     }
                 )
             }
-            
+
             Button("Add Interval") {
                 intervals.append(IntervalInput())
             }
@@ -511,7 +519,7 @@ struct CustomTimerSetupWithContext: View {
             
             Text("Time to rest when transitioning between different interval types")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
     
@@ -600,7 +608,8 @@ struct CustomTimerSetupWithContext: View {
 }
 
 // MARK: - Interval Input
-struct IntervalInput {
+struct IntervalInput: Identifiable {
+    let id: UUID = .init()
     var workMinutes: Int = 0
     var workSeconds: Int = 0
     var restMinutes: Int = 0
@@ -648,7 +657,7 @@ struct IntervalInputRow: View {
                 
                 Button("Delete", action: onDelete)
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
             }
             
             VStack(spacing: 16) {
@@ -714,7 +723,7 @@ struct IntervalInputRow: View {
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(8)
+        .clipShape(.rect(cornerRadius: 8))
     }
 }
 
@@ -789,7 +798,7 @@ struct TimerTemplateEditor: View {
                         Button("Delete Template") {
                             showingDeleteConfirmation = true
                         }
-                        .foregroundColor(.red)
+                        .foregroundStyle(.red)
                     }
                 }
             }
@@ -844,15 +853,15 @@ struct TimerTemplateEditor: View {
     
     private var intervalsSection: some View {
         Section("Intervals") {
-            ForEach(intervals.indices, id: \.self) { index in
+            ForEach(Array(intervals.enumerated()), id: \.element.id) { index, item in
                 IntervalInputRow(
                     interval: $intervals[index],
                     onDelete: {
-                        intervals.remove(at: index)
+                        intervals.removeAll { $0.id == item.id }
                     }
                 )
             }
-            
+
             Button("Add Interval") {
                 intervals.append(IntervalInput())
             }
@@ -879,7 +888,7 @@ struct TimerTemplateEditor: View {
             
             Text("Time to rest when transitioning between different interval types")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
     

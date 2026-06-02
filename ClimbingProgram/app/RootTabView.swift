@@ -6,21 +6,21 @@
 
 import SwiftUI
 import SwiftData
-import Combine
 
 // Shared timer state to ensure only one timer instance
 @MainActor
-class TimerAppState: ObservableObject {
-    @Published var selectedTab: Int = 1
-    @Published var currentPlanDay: PlanDay? = nil
+@Observable
+class TimerAppState {
+    var selectedTab: Int = 1
+    var currentPlanDay: PlanDay? = nil
     
     // Navigation path storage for each tab to preserve navigation state
-    @Published var catalogNavigationPath = NavigationPath()
-    @Published var plansNavigationPath = NavigationPath()
-    @Published var climbNavigationPath = NavigationPath()
-    @Published var logNavigationPath = NavigationPath()
-    @Published var progressNavigationPath = NavigationPath()
-    @Published var settingsNavigationPath = NavigationPath()
+    var catalogNavigationPath = NavigationPath()
+    var plansNavigationPath = NavigationPath()
+    var climbNavigationPath = NavigationPath()
+    var logNavigationPath = NavigationPath()
+    var progressNavigationPath = NavigationPath()
+    var settingsNavigationPath = NavigationPath()
     
     // Reference to shared timer manager
     private let sharedTimerManager = SharedTimerManager.shared
@@ -58,10 +58,15 @@ struct PlanDayNavigationItem: Hashable {
 }
 
 struct RootTabView: View {
+    private enum SheetRoute: String, Identifiable {
+        case settings
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @State private var isDataReady = false
-    @StateObject private var timerAppState = TimerAppState()
-    @State private var showingSettings = false
+    @State private var timerAppState = TimerAppState()
+    @State private var sheetRoute: SheetRoute?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -101,21 +106,23 @@ struct RootTabView: View {
             
             // Custom tab bar with Settings button
             CustomTabBar(selectedTab: $timerAppState.selectedTab, onSettingsTapped: {
-                showingSettings = true
+                sheetRoute = .settings
             })
         }
         // Inject shared environment once for the whole subtree
         .environment(\.isDataReady, isDataReady)
-        .environmentObject(timerAppState)
+        .environment(timerAppState)
         .task {
             await initializeData()
             //SeedData.nukeAndReseed(context) // Uncomment this line to reset data during development
             //SeedTimerTemplates.nukeAndReseed(context) // Uncomment this line to reset data during development
             //SeedClimbingData.nukeAndReseed(context) // Uncomment this line to reset data during development
         }
-        .sheet(isPresented: $showingSettings) {
-            SettingsSheet()
-                .environmentObject(timerAppState)
+        .sheet(item: $sheetRoute) { route in
+            switch route {
+            case .settings:
+                SettingsSheet()
+            }
         }
     }
     
@@ -128,7 +135,7 @@ struct RootTabView: View {
         
         do {
             // Longer delay to ensure SwiftData container is fully ready
-            try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+            try await Task.sleep(for: .milliseconds(300))
 
             //runDayTypesRepairIfNeeded(context)  // delete duplicate days and reseed
             SeedData.loadIfNeeded(context)      // Always seed - logic in place to not overwrite existing data
@@ -147,6 +154,12 @@ struct RootTabView: View {
                         }
                     }
                 }
+            }
+            runOnce(per: "plan_day_exercise_id_backfill_2026-06-02") {
+                backfillPlanDayExerciseIDFields(context)
+            }
+            runOnce(per: "climb_attempts_default_backfill_2026-06-02") {
+                backfillClimbEntryAttempts(context)
             }
             runOnce(per: "daytypedefaultflags_backfill_2025-11-08") {
                 backfillDefaultFlags(context)
@@ -168,7 +181,7 @@ struct RootTabView: View {
             try context.save()
             
             // Additional delay to ensure everything is settled
-            try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+            try await Task.sleep(for: .milliseconds(200))
             
         } catch {
             print("Error during data initialization: \(error)")
@@ -346,4 +359,3 @@ func backfillPreviouslyClimbedFlags(_ context: ModelContext) {
         print("backfillPreviouslyClimbedFlags failed: \(error.localizedDescription)")
     }
 }
-

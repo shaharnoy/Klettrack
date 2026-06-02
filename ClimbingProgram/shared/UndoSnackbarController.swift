@@ -9,9 +9,10 @@ import Foundation
 import SwiftUI
 
 @MainActor
-public final class UndoSnackbarController: ObservableObject {
-    @Published public private(set) var isVisible: Bool = false
-    @Published public private(set) var message: String = ""
+@Observable
+public final class UndoSnackbarController {
+    public private(set) var isVisible: Bool = false
+    public private(set) var message: String = ""
     public private(set) var duration: TimeInterval = 10
 
     private var onUndoAction: (() -> Void)?
@@ -28,7 +29,7 @@ public final class UndoSnackbarController: ObservableObject {
 
         task = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: UInt64(self.duration * 1_000_000_000))
+            try? await Task.sleep(for: .seconds(self.duration))
             await MainActor.run {
                 if self.isVisible { self.dismiss() }
             }

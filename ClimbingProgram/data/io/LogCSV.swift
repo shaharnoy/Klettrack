@@ -107,10 +107,10 @@ enum LogCSV {
                     "", // wip
                     "", //ispreviouslyClimbed
                     "", // gym
-                    i.reps.map{ String(format: "%.3f", $0) } ?? "",
-                    i.sets.map{ String(format: "%.3f", $0) } ?? "",
-                    i.duration.map{ String(format: "%.3f", $0) } ?? "",
-                    i.weightKg.map { String(format: "%.3f", $0) } ?? "",
+                    csvDecimal(i.reps),
+                    csvDecimal(i.sets),
+                    csvDecimal(i.duration),
+                    csvDecimal(i.weightKg),
                     i.planSourceId?.uuidString ?? "",
                     csvEscape(i.planName ?? ""),
                     csvEscape(dayType),
@@ -177,6 +177,14 @@ private func csvEscape(_ s: String) -> String {
     return s
 }
 
+private let csvDecimalFormat = FloatingPointFormatStyle<Double>.number
+    .locale(Locale(identifier: "en_US_POSIX"))
+    .precision(.fractionLength(3))
+
+private func csvDecimal(_ value: Double?) -> String {
+    value.map { $0.formatted(csvDecimalFormat) } ?? ""
+}
+
 /// Parse one CSV line (supports quoted cells with commas/quotes)
 private func parseCSVLine(_ line: String) -> [String] {
     var out: [String] = []
@@ -225,10 +233,10 @@ private func itemSignature(date: Date,
     return [
         df.string(from: date),
         norm(name),
-        reps.map{ String(format: "%.3f", $0) } ?? "",
-        sets.map{ String(format: "%.3f", $0) } ?? "",
-        duration.map { String(format: "%.3f", $0) } ?? "",
-        weight.map { String(format: "%.3f", $0) } ?? "",
+        csvDecimal(reps),
+        csvDecimal(sets),
+        csvDecimal(duration),
+        csvDecimal(weight),
         planId?.uuidString ?? "",
         norm(planName)
         // Notes intentionally excluded from deduplication
@@ -962,4 +970,3 @@ private func deterministicUUID(from string: String) -> UUID {
     let uuid = uuid_t(bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15])
     return UUID(uuid: uuid)
 }
-

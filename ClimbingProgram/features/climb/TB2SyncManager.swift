@@ -295,8 +295,12 @@ enum TB2SyncManager {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone.current   // ← match how startOfDay behaved before
         let localStart = cal.startOfDay(for: date)
-        let comps = cal.dateComponents([.year, .month, .day], from: localStart)
-        return String(format: "%04d-%02d-%02d", comps.year ?? 0, comps.month ?? 0, comps.day ?? 0)
+        let formatter = DateFormatter()
+        formatter.calendar = cal
+        formatter.timeZone = cal.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: localStart)
     }
 
 
@@ -521,4 +525,3 @@ private enum TB2DateParser {
         return nil
     }
 }
-

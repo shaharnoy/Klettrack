@@ -7,6 +7,14 @@ import SwiftUI
 import SwiftData
 
 struct ClimbMetaManagerView: View {
+    private enum AddRoute: String, Identifiable {
+        case style
+        case gym
+        case day
+
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
@@ -23,9 +31,7 @@ struct ClimbMetaManagerView: View {
     ) private var days: [DayTypeModel]
     
     // Add / rename state
-    @State private var showingAddStyle = false
-    @State private var showingAddGym = false
-    @State private var showingAddDay = false
+    @State private var addRoute: AddRoute? = nil
 
     @State private var styleDraft = ""
     @State private var gymDraft = ""
@@ -64,30 +70,31 @@ struct ClimbMetaManagerView: View {
         .navigationTitle("Data Manager")
         .navigationBarTitleDisplayMode(.large)
         .toolbar { trailingMenu }
-        .sheet(isPresented: $showingAddStyle) {
-            NameOnlySheet(title: "New Style",
-                          placeholder: "e.g. Slab, Power, Coordination…",
-                          name: $styleDraft) {
-                handleAddStyle()
-            }
-        }
-        .sheet(isPresented: $showingAddGym) {
-            NameOnlySheet(title: "New Gym",
-                          placeholder: "e.g. Ostbloc, Elektra…",
-                          name: $gymDraft) {
-                let trimmed = gymDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                context.insert(ClimbGym(name: trimmed, isDefault: false))
-                try? context.save()
-            }
-        }
-        .sheet(isPresented: $showingAddDay) {
-            DayEditSheet(
-                title: "New Day",
-                initialName: "",
-                initialColorKey: "gray"
-            ) { newName, newColorKey in
-                handleAddDay(newName: newName, newColorKey: newColorKey)
+        .sheet(item: $addRoute) { route in
+            switch route {
+            case .style:
+                NameOnlySheet(title: "New Style",
+                              placeholder: "e.g. Slab, Power, Coordination…",
+                              name: $styleDraft) {
+                    handleAddStyle()
+                }
+            case .gym:
+                NameOnlySheet(title: "New Gym",
+                              placeholder: "e.g. Ostbloc, Elektra…",
+                              name: $gymDraft) {
+                    let trimmed = gymDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    context.insert(ClimbGym(name: trimmed, isDefault: false))
+                    try? context.save()
+                }
+            case .day:
+                DayEditSheet(
+                    title: "New Day",
+                    initialName: "",
+                    initialColorKey: "gray"
+                ) { newName, newColorKey in
+                    handleAddDay(newName: newName, newColorKey: newColorKey)
+                }
             }
         }
         .sheet(item: $renamingStyle) { style in
@@ -274,7 +281,7 @@ struct ClimbMetaManagerView: View {
 
             Button {
                 styleDraft = ""
-                showingAddStyle = true
+                addRoute = .style
             } label: {
                 Label("Add Style", systemImage: "plus")
             }
@@ -331,7 +338,7 @@ struct ClimbMetaManagerView: View {
 
             Button {
                 dayDraft = ""
-                showingAddDay = true
+                addRoute = .day
             } label: {
                 Label("Add day", systemImage: "plus")
             }
@@ -388,7 +395,7 @@ struct ClimbMetaManagerView: View {
 
             Button {
                 gymDraft = ""
-                showingAddGym = true
+                addRoute = .gym
             } label: {
                 Label("Add Gym", systemImage: "plus")
             }
@@ -598,4 +605,3 @@ private struct DayEditSheet: View {
         .presentationDetents([.medium, .large])
     }
 }
-

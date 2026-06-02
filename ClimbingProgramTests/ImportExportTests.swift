@@ -118,6 +118,31 @@ class ImportExportTests: ClimbingProgramTestSuite {
         let lines = csvContent.components(separatedBy: .newlines).filter { !$0.isEmpty }
         XCTAssertEqual(lines.count, 1, "Empty export should only contain header")
     }
+
+    func testCSVExportNumericFormattingIsStable() {
+        let session = Session(date: Date())
+        context.insert(session)
+
+        let item = SessionItem(
+            exerciseName: "Numeric Formatting",
+            reps: 1.23456,
+            sets: 2.5,
+            weightKg: 4,
+            duration: 3.3333
+        )
+        session.items.append(item)
+        try? context.save()
+
+        let csvContent = LogCSV.makeExportCSV(context: context).csv
+        let lines = csvContent.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        XCTAssertGreaterThanOrEqual(lines.count, 2)
+
+        let dataRow = lines[1]
+        XCTAssertTrue(
+            dataRow.contains(",1.235,2.500,3.333,4.000,"),
+            "Exported numeric values should use deterministic 3-decimal POSIX formatting"
+        )
+    }
     
     // MARK: - CSV Import Tests
     

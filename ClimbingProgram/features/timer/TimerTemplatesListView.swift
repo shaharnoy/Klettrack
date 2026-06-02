@@ -9,13 +9,18 @@ import SwiftData
 
 // MARK: - Timer Templates Management View
 struct TimerTemplatesListView: View {
+    private enum SheetRoute: String, Identifiable {
+        case newTemplate
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isDataReady) private var isDataReady
 
     @Query(sort: [SortDescriptor(\TimerTemplate.name, order: .forward)]) private var templates: [TimerTemplate]
     
-    @State private var showingNewTemplate = false
+    @State private var sheetRoute: SheetRoute?
     @State private var editingTemplate: TimerTemplate? = nil
 
 
@@ -56,13 +61,16 @@ struct TimerTemplatesListView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New") {
                         guard isDataReady else { return }
-                        showingNewTemplate = true
+                        sheetRoute = .newTemplate
                     }
                     .disabled(!isDataReady)
                 }
             }
-            .sheet(isPresented: $showingNewTemplate) {
-                TimerTemplateEditor()
+            .sheet(item: $sheetRoute) { route in
+                switch route {
+                case .newTemplate:
+                    TimerTemplateEditor()
+                }
             }
             .sheet(item: $editingTemplate) { template in
                 TimerTemplateEditor(existingTemplate: template)
@@ -104,14 +112,14 @@ struct TimerTemplateListRow: View {
                     if template.useCount > 0 {
                         Text("Used \(template.useCount) times")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 
                 if let description = template.templateDescription {
                     Text(description)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 
@@ -146,7 +154,7 @@ struct TimerTemplateListRow: View {
                     }
                 }
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 
                 if let lastUsed = template.lastUsedDate {
                     Text("Last used: \(lastUsed.formatted(date: .abbreviated, time: .shortened))")
