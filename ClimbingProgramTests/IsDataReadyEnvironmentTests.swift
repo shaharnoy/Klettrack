@@ -19,14 +19,15 @@ private final class TestHost {
 
 // Probe object to capture the last isDataReady value seen by a SwiftUI view
 @MainActor
-private final class IsDataReadyProbe: ObservableObject {
-    @Published var lastValue: Bool?
+@Observable
+private final class IsDataReadyProbe {
+    var lastValue: Bool?
 }
 
 // Reader view: observes environment and forwards updates to the probe
 private struct IsDataReadyReader: View {
     @Environment(\.isDataReady) private var isDataReady
-    @ObservedObject var probe: IsDataReadyProbe
+    let probe: IsDataReadyProbe
 
     var body: some View {
         Color.clear
@@ -45,8 +46,9 @@ private struct IsDataReadyReader: View {
 
 // Controller to deterministically drive the environment value from the test
 @MainActor
-private final class ReadyController: ObservableObject {
-    @Published var ready: Bool = false
+@Observable
+private final class ReadyController {
+    var ready: Bool = false
 }
 
 final class IsDataReadyEnvironmentTests: XCTestCase {
@@ -65,7 +67,7 @@ final class IsDataReadyEnvironmentTests: XCTestCase {
         host = TestHost(IsDataReadyReader(probe: probe))
 
         // Give the runloop a moment for onAppear
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(probe.lastValue, false, "Default isDataReady should be false")
     }
 
@@ -77,14 +79,14 @@ final class IsDataReadyEnvironmentTests: XCTestCase {
                 .environment(\.isDataReady, true)
         )
 
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(probe.lastValue, true, "Injected environment value should be read by children")
     }
 
     @MainActor
     func testEnvironmentChangesPropagate() async throws {
         struct Wrapper: View {
-            @ObservedObject var controller: ReadyController
+            @Bindable var controller: ReadyController
             let probe: IsDataReadyProbe
             var body: some View {
                 // Referencing controller.ready here ensures body recomputes when it changes,
@@ -102,7 +104,7 @@ final class IsDataReadyEnvironmentTests: XCTestCase {
         // Poll briefly until probe.lastValue is set to avoid flakiness.
         let start = Date()
         while probe.lastValue == nil && Date().timeIntervalSince(start) < 1.0 {
-            try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            try await Task.sleep(for: .milliseconds(10))
         }
 
         // Initial read should be false
@@ -114,7 +116,7 @@ final class IsDataReadyEnvironmentTests: XCTestCase {
         // Wait for propagation
         let changeStart = Date()
         while probe.lastValue != true && Date().timeIntervalSince(changeStart) < 1.0 {
-            try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            try await Task.sleep(for: .milliseconds(10))
         }
 
         XCTAssertEqual(probe.lastValue, true, "Updated environment value should propagate to children")

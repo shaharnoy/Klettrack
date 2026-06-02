@@ -1,9 +1,3 @@
-//
-//  FeatureFlagRulesTests.swift
-//  Klettrack tests
-//  Created by Shahar Noy on 17.02.26.
-//
-
 import XCTest
 @testable import klettrack
 
@@ -33,5 +27,11 @@ final class FeatureFlagRulesTests: XCTestCase {
             showNotesWhenGymMissing: false
         )
         XCTAssertNil(value)
+    }
+
+    func testProgressFilterPersistenceFlagUsesDedicatedStorageKey() {
+        XCTAssertEqual(FeatureFlags.persistProgressFilters, "featureFlag.persistProgressFilters")
+        XCTAssertNotEqual(FeatureFlags.persistProgressFilters, FeatureFlags.forcePreferMyGradeInProgress)
+        XCTAssertNotEqual(FeatureFlags.persistProgressFilters, FeatureFlags.showNotesWhenGymMissing)
     }
 }

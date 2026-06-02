@@ -12,9 +12,6 @@ final class Activity {
     @Attribute(.unique) var id: UUID
     var name: String
     var types: [TrainingType] = []
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
 
     init(id: UUID = UUID(), name: String) {
         self.id = id
@@ -30,9 +27,6 @@ final class TrainingType {
     var typeDescription: String?
     var exercises: [Exercise] = []
     var combinations: [BoulderCombination] = []
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -53,9 +47,6 @@ final class BoulderCombination {
     var name: String
     var comboDescription: String?
     var exercises: [Exercise] = []
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
 
     init(id: UUID = UUID(), name: String, comboDescription: String? = nil) {
         self.id = id
@@ -76,9 +67,6 @@ final class Exercise {
     var setsText: String?
     var restText: String?
     var notes: String?
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -113,9 +101,6 @@ final class Session {
     var date: Date
     @Relationship(deleteRule: .cascade, inverse: \SessionItem.session)
     var items: [SessionItem] = []   // links to catalog exercises with performed values
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
     init(id: UUID = UUID(), date: Date = .now) { self.id = id; self.date = date }
 }
 
@@ -137,9 +122,6 @@ final class SessionItem {
     var grade: String?
     var notes: String?
     var duration: Double?
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -185,9 +167,6 @@ final class TimerTemplate {
     var createdDate: Date
     var lastUsedDate: Date?
     var useCount: Int
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
     
     init(
         id: UUID = UUID(),
@@ -243,9 +222,6 @@ final class TimerInterval {
     var restTimeSeconds: Int
     var repetitions: Int
     var order: Int
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
     
     init(
         id: UUID = UUID(),
@@ -277,9 +253,6 @@ final class TimerSession {
     var laps: [TimerLap] = []
     var wasCompleted: Bool
     var dailynotes: String?
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
         
     
     init(
@@ -306,9 +279,6 @@ final class TimerLap {
     var timestamp: Date
     var elapsedSeconds: Int
     var notes: String?
-    var syncVersion: Int = 0
-    var updatedAtClient: Date = Date.now
-    var isSoftDeleted: Bool = false
     
     init(
         id: UUID = UUID(),
@@ -324,13 +294,3 @@ final class TimerLap {
     }
 }
 
-extension Activity: SyncLocallyMutable {}
-extension TrainingType: SyncLocallyMutable {}
-extension Exercise: SyncLocallyMutable {}
-extension BoulderCombination: SyncLocallyMutable {}
-extension Session: SyncLocallyMutable {}
-extension SessionItem: SyncLocallyMutable {}
-extension TimerTemplate: SyncLocallyMutable {}
-extension TimerInterval: SyncLocallyMutable {}
-extension TimerSession: SyncLocallyMutable {}
-extension TimerLap: SyncLocallyMutable {}

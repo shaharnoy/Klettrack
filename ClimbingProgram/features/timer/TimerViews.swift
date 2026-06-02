@@ -442,7 +442,6 @@ struct TimerView: View {
         
         let session = TimerSession(planDayId: planDay?.id)
         context.insert(session)
-        SyncLocalMutation.touch(session)
         try? context.save()
         
         timerManager.start(with: config, session: session)
@@ -530,7 +529,6 @@ struct TimerView: View {
         )
         
         context.insert(session)
-        SyncLocalMutation.touch(session)
         try? context.save()
         
         timerManager.start(with: config, session: session)
@@ -539,7 +537,6 @@ struct TimerView: View {
         if let template = template {
             template.lastUsedDate = Date()
             template.useCount += 1
-            SyncLocalMutation.touch(template)
             try? context.save()
         }
     }
@@ -548,7 +545,6 @@ struct TimerView: View {
         guard let config = timerManager.configuration else { return }
         let session = TimerSession(planDayId: planDay?.id)
         context.insert(session)
-        SyncLocalMutation.touch(session)
         timerManager.start(with: config, session: session)
     }
     
@@ -766,10 +762,7 @@ struct TimerSetupView: View {
 // MARK: - Timer Template Selection Tab
 struct TimerTemplateSelectionTab: View {
     @Environment(\.modelContext) private var context
-    @Query(
-        filter: #Predicate<TimerTemplate> { !$0.isSoftDeleted },
-        sort: [SortDescriptor(\TimerTemplate.lastUsedDate, order: .reverse)]
-    ) private var templates: [TimerTemplate]
+    @Query(sort: [SortDescriptor(\TimerTemplate.lastUsedDate, order: .reverse)]) private var templates: [TimerTemplate]
     
     let onTemplateSelected: (TimerTemplate) -> Void
     
@@ -1098,11 +1091,9 @@ struct CustomTimerSetupTab: View {
             )
             template.intervals.append(interval)
             context.insert(interval)
-            SyncLocalMutation.touch(interval)
         }
         
         context.insert(template)
-        SyncLocalMutation.touch(template)
         try? context.save()
     }
 }

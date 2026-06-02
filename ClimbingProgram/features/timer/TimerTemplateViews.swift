@@ -16,10 +16,7 @@ struct TimerTemplateSelector: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @Query(
-        filter: #Predicate<TimerTemplate> { !$0.isSoftDeleted },
-        sort: [SortDescriptor(\TimerTemplate.lastUsedDate, order: .reverse)]
-    ) private var templates: [TimerTemplate]
+    @Query(sort: [SortDescriptor(\TimerTemplate.lastUsedDate, order: .reverse)]) private var templates: [TimerTemplate]
     
     let onTemplateSelected: (TimerTemplate) -> Void
     
@@ -84,7 +81,7 @@ struct TimerTemplateSelector: View {
     }
     
     private func delete(_ template: TimerTemplate) {
-        SyncLocalMutation.softDelete(template)
+        context.delete(template)
         try? context.save()
     }
 }
@@ -603,11 +600,9 @@ struct CustomTimerSetupWithContext: View {
             )
             template.intervals.append(interval)
             context.insert(interval)
-            SyncLocalMutation.touch(interval)
         }
         
         context.insert(template)
-        SyncLocalMutation.touch(template)
         try? context.save()
     }
 }
@@ -804,14 +799,6 @@ struct TimerTemplateEditor: View {
                             showingDeleteConfirmation = true
                         }
                         .foregroundStyle(.red)
-                        .confirmationDialog("Delete Template", isPresented: $showingDeleteConfirmation) {
-                            Button("Delete", role: .destructive) {
-                                deleteTemplate()
-                            }
-                            Button("Cancel", role: .cancel) { }
-                        } message: {
-                            Text("Are you sure you want to delete this template? This action cannot be undone.")
-                        }
                     }
                 }
             }
@@ -828,6 +815,14 @@ struct TimerTemplateEditor: View {
                     }
                     .disabled(!isValidTemplate)
                 }
+            }
+            .confirmationDialog("Delete Template", isPresented: $showingDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    deleteTemplate()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Are you sure you want to delete this template? This action cannot be undone.")
             }
         }
         .onAppear {
@@ -984,7 +979,6 @@ struct TimerTemplateEditor: View {
         // Update template properties
         template.name = templateName.trimmingCharacters(in: .whitespacesAndNewlines)
         template.templateDescription = templateDescription.isEmpty ? nil : templateDescription
-        SyncLocalMutation.touch(template)
         
         // Set total time
         if timerType == .totalTime {
@@ -1006,7 +1000,7 @@ struct TimerTemplateEditor: View {
             // Remove existing intervals if editing
             if existingTemplate != nil {
                 for interval in template.intervals {
-                    SyncLocalMutation.softDelete(interval)
+                    context.delete(interval)
                 }
                 template.intervals.removeAll()
             }
@@ -1022,7 +1016,6 @@ struct TimerTemplateEditor: View {
                     repetitions: intervalInput.repetitions,
                     order: index
                 )
-                SyncLocalMutation.touch(interval)
                 
                 template.intervals.append(interval)
                 context.insert(interval)
@@ -1031,7 +1024,7 @@ struct TimerTemplateEditor: View {
             // Clear intervals if not using interval type
             if existingTemplate != nil {
                 for interval in template.intervals {
-                    SyncLocalMutation.softDelete(interval)
+                    context.delete(interval)
                 }
                 template.intervals.removeAll()
             }
@@ -1040,7 +1033,6 @@ struct TimerTemplateEditor: View {
         // Insert template if new
         if existingTemplate == nil {
             context.insert(template)
-            SyncLocalMutation.touch(template)
         }
         
         try? context.save()
@@ -1049,7 +1041,7 @@ struct TimerTemplateEditor: View {
     
     private func deleteTemplate() {
         guard let template = existingTemplate else { return }
-        SyncLocalMutation.softDelete(template)
+        context.delete(template)
         try? context.save()
         dismiss()
     }

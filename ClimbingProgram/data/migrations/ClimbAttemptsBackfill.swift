@@ -14,7 +14,7 @@ func backfillClimbEntryAttempts(_ context: ModelContext) {
         let climbs = try context.fetch(FetchDescriptor<ClimbEntry>())
         var changedRows = 0
 
-        for climb in climbs where !climb.isDeleted {
+        for climb in climbs {
             let trimmedAttempts = climb.attempts?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if trimmedAttempts.isEmpty {
                 climb.attempts = "1"

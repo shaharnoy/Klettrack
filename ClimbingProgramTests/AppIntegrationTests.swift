@@ -30,8 +30,6 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         XCTAssertTrue(modelTypes.contains("TrainingType"))
         XCTAssertTrue(modelTypes.contains("Exercise"))
         XCTAssertTrue(modelTypes.contains("BoulderCombination"))
-        XCTAssertTrue(modelTypes.contains("SyncState"))
-        XCTAssertTrue(modelTypes.contains("SyncMutation"))
         
         // Plans
         XCTAssertTrue(modelTypes.contains("Plan"))
@@ -326,3 +324,4 @@ final class AppIntegrationTests: BaseSwiftDataTestCase {
         }
     }
 }
+

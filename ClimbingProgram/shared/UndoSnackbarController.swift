@@ -29,7 +29,7 @@ public final class UndoSnackbarController {
 
         task = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: UInt64(self.duration * 1_000_000_000))
+            try? await Task.sleep(for: .seconds(self.duration))
             await MainActor.run {
                 if self.isVisible { self.dismiss() }
             }

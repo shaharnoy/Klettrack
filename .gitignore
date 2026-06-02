@@ -77,8 +77,3 @@ playground.xcworkspace
 *.lock
 *.log
 
-# Supabase local artifacts
-supabase/.temp/
-
-# Generated metadata
-**/.DS_Store

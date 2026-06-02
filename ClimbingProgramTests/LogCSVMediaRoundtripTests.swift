@@ -1,6 +1,6 @@
 //
 //  LogCSVMediaRoundtripTests.swift
-//  klettrack tests
+//  ClimbingProgram
 //
 //  Created by Shahar Noy on 14.11.25.
 //
@@ -97,10 +97,10 @@ final class LogCSVMediaRoundtripTests: XCTestCase {
         XCTAssertEqual(importedClimb.gym, "MediaRoundtripGym")
         XCTAssertEqual(importedClimb.notes, "Media roundtrip test")
 
-        let mediaEntries = importedClimb.media
-        XCTAssertEqual(mediaEntries.count, 1, "Imported climb should have one media entry")
+        let climbMedia = importedClimb.media
+        XCTAssertEqual(climbMedia.count, 1, "Imported climb should have one media entry")
 
-        guard let importedMedia = mediaEntries.first else {
+        guard let importedMedia = climbMedia.first else {
             XCTFail("Imported climb should have at least one media entry")
             return
         }

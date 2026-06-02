@@ -1,5 +1,5 @@
 //
-//  PlanDaySyncBackfill.swift
+//  PlanDayExerciseIDBackfill.swift
 //  klettrack
 //
 //  Created by Shahar Noy on 10.02.26.
@@ -9,7 +9,7 @@ import Foundation
 import SwiftData
 
 @MainActor
-func backfillPlanDaySyncFields(_ context: ModelContext) {
+func backfillPlanDayExerciseIDFields(_ context: ModelContext) {
     do {
         let exercises = try context.fetch(FetchDescriptor<Exercise>())
         var idByName: [String: UUID] = [:]
@@ -48,16 +48,15 @@ func backfillPlanDaySyncFields(_ context: ModelContext) {
             }
 
             if changed {
-                day.updatedAtClient = .now
                 changedRows += 1
             }
         }
 
         if changedRows > 0 {
             try? context.save()
-            print("Backfilled plan day sync fields for \(changedRows) rows.")
+            print("Backfilled plan day exercise ID fields for \(changedRows) rows.")
         }
     } catch {
-        print("backfillPlanDaySyncFields failed: \(error.localizedDescription)")
+        print("backfillPlanDayExerciseIDFields failed: \(error.localizedDescription)")
     }
 }

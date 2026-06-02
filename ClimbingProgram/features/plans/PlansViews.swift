@@ -8,7 +8,6 @@ import SwiftUI
 import SwiftData
 import Charts
 import UniformTypeIdentifiers
-import Combine
 
 import UIKit
 
@@ -26,10 +25,6 @@ private final class PlanDayEditorCache {
         let activityColor: Color
         let order: Int
     }
-
-    private static let maxEntries = 32
-    private static let staleLifetime: TimeInterval = 30 * 60
-    private static let memoryPressureKeepCount = 4
 
     struct ExerciseGuidance {
         let repsText: String?
@@ -51,77 +46,47 @@ private final class PlanDayEditorCache {
     var loggedItemsForDay: [SessionItem] = []
 
     var isWarm: Bool = false
-    private var lastAccessedAt: Date = .distantPast
 
     // Simple global in-memory store keyed by PlanDay id
     private static var store: [UUID: PlanDayEditorCache] = [:]
 
-    func markAccess(now: Date = .now) {
-        lastAccessedAt = now
-    }
-
     static func forDay(_ id: UUID) -> PlanDayEditorCache {
-        pruneStaleEntries(keeping: id)
-
         if let existing = store[id] {
-            existing.markAccess()
             return existing
         }
-
         let created = PlanDayEditorCache()
-        created.markAccess()
         store[id] = created
-        trimToLimit(keeping: id)
         return created
     }
+}
 
-    static func pruneStaleEntries(now: Date = .now, keeping keepID: UUID? = nil) {
-        let cutoff = now.addingTimeInterval(-staleLifetime)
-        var staleIDs: [UUID] = []
-        for (id, cache) in store {
-            if id == keepID {
-                continue
-            }
-            if cache.lastAccessedAt < cutoff {
-                staleIDs.append(id)
-            }
-        }
 
-        for id in staleIDs {
-            store.removeValue(forKey: id)
-        }
 
-        trimToLimit(keeping: keepID)
-    }
+struct SharePayload: Identifiable {
+    let id = UUID()
+    let url: URL
+}
 
-    static func handleMemoryPressure(keeping keepID: UUID? = nil) {
-        let recentIDs = store
-            .sorted { lhs, rhs in lhs.value.lastAccessedAt > rhs.value.lastAccessedAt }
-            .prefix(memoryPressureKeepCount)
-            .map(\.key)
-        let keepSet = Set(recentIDs)
+// Shared exercise hit type for catalog search results (file-scope, internal)
+struct ExerciseHit: Identifiable {
+    let id: UUID
+    let name: String
+    let subtitle: String?
+    let tint: Color
+    let repsText: String?
+    let setsText: String?
+    let restText: String?
+    let durationText: String?
 
-        for id in Array(store.keys) where id != keepID && !keepSet.contains(id) {
-            store.removeValue(forKey: id)
-        }
-
-        if let keepID, let cache = store[keepID] {
-            cache.markAccess()
-        }
-    }
-
-    private static func trimToLimit(keeping keepID: UUID? = nil) {
-        guard store.count > maxEntries else { return }
-
-        let overflow = store.count - maxEntries
-        let removableIDs = store
-            .filter { id, _ in id != keepID }
-            .sorted { lhs, rhs in lhs.value.lastAccessedAt < rhs.value.lastAccessedAt }
-            .map(\.key)
-
-        for id in removableIDs.prefix(overflow) {
-            store.removeValue(forKey: id)
-        }
+    init(ex: Exercise, tint: Color) {
+        self.id = ex.id
+        self.name = ex.name
+        self.subtitle = ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes
+        self.tint = tint
+        self.repsText = ex.repsText
+        self.setsText = ex.setsText
+        self.restText = ex.restText
+        self.durationText = ex.durationText
     }
 }
 
@@ -151,78 +116,94 @@ struct PlansListView: View {
     @Environment(\.isDataReady) private var isDataReady
     @Environment(TimerAppState.self) private var timerAppState
     // Be explicit with SortDescriptor to help the type checker
-    @Query(
-        filter: #Predicate<Plan> { !$0.isSoftDeleted },
-        sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]
-    ) private var plans: [Plan]
+    @Query(sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
 
     @State private var sheetRoute: SheetRoute?
 
-    // Plan export state
-    @State private var showPlanExporter = false
-    @State private var planExportDoc: PlanCSVDocument? = nil
-    @State private var selectedPlanForExportID: UUID? = nil
-    @State private var showingPlanExportPicker = false
-    @State private var newPlanInitialMode: NewPlanSheet.CreationMode = .template
+    // Export / Import / Share state
+    @State private var showExporter = false
+    @State private var exportDoc: LogCSVDocument? = nil
+
+    // Import (async with progress)
+    @State private var showImporter = false
+    @State private var importing = false
+    @State private var importProgress: Double = 0
+
+    // Share (use Identifiable payload)
+    @State private var sharePayload: SharePayload? = nil
 
     // Alerts
     @State private var resultMessage: String? = nil
 
 
     var body: some View {
-        plansList
-            .listStyle(.insetGrouped)
-            .navigationTitle("TRAIN")
-            .navigationBarTitleDisplayMode(.large)
-            .plansDestinations(plans: plans, timerAppState: timerAppState)
-            .plansToolbar(
-                isDataReady: isDataReady,
-                showingNew: Binding(
-                    get: { sheetRoute == .newPlan },
-                    set: { newValue in
-                        if newValue {
-                            sheetRoute = .newPlan
-                        } else if sheetRoute == .newPlan {
-                            sheetRoute = nil
+        NavigationStack(path: Binding(
+            get: { timerAppState.plansNavigationPath },
+            set: { timerAppState.plansNavigationPath = $0 }
+        )) {
+            plansList
+                .listStyle(.insetGrouped)
+                .navigationTitle("TRAIN")
+                .navigationBarTitleDisplayMode(.large)
+                .plansDestinations(plans: plans, timerAppState: timerAppState)
+                .plansToolbar(
+                    isDataReady: isDataReady,
+                    context: context,
+                    showingNew: Binding(
+                        get: { sheetRoute == .newPlan },
+                        set: { newValue in
+                            if newValue {
+                                sheetRoute = .newPlan
+                            } else if sheetRoute == .newPlan {
+                                sheetRoute = nil
+                            }
                         }
+                    ),
+                    showExporter: $showExporter,
+                    exportDoc: $exportDoc,
+                    showImporter: $showImporter,
+                    sharePayload: $sharePayload,
+                    resultMessage: $resultMessage
+                )
+                .sheet(item: $sheetRoute) { route in
+                    switch route {
+                    case .newPlan:
+                        NewPlanSheet()
                     }
-                ),
-                newPlanInitialMode: $newPlanInitialMode,
-                showingPlanExportPicker: $showingPlanExportPicker
-            )
-            .sheet(item: $sheetRoute) { route in
-                switch route {
-                case .newPlan:
-                    NewPlanSheet(initialMode: newPlanInitialMode)
                 }
-            }
-            .fileExporter(
-                isPresented: $showPlanExporter,
-                document: planExportDoc,
-                contentType: .commaSeparatedText,
-                defaultFilename: planExportFilename
-            ) { result in
-                switch result {
-                case .success:
-                    resultMessage = "CSV exported."
-                case .failure(let err):
-                    resultMessage = "Export failed: \(err.localizedDescription)"
+                .fileExporter(
+                    isPresented: $showExporter,
+                    document: exportDoc,
+                    contentType: .commaSeparatedText,
+                    defaultFilename: "klettrack-log-\(Date().formatted(.dateTime.year().month().day()))"
+                ) { result in
+                    switch result {
+                    case .success:
+                        resultMessage = "CSV exported."
+                    case .failure(let err):
+                        resultMessage = "Export failed: \(err.localizedDescription)"
+                    }
                 }
-            }
-            .sheet(isPresented: $showingPlanExportPicker) {
-                PlanExportSelectionSheet(
-                    plans: plans,
-                    selectedPlanID: $selectedPlanForExportID
-                ) { selectedPlanID in
-                    preparePlanExport(for: selectedPlanID)
+                .fileImporter(
+                    isPresented: $showImporter,
+                    allowedContentTypes: [.commaSeparatedText],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleImportResult(result)
                 }
-            }
-            .alert(resultMessage ?? "", isPresented: Binding(
-                get: { resultMessage != nil },
-                set: { if !$0 { resultMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { }
-            }
+                .sheet(item: $sharePayload) { payload in
+                    ShareSheet(items: [payload.url]) {
+                        try? FileManager.default.removeItem(at: payload.url)
+                    }
+                    .presentationDetents([.medium])
+                }
+                .alert(resultMessage ?? "", isPresented: Binding(
+                    get: { resultMessage != nil },
+                    set: { if !$0 { resultMessage = nil } }
+                )) {
+                    Button("OK", role: .cancel) { }
+                }
+        }
     }
 
     private var plansList: some View {
@@ -237,42 +218,50 @@ struct PlansListView: View {
             }
             .onDelete { idx in
                 guard isDataReady else { return }
-                idx.map { plans[$0] }.forEach { plan in
-                    softDeletePlan(plan)
-                }
+                idx.map { plans[$0] }.forEach(context.delete)
                 try? context.save()
             }
         }
     }
 
-    private func softDeletePlan(_ plan: Plan) {
-        SyncLocalMutation.softDelete(plan)
-        for day in plan.days where !day.isSoftDeleted {
-            SyncLocalMutation.softDelete(day)
+    
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
+            let tag = "import:\(df.string(from: Date()))"
+
+            importing = true
+            importProgress = 0
+
+            Task {
+                do {
+                    let count = try await LogCSV.importCSVAsync(
+                        from: url,
+                        into: context,
+                        tag: tag,
+                        dedupe: true,
+                        progress: { p in
+                            Task { @MainActor in
+                                importProgress = p
+                            }
+                        }
+                    )
+                    await MainActor.run {
+                        importing = false
+                        resultMessage = "Imported \(count) log item(s)."
+                    }
+                } catch {
+                    await MainActor.run {
+                        importing = false
+                        resultMessage = "Import failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+        } catch {
+            resultMessage = "Import failed: \(error.localizedDescription)"
         }
     }
-
-    private var planExportFilename: String {
-        let formattedDate = Date.now.formatted(.iso8601.year().month().day())
-        let base = plans.first(where: { $0.id == selectedPlanForExportID })?.name ?? "plan"
-        let normalizedName = base
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacing(" ", with: "-")
-            .lowercased()
-        let safeName = normalizedName.isEmpty ? "plan" : normalizedName
-        return "klettrack-export-plan-\(safeName)-\(formattedDate)"
-    }
-
-    private func preparePlanExport(for selectedPlanID: UUID) {
-        guard let plan = plans.first(where: { $0.id == selectedPlanID }) else {
-            resultMessage = "Selected plan not found."
-            return
-        }
-        selectedPlanForExportID = selectedPlanID
-        planExportDoc = PlanCSV.makeExportCSV(for: plan, in: context)
-        showPlanExporter = true
-    }
-
 }
 
 private struct PlansDestinationsModifier: ViewModifier {
@@ -311,10 +300,14 @@ private extension View {
 
 private struct PlansToolbarModifier: ViewModifier {
     let isDataReady: Bool
+    let context: ModelContext
 
     @Binding var showingNew: Bool
-    @Binding var newPlanInitialMode: NewPlanSheet.CreationMode
-    @Binding var showingPlanExportPicker: Bool
+    @Binding var showExporter: Bool
+    @Binding var exportDoc: LogCSVDocument?
+    @Binding var showImporter: Bool
+    @Binding var sharePayload: SharePayload?
+    @Binding var resultMessage: String?
 
     func body(content: Content) -> some View {
         content.toolbar {
@@ -322,17 +315,37 @@ private struct PlansToolbarModifier: ViewModifier {
                 Menu {
                     Button {
                         guard isDataReady else { return }
-                        showingPlanExportPicker = true
+                        exportDoc = LogCSV.makeExportCSV(context: context)
+                        showExporter = true
                     } label: {
-                        Label("Export training plan", systemImage: "square.and.arrow.up")
+                        Label("Export logs to CSV", systemImage: "square.and.arrow.up")
                     }
 
                     Button {
                         guard isDataReady else { return }
-                        newPlanInitialMode = .importCSV
-                        showingNew = true
+                        let doc = LogCSV.makeExportCSV(context: context)
+                        let fn = "klettrack-log-\(Date().formatted(.dateTime.year().month().day())).csv"
+                        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fn)
+
+                        do {
+                            try doc.csv.write(to: url, atomically: true, encoding: .utf8)
+                            guard FileManager.default.fileExists(atPath: url.path) else {
+                                resultMessage = "Share failed: file not found."
+                                return
+                            }
+                            sharePayload = SharePayload(url: url)
+                        } catch {
+                            resultMessage = "Share prep failed: \(error.localizedDescription)"
+                        }
                     } label: {
-                        Label("Import training plan", systemImage: "calendar.badge.plus")
+                        Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
+                    }
+
+                    Button {
+                        guard isDataReady else { return }
+                        showImporter = true
+                    } label: {
+                        Label("Import logs from CSV", systemImage: "square.and.arrow.down")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -343,7 +356,6 @@ private struct PlansToolbarModifier: ViewModifier {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     guard isDataReady else { return }
-                    newPlanInitialMode = .template
                     showingNew = true
                 } label: {
                     Image(systemName: "plus")
@@ -357,15 +369,23 @@ private struct PlansToolbarModifier: ViewModifier {
 private extension View {
     func plansToolbar(
         isDataReady: Bool,
+        context: ModelContext,
         showingNew: Binding<Bool>,
-        newPlanInitialMode: Binding<NewPlanSheet.CreationMode>,
-        showingPlanExportPicker: Binding<Bool>
+        showExporter: Binding<Bool>,
+        exportDoc: Binding<LogCSVDocument?>,
+        showImporter: Binding<Bool>,
+        sharePayload: Binding<SharePayload?>,
+        resultMessage: Binding<String?>
     ) -> some View {
         modifier(PlansToolbarModifier(
             isDataReady: isDataReady,
+            context: context,
             showingNew: showingNew,
-            newPlanInitialMode: newPlanInitialMode,
-            showingPlanExportPicker: showingPlanExportPicker
+            showExporter: showExporter,
+            exportDoc: exportDoc,
+            showImporter: showImporter,
+            sharePayload: sharePayload,
+            resultMessage: resultMessage
         ))
     }
 }
@@ -374,53 +394,6 @@ private extension View {
 struct EditablePlanDayNav: Hashable {
     let planId: UUID
     let planDayId: UUID
-}
-
-private struct PlanExportSelectionSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    let plans: [Plan]
-    @Binding var selectedPlanID: UUID?
-    let onExport: (UUID) -> Void
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Picker("Plan", selection: selectedPlanBinding) {
-                    ForEach(plans) { plan in
-                        Text(plan.name).tag(plan.id)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-            .navigationTitle("Export plan to CSV")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Export") {
-                        guard let selectedPlanID else { return }
-                        onExport(selectedPlanID)
-                        dismiss()
-                    }
-                    .disabled(selectedPlanID == nil || plans.isEmpty)
-                }
-            }
-            .onAppear {
-                if selectedPlanID == nil {
-                    selectedPlanID = plans.first?.id
-                }
-            }
-        }
-    }
-
-    private var selectedPlanBinding: Binding<UUID> {
-        Binding(
-            get: { selectedPlanID ?? plans.first?.id ?? UUID() },
-            set: { selectedPlanID = $0 }
-        )
-    }
 }
 
 // Small, explicit row view reduces type inference work
@@ -450,34 +423,19 @@ private struct PlanRow: View {
 
 // MARK: New plan sheet
 struct NewPlanSheet: View {
-    enum CreationMode: Hashable {
-        case template
-        case customDates
-        case importCSV
-    }
+    enum CreationMode { case template, customDates }
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
 
     // SwiftData: keep sort descriptors simple
-    @Query(
-        filter: #Predicate<PlanKindModel> { !$0.isSoftDeleted },
-        sort: [SortDescriptor(\PlanKindModel.order)]
-    ) private var kinds: [PlanKindModel]
+    @Query(sort: [SortDescriptor(\PlanKindModel.order)]) private var kinds: [PlanKindModel]
 
     @State private var name = ""
     @State private var selectedKind: PlanKindModel? = nil
     @State private var start = Date()
-    @State private var creationMode: CreationMode
+    @State private var creationMode: CreationMode = .template
     @State private var end = Calendar.current.date(byAdding: .day, value: 27, to: Date()) ?? Date()
-    @State private var showImportPicker = false
-    @State private var importing = false
-    @State private var importProgress: Double = 0
-    @State private var resultMessage: String? = nil
-
-    init(initialMode: CreationMode = .template) {
-        _creationMode = State(initialValue: initialMode)
-    }
     
     var body: some View {
         NavigationStack {
@@ -485,43 +443,11 @@ struct NewPlanSheet: View {
                 Picker("Mode", selection: $creationMode) {
                     Text("Template").tag(CreationMode.template)
                     Text("Custom").tag(CreationMode.customDates)
-                    Text("Import").tag(CreationMode.importCSV)
                 }
                 .pickerStyle(.segmented)
                 
-                if creationMode == .importCSV {
-                    TextField("Plan name", text: $name)
-                    Picker("Template", selection: $selectedKind) {
-                        Text("From CSV").tag(nil as PlanKindModel?)
-                        ForEach(kinds) { k in
-                            Text(k.name).tag(k as PlanKindModel?)
-                        }
-                    }
-                    DatePicker("Start date", selection: $start, displayedComponents: .date)
-
-                    Button {
-                        showImportPicker = true
-                    } label: {
-                        HStack {
-                            Text("Choose CSV and Import")
-                            Spacer()
-                            if importing {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "square.and.arrow.down")
-                            }
-                        }
-                    }
-                    .disabled(importing)
-
-                    if importing {
-                        ProgressView(value: importProgress)
-                            .progressViewStyle(.linear)
-                    }
-                } else {
-                    TextField("Plan name", text: $name)
-                }
-
+                TextField("Plan name", text: $name)
+                
                 if creationMode == .template {
                     Picker("Template", selection: $selectedKind) {
                         ForEach(kinds) { k in
@@ -530,7 +456,7 @@ struct NewPlanSheet: View {
                         }
                     }
                     DatePicker("Start date", selection: $start, displayedComponents: .date)
-                } else if creationMode == .customDates {
+                } else {
                     DatePicker("Start date", selection: $start, displayedComponents: .date)
                     DatePicker("End date", selection: $end, in: start..., displayedComponents: .date)
 
@@ -547,7 +473,7 @@ struct NewPlanSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(creationMode == .importCSV ? "Import" : "Create") {
+                    Button("Create") {
                         let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         let planName = finalName.isEmpty ? (selectedKind?.name ?? "Plan") : finalName
                         switch creationMode {
@@ -559,27 +485,11 @@ struct NewPlanSheet: View {
                             guard end >= start else { return }
                             createPlanFromDates(context: context, name: planName, start: start, end: end)
                             dismiss()
-                        case .importCSV:
-                            showImportPicker = true
                         }
                     }
                     .disabled((creationMode == .template && selectedKind == nil) ||
-                              (creationMode == .customDates && end < start) ||
-                              importing)
+                              (creationMode == .customDates && end < start))
                 }
-            }
-            .fileImporter(
-                isPresented: $showImportPicker,
-                allowedContentTypes: [.commaSeparatedText],
-                allowsMultipleSelection: false
-            ) { result in
-                handlePlanImportResult(result)
-            }
-            .alert(resultMessage ?? "", isPresented: Binding(
-                get: { resultMessage != nil },
-                set: { if !$0 { resultMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { }
             }
         }
     }
@@ -591,62 +501,15 @@ struct NewPlanSheet: View {
 
         let plan = Plan(name: name, kind:nil, startDate: startDay)
         context.insert(plan)
-        SyncLocalMutation.touch(plan)
 
         var d = startDay
         while d <= endDay {
             let day = PlanDay(date: d)
-            SyncLocalMutation.touch(day)
             plan.days.append(day)
             d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86_400)
         }
 
         try? context.save()
-    }
-
-    private func handlePlanImportResult(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            importing = true
-            importProgress = 0
-
-            Task {
-                do {
-                    let summary = try await PlanCSV.importPlanCSVAsync(
-                        from: url,
-                        into: context,
-                        progress: { value in
-                            Task { @MainActor in
-                                importProgress = value
-                            }
-                        },
-                        importedPlanName: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                        importedPlanKind: selectedKind,
-                        importedPlanStartDate: start
-                    )
-
-                    await MainActor.run {
-                        importing = false
-                        resultMessage = """
-                        Imported plan: \(summary.createdPlanName)
-                        Days: \(summary.importedDays)
-                        Exercises linked: \(summary.linkedExercises)
-                        Placeholders created: \(summary.totalPlaceholders)
-                        Skipped rows: \(summary.skippedRows)
-                        """
-                        dismiss()
-                    }
-                } catch {
-                    await MainActor.run {
-                        importing = false
-                        resultMessage = "Plan import failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-        } catch {
-            importing = false
-            resultMessage = "Plan import failed: \(error.localizedDescription)"
-        }
     }
 }
 
@@ -781,38 +644,42 @@ struct PlanDetailView: View {
             List {
                 ForEach(groupedByWeek, id: \.weekStart) { week in
                     Section {
-                        ForEach(week.days) { day in
-                            Button {
-                                timerAppState.plansNavigationPath.append(
-                                    EditablePlanDayNav(
-                                        planId: plan.id,
-                                        planDayId: day.id
+                        ForEach(week.days.map(\.id), id: \.self) { dayId in
+                            if let idx = plan.days.firstIndex(where: { $0.id == dayId }) {
+                                let day = plan.days[idx]
+
+                                Button {
+                                    timerAppState.plansNavigationPath.append(
+                                        EditablePlanDayNav(
+                                            planId: plan.id,
+                                            planDayId: dayId
+                                        )
                                     )
-                                )
-                            } label: {
-                                HStack {
-                                    Circle()
-                                        .fill(dayTypeColor(for: day))
-                                        .frame(width: 10, height: 10)
+                                } label: {
+                                    HStack {
+                                        Circle()
+                                            .fill(dayTypeColor(for: day))
+                                            .frame(width: 10, height: 10)
 
-                                    Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
+                                        Text(day.date, format: .dateTime.weekday(.abbreviated).month().day())
 
-                                    Spacer()
+                                        Spacer()
 
-                                    Text(day.type?.name ?? "Unknown")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 16)
-                                .background {
-                                    if isToday(day.date) {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(Color.yellow.opacity(0.15))
+                                        Text(day.type?.name ?? "Unknown")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 16)
+                                    .background {
+                                        if isToday(day.date) {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(Color.yellow.opacity(0.15))
+                                        }
                                     }
                                 }
+                                .buttonStyle(.plain)
+                                .id(dayId)
                             }
-                            .buttonStyle(.plain)
-                            .id(day.id)
                         }
                     } header: {
                         Text(week.weekStart.formatted(date: .abbreviated, time: .omitted))
@@ -911,7 +778,6 @@ struct PlanDayEditor: View {
 
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.editMode) private var editMode
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(TimerAppState.self) private var timerAppState
     @State private var didReorder = false
     @Binding var day: PlanDay
@@ -920,7 +786,7 @@ struct PlanDayEditor: View {
     @State private var cache: PlanDayEditorCache
     
     @Query(
-        filter: #Predicate<DayTypeModel> { !$0.isSoftDeleted && $0.isHidden == false },
+        filter: #Predicate<DayTypeModel> { $0.isHidden == false },
         sort: [SortDescriptor<DayTypeModel>(\DayTypeModel.order)]
     ) private var dayTypes: [DayTypeModel]
 
@@ -945,8 +811,6 @@ struct PlanDayEditor: View {
     
     // State for daily notes to handle the optional binding
     @State private var dailyNotesText: String = ""
-    @State private var hasPendingNotesSave = false
-    @State private var pendingNotesSaveTask: Task<Void, Never>? = nil
     
     // Picker selection by identifier (prevents invalidated object binding)
     @State private var selectedDayTypeId: UUID? = nil
@@ -972,33 +836,145 @@ struct PlanDayEditor: View {
         cache.loggedItemsForDay
     }
 
-    // Helper to get exercises in a single global order for the day.
-    private func orderedChosenExercises() -> [String] {
-        let catalogInfoByExerciseName = cache.catalogInfoByExerciseName
-
-        let sortedNames = day.chosenExercises.sorted { name1, name2 in
-            let o1 = day.exerciseOrder[name1]
-            let o2 = day.exerciseOrder[name2]
-            if let o1, let o2, o1 != o2 { return o1 < o2 }
-            if o1 != nil { return true }
-            if o2 != nil { return false }
-
+    
+    // Helper to get exercises sorted by their catalog order
+    private func sortedChosenExercises() -> [String] {
+        // Get all exercises from the catalog
+        let descriptor = FetchDescriptor<Exercise>()
+        let allExercises = (try? context.fetch(descriptor)) ?? []
+        
+        // Create a map of exercise names to their order values, handling duplicates
+        var exerciseOrderMap: [String: Int] = [:]
+        for exercise in allExercises {
+            // If we encounter a duplicate name, keep the lower order value
+            if let existingOrder = exerciseOrderMap[exercise.name] {
+                exerciseOrderMap[exercise.name] = min(existingOrder, exercise.order)
+            } else {
+                exerciseOrderMap[exercise.name] = exercise.order
+            }
+        }
+        
+        // Sort chosen exercises: not quick-logged first (by catalog order), then quick-logged at bottom
+        return day.chosenExercises.sorted { name1, name2 in
             let isLogged1 = isExerciseQuickLogged(name: name1)
             let isLogged2 = isExerciseQuickLogged(name: name2)
-            if isLogged1 != isLogged2 { return !isLogged1 }
+            
+            // If one is logged and the other isn't, put the unlogged one first
+            if isLogged1 != isLogged2 {
+                return !isLogged1 // not logged (false) comes before logged (true)
+            }
+            
+            // If both have the same logged status, sort by catalog order
+            let order1 = exerciseOrderMap[name1] ?? Int.max
+            let order2 = exerciseOrderMap[name2] ?? Int.max
+            return order1 < order2
+        }
+    }
 
-            let c1 = catalogInfoByExerciseName[name1]?.order ?? Int.max
-            let c2 = catalogInfoByExerciseName[name2]?.order ?? Int.max
-            if c1 != c2 { return c1 < c2 }
+    // Helper to get exercises grouped by activity type
+    private func groupedChosenExercises() -> [(activityName: String, activityColor: Color, exercises: [String])] {
+        // Get all catalog data
+        let activityDescriptor = FetchDescriptor<Activity>()
+        let allActivities = (try? context.fetch(activityDescriptor)) ?? []
+        
+        // Create a map of exercise names to their parent activity and order
+        var exerciseToActivityMap: [String: (activity: Activity, order: Int)] = [:]
+        
+        for activity in allActivities {
+            for trainingType in activity.types {
+                // Handle direct exercises
+                for exercise in trainingType.exercises {
+                    if let existing = exerciseToActivityMap[exercise.name] {
+                        // Keep the one with lower order if duplicate names exist
+                        if exercise.order < existing.order {
+                            exerciseToActivityMap[exercise.name] = (activity, exercise.order)
+                        }
+                    } else {
+                        exerciseToActivityMap[exercise.name] = (activity, exercise.order)
+                    }
+                }
+                
+                // Handle combination exercises
+                for combination in trainingType.combinations {
+                    for exercise in combination.exercises {
+                        if let existing = exerciseToActivityMap[exercise.name] {
+                            // Keep the one with lower order if duplicate names exist
+                            if exercise.order < existing.order {
+                                exerciseToActivityMap[exercise.name] = (activity, exercise.order)
+                            }
+                        } else {
+                            exerciseToActivityMap[exercise.name] = (activity, exercise.order)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Group chosen exercises by activity
+        let groupedByActivity = Dictionary(grouping: day.chosenExercises) { exerciseName in
+                exerciseToActivityMap[exerciseName]?.activity.name ?? "Unknown"
+            }
 
-            let a1 = catalogInfoByExerciseName[name1]?.activityName ?? "Unknown"
-            let a2 = catalogInfoByExerciseName[name2]?.activityName ?? "Unknown"
-            if a1 != a2 { return a1.localizedStandardCompare(a2) == .orderedAscending }
+            var result: [(String, Color, [String])] = []
+            for (activityName, exerciseNames) in groupedByActivity {
+                let activity = allActivities.first { $0.name == activityName }
+                let activityColor = activity?.hue.color ?? .gray
 
-            return name1.localizedStandardCompare(name2) == .orderedAscending
+                let sortedExercises = exerciseNames.sorted { name1, name2 in
+                    // 1) Override with per-day manual order if available
+                    let o1 = day.exerciseOrder[name1]
+                    let o2 = day.exerciseOrder[name2]
+                    if let o1, let o2, o1 != o2 { return o1 < o2 }
+
+                    // 2) Fallback: unlogged first
+                    let isLogged1 = isExerciseQuickLogged(name: name1)
+                    let isLogged2 = isExerciseQuickLogged(name: name2)
+                    if isLogged1 != isLogged2 { return !isLogged1 }
+
+                    // 3) Fallback: catalog order
+                    let c1 = exerciseToActivityMap[name1]?.order ?? Int.max
+                    let c2 = exerciseToActivityMap[name2]?.order ?? Int.max
+                    return c1 < c2
+                }
+                result.append((activityName, activityColor, sortedExercises))
+            }
+            result.sort { $0.0 < $1.0 }
+            return result
         }
 
-        return sortedNames
+    private func exerciseIDByName() -> [String: UUID] {
+        let descriptor = FetchDescriptor<Exercise>()
+        let exercises = (try? context.fetch(descriptor)) ?? []
+        var result: [String: UUID] = [:]
+        for exercise in exercises {
+            let trimmed = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, result[trimmed] == nil else { continue }
+            result[trimmed] = exercise.id
+        }
+        return result
+    }
+
+    private func reconcileExerciseIDFields() {
+        let idByName = exerciseIDByName()
+        var ids: [UUID] = []
+        var orderByID: [String: Int] = [:]
+
+        for (fallbackIndex, name) in day.chosenExercises.enumerated() {
+            guard let id = idByName[name] else { continue }
+            ids.append(id)
+            orderByID[id.uuidString] = day.exerciseOrder[name] ?? fallbackIndex
+        }
+
+        day.chosenExerciseIDs = ids
+        day.exerciseOrderByID = orderByID
+    }
+
+    private func copySetup(from source: PlanDay, to target: PlanDay) {
+        target.chosenExercises = source.chosenExercises
+        target.exerciseOrder = source.exerciseOrder
+        target.chosenExerciseIDs = source.chosenExerciseIDs
+        target.exerciseOrderByID = source.exerciseOrderByID
+        target.type = source.type
     }
     
     // Break down exercise row into its own view builder
@@ -1220,7 +1196,7 @@ struct PlanDayEditor: View {
                 .padding(.vertical, 8)
             } else {
                 OrderedChosenExercisesView(
-                    exercises: orderedChosenExercises(),
+                    exercises: sortedChosenExercises(),
                     day: $day,
                     context: context,
                     exerciseRowBuilder: exerciseRow,
@@ -1268,7 +1244,7 @@ struct PlanDayEditor: View {
                                     }
                                 } else {
                                     // Fallback if no back-reference
-                                    SyncLocalMutation.softDelete(item)
+                                    context.delete(item)
                                     try? context.save()
                                 }
 
@@ -1302,7 +1278,10 @@ struct PlanDayEditor: View {
                     dailyNotesText = day.dailyNotes ?? ""
                 }
                 .onChange(of: dailyNotesText) {
-                    scheduleDailyNotesSave()
+                    // Save the notes to the model
+                    let trimmed = dailyNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    day.dailyNotes = trimmed.isEmpty ? nil : trimmed
+                    try? context.save()
                 }
         }
     }
@@ -1324,7 +1303,6 @@ struct PlanDayEditor: View {
                 // Resolve selected id to model instance; assign (or nil) safely
                 let resolved = dayTypes.first(where: { $0.id == newId })
                 day.type = resolved
-                SyncLocalMutation.touch(day)
                 try? context.save()
             }
             
@@ -1396,13 +1374,14 @@ struct PlanDayEditor: View {
         .onChange(of: editMode?.wrappedValue) { _, newValue in
                     if newValue == .inactive, didReorder {
                         didReorder = false
-                        SyncLocalMutation.touch(day)
                         try? context.save() // single save after drag session
                     }
                 }
                 .onDisappear {
-                    persistPendingEditorChanges()
-                    PlanDayEditorCache.pruneStaleEntries(keeping: day.id)
+                    if didReorder {
+                        didReorder = false
+                        try? context.save()
+                    }
                 }
         // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in
@@ -1421,9 +1400,6 @@ struct PlanDayEditor: View {
             }
         }
         .task(id: day.id) {
-            cache.markAccess()
-            PlanDayEditorCache.pruneStaleEntries(keeping: day.id)
-
             if !cache.isWarm {
                 warmCachesIntoCache()
                 cache.isWarm = true
@@ -1437,15 +1413,9 @@ struct PlanDayEditor: View {
         .onChange(of: saveTick) { _, _ in
             refreshLoggedItemsIntoCache()
         }
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase != .active {
-                persistPendingEditorChanges()
-                PlanDayEditorCache.pruneStaleEntries(keeping: day.id)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            persistPendingEditorChanges()
-            PlanDayEditorCache.handleMemoryPressure(keeping: day.id)
+        .onChange(of: day.chosenExercises) {
+            reconcileExerciseIDFields()
+            try? context.save()
         }
         // Quick Progress sheet
         .sheet(item: $progressExercise) { sel in
@@ -1480,10 +1450,8 @@ struct PlanDayEditor: View {
         }
 
         // Copy "setup" only (NOT logs)
-        targetDay.chosenExercises = day.chosenExercises
-        targetDay.exerciseOrder = day.exerciseOrder
-        targetDay.type = day.type
-        SyncLocalMutation.touch(targetDay)
+        reconcileExerciseIDFields()
+        copySetup(from: day, to: targetDay)
 
         try? context.save()
         cloneMessage = "Cloned to \(targetStart.formatted(date: .abbreviated, time: .omitted))"
@@ -1496,6 +1464,7 @@ struct PlanDayEditor: View {
         }
 
         let cal = Calendar.current
+        reconcileExerciseIDFields()
 
         for weekday in weekdays {
             // Store template per selected weekday
@@ -1520,22 +1489,17 @@ struct PlanDayEditor: View {
                 let wd = cal.component(.weekday, from: d.date)
                 guard weekdays.contains(wd) else { continue }
 
-                d.chosenExercises = day.chosenExercises
-                d.exerciseOrder = day.exerciseOrder
-                d.type = day.type
-                SyncLocalMutation.touch(d)
+                copySetup(from: day, to: d)
             }
         }
 
 
-        SyncLocalMutation.touch(plan)
         try? context.save()
         cloneMessage = "Success"
     }
 
     
     private func warmCachesIntoCache() {
-        cache.markAccess()
 
         // 1) Guidance map (Exercises)
         let exDesc = FetchDescriptor<Exercise>()
@@ -1558,6 +1522,7 @@ struct PlanDayEditor: View {
         let actDesc = FetchDescriptor<Activity>()
         let activities = (try? context.fetch(actDesc)) ?? []
         var boulderSet: Set<String> = []
+
         var catalogInfoByExerciseName: [String: PlanDayEditorCache.ExerciseCatalogInfo] = [:]
 
         func upsertCatalogInfo(
@@ -1576,33 +1541,12 @@ struct PlanDayEditor: View {
             )
         }
 
-        for a in activities where a.name.localizedLowercase.contains("boulder") {
+        for a in activities {
             for t in a.types {
                 for ex in t.exercises {
-                    boulderSet.insert(ex.name)
-                    upsertCatalogInfo(
-                        exerciseName: ex.name,
-                        order: ex.order,
-                        activityName: a.name,
-                        activityColor: a.hue.color
-                    )
-                }
-                for c in t.combinations {
-                    for ex in c.exercises {
+                    if a.name.localizedLowercase.contains("boulder") {
                         boulderSet.insert(ex.name)
-                        upsertCatalogInfo(
-                            exerciseName: ex.name,
-                            order: ex.order,
-                            activityName: a.name,
-                            activityColor: a.hue.color
-                        )
                     }
-                }
-            }
-        }
-        for a in activities where !a.name.localizedLowercase.contains("boulder") {
-            for t in a.types {
-                for ex in t.exercises {
                     upsertCatalogInfo(
                         exerciseName: ex.name,
                         order: ex.order,
@@ -1612,6 +1556,9 @@ struct PlanDayEditor: View {
                 }
                 for c in t.combinations {
                     for ex in c.exercises {
+                        if a.name.localizedLowercase.contains("boulder") {
+                            boulderSet.insert(ex.name)
+                        }
                         upsertCatalogInfo(
                             exerciseName: ex.name,
                             order: ex.order,
@@ -1635,8 +1582,6 @@ struct PlanDayEditor: View {
     }
 
     private func refreshLoggedItemsIntoCache() {
-        cache.markAccess()
-
         let calendar = Calendar.current
         let start = calendar.startOfDay(for: day.date)
         guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
@@ -1649,57 +1594,9 @@ struct PlanDayEditor: View {
 
         let planId = cache.parentPlan?.id
         let allItems = sessions.flatMap(\.items)
-        let filtered = allItems.filter { $0.planSourceId == planId && !$0.isSoftDeleted }
+        let filtered = allItems.filter { $0.planSourceId == planId }
 
         cache.loggedItemsForDay = filtered
-    }
-
-    private func scheduleDailyNotesSave() {
-        let trimmed = dailyNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalized = trimmed.isEmpty ? nil : trimmed
-
-        guard day.dailyNotes != normalized else { return }
-
-        day.dailyNotes = normalized
-        SyncLocalMutation.touch(day)
-        hasPendingNotesSave = true
-
-        pendingNotesSaveTask?.cancel()
-        pendingNotesSaveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            guard !Task.isCancelled else { return }
-            flushPendingDailyNotesSave()
-        }
-    }
-
-    private func flushPendingDailyNotesSave() {
-        pendingNotesSaveTask?.cancel()
-        pendingNotesSaveTask = nil
-
-        guard hasPendingNotesSave else { return }
-        hasPendingNotesSave = false
-        try? context.save()
-    }
-
-    private func persistPendingEditorChanges() {
-        pendingNotesSaveTask?.cancel()
-        pendingNotesSaveTask = nil
-
-        var shouldSave = false
-        if hasPendingNotesSave {
-            hasPendingNotesSave = false
-            shouldSave = true
-        }
-
-        if didReorder {
-            didReorder = false
-            SyncLocalMutation.touch(day)
-            shouldSave = true
-        }
-
-        if shouldSave {
-            try? context.save()
-        }
     }
 
 
@@ -1720,7 +1617,7 @@ struct PlanDayEditor: View {
         
         let p = cache.parentPlan
         
-        let item = SessionItem(
+        session.items.append(SessionItem(
             exerciseName: exerciseName,
             planSourceId: p?.id,
             planName: p?.name,
@@ -1730,10 +1627,7 @@ struct PlanDayEditor: View {
             grade: grade,
             notes: inputNotes.isEmpty ? nil : inputNotes,
             duration: duration
-        )
-        SyncLocalMutation.touch(item)
-        session.items.append(item)
-        SyncLocalMutation.touch(session)
+        ))
         try? context.save()
         saveTick.toggle()
         loggingExercise = nil
@@ -1746,7 +1640,7 @@ struct PlanDayEditor: View {
         let p = cache.parentPlan
         
         // Create a simple log entry without metrics - just capture that it was done
-        let item = SessionItem(
+        session.items.append(SessionItem(
             exerciseName: name,
             planSourceId: p?.id,
             planName: p?.name,
@@ -1756,10 +1650,7 @@ struct PlanDayEditor: View {
             grade: nil,
             notes: "Quick logged",
             duration: nil
-        )
-        SyncLocalMutation.touch(item)
-        session.items.append(item)
-        SyncLocalMutation.touch(session)
+        ))
         try? context.save()
         saveTick.toggle()
     }
@@ -2112,6 +2003,685 @@ struct QuickExerciseProgress: View {
     }
 }
 
+// MARK: Catalog picker (Activity → TrainingType → [Combinations] → Exercises)
+
+struct CatalogExercisePicker: View {
+    @Binding var selected: [String]
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    @State private var searchText: String = ""
+    @State private var isSearchPresented: Bool = false
+    
+    // Instead of relying on isDataReady environment, check if we have data directly
+    private var hasData: Bool {
+        !activities.isEmpty
+    }
+    
+    // Flatten all exercises (including combos) with their activity tint
+    private var allExerciseHits: [ExerciseHit] {
+        var hits: [ExerciseHit] = []
+        for activity in activities {
+            let tint = activity.hue.color
+            for t in activity.types {
+                // direct exercises
+                for ex in t.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
+                // combo exercises
+                for combo in t.combinations {
+                    for ex in combo.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
+                }
+            }
+        }
+        // de-dup by exercise id in case an exercise appears multiple places
+        var seen: Set<UUID> = []
+        return hits.filter { seen.insert($0.id).inserted }
+    }
+    
+    // Filter by search text across exercise name + subtitle
+    private var filteredExerciseHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allExerciseHits.filter {
+            $0.name.localizedStandardContains(q)
+            || ($0.subtitle?.localizedStandardContains(q) ?? false)
+        }
+    }
+    
+    // Provide a reusable section builder for search results to reuse in subviews
+    @ViewBuilder
+    private func resultsSection(doneAction: @escaping () -> Void) -> some View {
+        if !searchText.isEmpty {
+            if filteredExerciseHits.isEmpty {
+                ContentUnavailableView(
+                    "No matches",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try a different search term.")
+                )
+            } else {
+                Section {
+                    ForEach(filteredExerciseHits) { hit in
+                        ExercisePickRow(
+                            name: hit.name,
+                            subtitle: hit.subtitle,
+                            reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
+                            tint: hit.tint,
+                            isSelected: selected.contains(hit.name)
+                        ) {
+                            toggleSelection(hit.name)
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Results")
+                        Spacer()
+                        Button("Done") {
+                            isSearchPresented = false // collapse search UI
+                            doneAction()              // allow caller to dismiss if desired
+                        }
+                        .font(.subheadline)
+                    }
+                }
+            }
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            if !hasData {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Loading catalog...")
+                        .foregroundStyle(.secondary)
+                    // Debug info
+                    Text("Debug: activities.count = \(activities.count)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear {
+                    print("🔴 CatalogExercisePicker: activities.count = \(activities.count)")
+                }
+                // Add a refresh mechanism
+                .task {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            } else {
+                List {
+                    // While searching: show only results, hide navigation content
+                    if !searchText.isEmpty {
+                        resultsSection(doneAction: { dismiss() })
+                    } else {
+                        // Normal content (root: activities)
+                        ForEach(activities) { activity in
+                            NavigationLink {
+                                TypesList(
+                                    activity: activity,
+                                    selected: $selected,
+                                    tint: activity.hue.color,
+                                    onDone: { dismiss() },     // close from any level
+                                    searchText: $searchText,
+                                    isSearchPresented: $isSearchPresented,
+                                    allHitsProvider: { (activities) in
+                                        // Reuse the same flattening logic
+                                        var hits: [ExerciseHit] = []
+                                        for activity in activities {
+                                            let tint = activity.hue.color
+                                            for t in activity.types {
+                                                for ex in t.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
+                                                for combo in t.combinations {
+                                                    for ex in combo.exercises { hits.append(ExerciseHit(ex: ex, tint: tint)) }
+                                                }
+                                            }
+                                        }
+                                        // de-dup by ID
+                                        var seen: Set<UUID> = []
+                                        return hits.filter { seen.insert($0.id).inserted }
+                                    }
+                                )
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Circle().fill(activity.hue.color).frame(width: 8, height: 8)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(activity.name).font(.headline)
+                                        Text("\(activity.types.count) types")
+                                            .font(.footnote).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .onAppear {
+                    print("🟢 CatalogExercisePicker: activities.count = \(activities.count)")
+                }
+                .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            }
+        }
+        .navigationTitle("Catalog")
+        .toolbar {
+            // Existing Done to close the picker
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+
+            // Extra Done that *exits search* (only visible while searching)
+            ToolbarItem(placement: .topBarTrailing) {
+                if isSearchPresented {
+                    Button("Done") {
+                        isSearchPresented = false        // collapses search, dismisses keyboard
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    private func toggleSelection(_ name: String) {
+        if let idx = selected.firstIndex(of: name) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(name)
+        }
+    }
+}
+
+// TypesList now receives search bindings and a provider closure to compute all hits,
+// then shows the same unified Results section at the top while searching.
+struct TypesList: View {
+    @Bindable var activity: Activity
+    @Binding var selected: [String]
+    let tint: Color
+    let onDone: () -> Void
+    @Binding var searchText: String
+    @Binding var isSearchPresented: Bool
+    // Provider to compute flattened hits for the whole catalog (same as root)
+    let allHitsProvider: ([Activity]) -> [ExerciseHit]
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    private var allHits: [ExerciseHit] {
+        allHitsProvider(activities)
+    }
+    private var filteredHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allHits.filter {
+            $0.name.localizedStandardContains(q)
+              || ($0.subtitle?.localizedStandardContains(q) ?? false)
+          }
+    }
+    
+    var body: some View {
+        List {
+            // While searching: show only results, hide navigation content
+            if !searchText.isEmpty {
+                if filteredHits.isEmpty {
+                    ContentUnavailableView(
+                        "No matches",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term.")
+                    )
+                } else {
+                    Section {
+                        ForEach(filteredHits) { hit in
+                            ExercisePickRow(
+                                name: hit.name,
+                                subtitle: hit.subtitle,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
+                                tint: hit.tint,
+                                isSelected: selected.contains(hit.name)
+                            ) {
+                                toggle(hit.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Results")
+                            Spacer()
+                            Button("Done") {
+                                isSearchPresented = false
+                                onDone()
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            } else {
+                // Normal content
+                ForEach(activity.types) { t in
+                    NavigationLink {
+                        if !t.combinations.isEmpty {
+                            CombosList(
+                                trainingType: t,
+                                selected: $selected,
+                                tint: tint,
+                                onDone: onDone,
+                                searchText: $searchText,
+                                isSearchPresented: $isSearchPresented,
+                                allHitsProvider: allHitsProvider
+                            )
+                        } else {
+                            ExercisesList(
+                                trainingType: t,
+                                selected: $selected,
+                                tint: tint,
+                                onDone: onDone,
+                                searchText: $searchText,
+                                isSearchPresented: $isSearchPresented,
+                                allHitsProvider: allHitsProvider
+                            )
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(t.name).font(.headline)
+                            if let d = t.typeDescription, !d.isEmpty {
+                                Text(d).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(activity.name)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
+        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+    }
+    
+    private func toggle(_ name: String) {
+        if let idx = selected.firstIndex(of: name) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(name)
+        }
+    }
+}
+
+struct CombosList: View {
+    @Bindable var trainingType: TrainingType
+    @Binding var selected: [String]
+    let tint: Color
+    let onDone: () -> Void
+    @Binding var searchText: String
+    @Binding var isSearchPresented: Bool
+    let allHitsProvider: ([Activity]) -> [ExerciseHit]
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    private var allHits: [ExerciseHit] {
+        allHitsProvider(activities)
+    }
+    private var filteredHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allHits.filter {
+            $0.name.localizedStandardContains(q)
+              || ($0.subtitle?.localizedStandardContains(q) ?? false)
+          }
+    }
+
+    var body: some View {
+        List {
+            // While searching: show only results, hide navigation content
+            if !searchText.isEmpty {
+                if filteredHits.isEmpty {
+                    ContentUnavailableView(
+                        "No matches",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term.")
+                    )
+                } else {
+                    Section {
+                        ForEach(filteredHits) { hit in
+                            ExercisePickRow(
+                                name: hit.name,
+                                subtitle: hit.subtitle,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
+                                tint: hit.tint,
+                                isSelected: selected.contains(hit.name)
+                            ) {
+                                toggle(hit.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Results")
+                            Spacer()
+                            Button("Done") {
+                                isSearchPresented = false
+                                onDone()
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            } else {
+                // Normal content (combinations)
+                ForEach(trainingType.combinations) { combo in
+                    NavigationLink {
+                        ComboExercisesList(
+                            combo: combo,
+                            selected: $selected,
+                            tint: tint,
+                            onDone: onDone,
+                            searchText: $searchText,
+                            isSearchPresented: $isSearchPresented,
+                            allHitsProvider: allHitsProvider
+                        )
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(combo.name).font(.headline)
+                            if let d = combo.comboDescription, !d.isEmpty {
+                                Text(d).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(trainingType.name)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
+        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+    }
+    
+    private func toggle(_ name: String) {
+        if let idx = selected.firstIndex(of: name) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(name)
+        }
+    }
+}
+
+struct ComboExercisesList: View {
+    @Bindable var combo: BoulderCombination
+    @Binding var selected: [String]
+    let tint: Color
+    let onDone: () -> Void
+    @Binding var searchText: String
+    @Binding var isSearchPresented: Bool
+    let allHitsProvider: ([Activity]) -> [ExerciseHit]
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    private var allHits: [ExerciseHit] {
+        allHitsProvider(activities)
+    }
+    private var filteredHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allHits.filter {
+            $0.name.localizedStandardContains(q)
+              || ($0.subtitle?.localizedStandardContains(q) ?? false)
+          }
+    }
+
+    var body: some View {
+        List {
+            // While searching: show only results, hide navigation content
+            if !searchText.isEmpty {
+                if filteredHits.isEmpty {
+                    ContentUnavailableView(
+                        "No matches",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term.")
+                    )
+                } else {
+                    Section {
+                        ForEach(filteredHits) { hit in
+                            ExercisePickRow(
+                                name: hit.name,
+                                subtitle: hit.subtitle,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText, duration: hit.durationText,
+                                tint: hit.tint,
+                                isSelected: selected.contains(hit.name)
+                            ) {
+                                toggle(hit.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Results")
+                            Spacer()
+                            Button("Done") {
+                                isSearchPresented = false
+                                onDone()
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            } else {
+                // Normal content (combo’s exercises)
+                ForEach(combo.exercises.sorted { $0.order < $1.order }) { ex in
+                    ExercisePickRow(
+                        name: ex.name,
+                        subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
+                        reps: ex.repsText, sets: ex.setsText, rest: ex.restText, duration: ex.durationText,
+                        tint: tint,
+                        isSelected: selected.contains(ex.name)
+                    ) {
+                        toggle(ex.name)
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(combo.name)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done", action: onDone) } }
+        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+    }
+
+    private func toggle(_ name: String) {
+        if let idx = selected.firstIndex(of: name) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(name)
+        }
+    }
+}
+
+struct ExercisesList: View {
+    let trainingType: TrainingType
+    @Binding var selected: [String]
+    let tint: Color
+    let onDone: () -> Void
+    @Binding var searchText: String
+    @Binding var isSearchPresented: Bool
+    let allHitsProvider: ([Activity]) -> [ExerciseHit]
+    @Query(sort: \Activity.name) private var activities: [Activity]
+    
+    private var allHits: [ExerciseHit] {
+        allHitsProvider(activities)
+    }
+    private var filteredHits: [ExerciseHit] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return allHits.filter {
+            $0.name.localizedStandardContains(q)
+              || ($0.subtitle?.localizedStandardContains(q) ?? false)
+          }
+    }
+
+    // Group exercises by area similar to CatalogView
+    private var exercisesByArea: [(String, [Exercise])] {
+        let grouped = Dictionary(grouping: trainingType.exercises) { $0.area ?? "" }
+        if grouped.keys.contains("Fingers") || grouped.keys.contains("Pull") {
+            // For climbing-specific exercises, maintain Fingers/Pull order
+            return ["Fingers", "Pull"].compactMap { area in
+                if let exercises = grouped[area], !exercises.isEmpty {
+                    return (area, exercises.sorted { $0.order < $1.order })
+                }
+                return nil
+            }
+        } else {
+            // For other types, just group if there are areas
+            return grouped
+                .filter { !$0.key.isEmpty }
+                .map { ($0.key, $0.value.sorted { $0.order < $1.order }) }
+                .sorted(by: { $0.0 < $1.0 })
+        }
+    }
+
+    private var ungroupedExercises: [Exercise] {
+        trainingType.exercises.filter { $0.area == nil }.sorted { $0.order < $1.order }
+    }
+
+    var body: some View {
+        List {
+            // While searching: show only results, hide navigation content
+            if !searchText.isEmpty {
+                if filteredHits.isEmpty {
+                    ContentUnavailableView(
+                        "No matches",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try a different search term.")
+                    )
+                } else {
+                    Section {
+                        ForEach(filteredHits) { hit in
+                            ExercisePickRow(
+                                name: hit.name,
+                                subtitle: hit.subtitle,
+                                reps: hit.repsText, sets: hit.setsText, rest: hit.restText,duration: hit.durationText,
+                                tint: hit.tint,
+                                isSelected: selected.contains(hit.name)
+                            ) {
+                                toggle(hit.name)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Results")
+                            Spacer()
+                            Button("Done") {
+                                isSearchPresented = false
+                                onDone()
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            } else {
+                // Normal content
+                if !exercisesByArea.isEmpty {
+                    ForEach(exercisesByArea, id: \.0) { area, exercises in
+                        Section(area) {
+                            ForEach(exercises) { ex in
+                                ExercisePickRow(
+                                    name: ex.name,
+                                    subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
+                                    reps: ex.repsText, sets: ex.setsText, rest: ex.restText, duration: ex.durationText,
+                                    tint: tint,
+                                    isSelected: selected.contains(ex.name)
+                                ) {
+                                    toggle(ex.name)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if !ungroupedExercises.isEmpty {
+                    Section(exercisesByArea.isEmpty ? "Exercises" : "Other") {
+                        ForEach(ungroupedExercises) { ex in
+                            ExercisePickRow(
+                                name: ex.name,
+                                subtitle: ex.exerciseDescription?.isEmpty == false ? ex.exerciseDescription : ex.notes,
+                                reps: ex.repsText, sets: ex.setsText, rest: ex.restText,duration: ex.durationText,
+                                tint: tint,
+                                isSelected: selected.contains(ex.name)
+                            ) {
+                                toggle(ex.name)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(trainingType.name)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { onDone() } }
+        }
+        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+    }
+
+    private func toggle(_ name: String) {
+        if let idx = selected.firstIndex(of: name) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(name)
+        }
+    }
+}
+
+// MARK: - Compact row + MetricRow
+
+private struct ExercisePickRow: View {
+    let name: String
+    let subtitle: String?
+    let reps: String?
+    let sets: String?
+    let rest: String?
+    let duration: String?
+    let tint: Color
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Circle().fill(tint).frame(width: 8, height: 8)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name).font(.subheadline).bold()
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    MetricRow(reps: reps, sets: sets, rest: rest, duration: duration)
+                }
+                Spacer()
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .imageScale(.large)
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+    }
+}
+
+private struct MetricRow: View {
+    let reps: String?
+    let sets: String?
+    let rest: String?
+    let duration: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            metric("Reps", reps)
+            metric("Sets", sets)
+            metric("Time", duration)
+            metric("Rest", rest)
+        }
+        .font(.caption.monospacedDigit())
+    }
+
+    @ViewBuilder
+    private func metric(_ label: String, _ value: String?) -> some View {
+        HStack(spacing: 4) {
+            Text(label).bold().foregroundStyle(.secondary)
+            Text(value ?? "—")
+        }
+    }
+}
+
+
 private struct LogMetricRow: View {
     let reps: String?
     let sets: String?
@@ -2158,7 +2728,6 @@ private func findOrCreateSession(for date: Date, in context: ModelContext) -> Se
 
     let newSession = Session(date: date)
     context.insert(newSession)
-    SyncLocalMutation.touch(newSession)
     return newSession
 }
 
@@ -2488,16 +3057,19 @@ private struct OrderedChosenExercisesView<RowContent: View>: View {
                 }
         }
         .onMove { source, destination in
-            var tx = Transaction(); tx.disablesAnimations = true
-            withTransaction(tx) {
-                var arr = localOrder
-                arr.move(fromOffsets: source, toOffset: destination)
-                localOrder = arr
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                var order = localOrder
+                order.move(fromOffsets: source, toOffset: destination)
+                localOrder = order
             }
         }
         .moveDisabled(false)
         .onChange(of: editMode?.wrappedValue) { _, newValue in
-            if newValue != .active { commitOrder() }
+            if newValue != .active {
+                commitOrder()
+            }
         }
         .onDisappear {
             commitOrder()
@@ -2515,8 +3087,13 @@ private struct OrderedChosenExercisesView<RowContent: View>: View {
     }
 
     private func commitOrder() {
-        guard localOrder != exercises else { return }
-        for (idx, name) in localOrder.enumerated() { day.exerciseOrder[name] = idx }
+        guard !localOrder.isEmpty else { return }
+        day.chosenExercises = localOrder
+        day.exerciseOrder = day.exerciseOrder.filter { localOrder.contains($0.key) }
+        for (idx, name) in localOrder.enumerated() {
+            day.exerciseOrder[name] = idx
+        }
+        reconcileExerciseIDOrder()
         onReorder()
         try? context.save()
     }
@@ -2525,11 +3102,181 @@ private struct OrderedChosenExercisesView<RowContent: View>: View {
         localOrder.removeAll { names.contains($0) }
         day.chosenExercises.removeAll { names.contains($0) }
 
-        for n in names { day.exerciseOrder.removeValue(forKey: n) }
+        for name in names {
+            day.exerciseOrder.removeValue(forKey: name)
+        }
+
+        let idsToDelete = exerciseIDs(for: names)
+        day.chosenExerciseIDs.removeAll { idsToDelete.contains($0) }
+        for id in idsToDelete {
+            day.exerciseOrderByID.removeValue(forKey: id.uuidString)
+        }
+
         for (idx, name) in localOrder.enumerated() {
             day.exerciseOrder[name] = idx
         }
+
+        reconcileExerciseIDOrder()
         onReorder()
         try? context.save()
+    }
+
+    private func exerciseIDs(for names: [String]) -> Set<UUID> {
+        let descriptor = FetchDescriptor<Exercise>()
+        let exercises = (try? context.fetch(descriptor)) ?? []
+        let names = Set(names)
+        return Set(exercises.filter { names.contains($0.name) }.map(\.id))
+    }
+
+    private func reconcileExerciseIDOrder() {
+        let descriptor = FetchDescriptor<Exercise>()
+        let exercises = (try? context.fetch(descriptor)) ?? []
+        var idByName: [String: UUID] = [:]
+        for exercise in exercises where idByName[exercise.name] == nil {
+            idByName[exercise.name] = exercise.id
+        }
+
+        var orderedIDs: [UUID] = []
+        var orderByID: [String: Int] = [:]
+        for (fallbackIndex, name) in day.chosenExercises.enumerated() {
+            guard let id = idByName[name] else { continue }
+            orderedIDs.append(id)
+            orderByID[id.uuidString] = day.exerciseOrder[name] ?? fallbackIndex
+        }
+        day.chosenExerciseIDs = orderedIDs
+        day.exerciseOrderByID = orderByID
+    }
+}
+
+// MARK: Activity Group View Component
+private struct ActivityGroupView<RowContent: View>: View {
+    let group: (activityName: String, activityColor: Color, exercises: [String])
+    @Binding var day: PlanDay
+    let context: ModelContext
+    @ViewBuilder let exerciseRowBuilder: (String) -> RowContent
+    let onReorder: () -> Void
+
+    @Environment(\.editMode) private var editMode
+    @State private var localOrder: [String]
+
+    init(
+        group: (activityName: String, activityColor: Color, exercises: [String]),
+        day: Binding<PlanDay>,
+        context: ModelContext,
+        @ViewBuilder exerciseRowBuilder: @escaping (String) -> RowContent,
+        onReorder: @escaping () -> Void
+    ) {
+        self.group = group
+        self._day = day
+        self.context = context
+        self.exerciseRowBuilder = exerciseRowBuilder
+        self.onReorder = onReorder
+        self._localOrder = State(initialValue: group.exercises)
+    }
+
+    var body: some View {
+        Section {
+            ForEach(localOrder, id: \.self) { name in
+                exerciseRowBuilder(name)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            delete(names: [name])
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+            }
+            .onMove { source, destination in
+                var tx = Transaction(); tx.disablesAnimations = true
+                withTransaction(tx) {
+                    var arr = localOrder
+                    arr.move(fromOffsets: source, toOffset: destination)
+                    localOrder = arr
+                }
+            }
+            .moveDisabled(false)
+        } header: {
+            HStack(spacing: 8) {
+                Circle().fill(group.activityColor).frame(width: 12, height: 12)
+                Text(group.activityName).font(.subheadline).fontWeight(.medium).foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.vertical, 4)
+        }
+        .onChange(of: editMode?.wrappedValue) { _, newValue in
+            // Commit when leaving edit mode
+            if newValue != .active { commitOrder() }
+        }
+        .onDisappear {
+            // Also commit when navigating away (e.g., still in edit mode)
+            commitOrder()
+        }
+        .onChange(of: group.exercises) { _, newValue in
+            // Keep localOrder in sync when data changes from outside edit sessions
+            if editMode?.wrappedValue != .active {
+                localOrder = newValue
+            }
+        }
+        .onAppear {
+            if localOrder.isEmpty { localOrder = group.exercises }
+        }
+    }
+    
+    private func commitOrder() {
+        // Only write if something changed
+        guard localOrder != group.exercises else { return }
+        for (idx, name) in localOrder.enumerated() { day.exerciseOrder[name] = idx }
+        reconcileExerciseIDOrder()
+        onReorder()
+        try? context.save()
+    }
+    
+    private func delete(names: [String]) {
+        //Update local UI list
+        localOrder.removeAll { names.contains($0) }
+        //Remove from chosenExercises
+        day.chosenExercises.removeAll { names.contains($0) }
+        
+        //Clean up per-day order map
+        for n in names { day.exerciseOrder.removeValue(forKey: n) }
+        let idsToDelete = exerciseIDs(for: names)
+        day.chosenExerciseIDs.removeAll { idsToDelete.contains($0) }
+        for id in idsToDelete {
+            day.exerciseOrderByID.removeValue(forKey: id.uuidString)
+        }
+        //Reindex remaining names in this group to keep contiguous order
+        for (idx, name) in localOrder.enumerated() {
+            day.exerciseOrder[name] = idx
+        }
+        reconcileExerciseIDOrder()
+        // Persist and notify
+        onReorder()
+        try? context.save()
+    }
+
+    private func exerciseIDs(for names: [String]) -> Set<UUID> {
+        let descriptor = FetchDescriptor<Exercise>()
+        let exercises = (try? context.fetch(descriptor)) ?? []
+        let names = Set(names)
+        return Set(exercises.filter { names.contains($0.name) }.map(\.id))
+    }
+
+    private func reconcileExerciseIDOrder() {
+        let descriptor = FetchDescriptor<Exercise>()
+        let exercises = (try? context.fetch(descriptor)) ?? []
+        var idByName: [String: UUID] = [:]
+        for exercise in exercises where idByName[exercise.name] == nil {
+            idByName[exercise.name] = exercise.id
+        }
+
+        var orderedIDs: [UUID] = []
+        var orderByID: [String: Int] = [:]
+        for (fallbackIndex, name) in day.chosenExercises.enumerated() {
+            guard let id = idByName[name] else { continue }
+            orderedIDs.append(id)
+            orderByID[id.uuidString] = day.exerciseOrder[name] ?? fallbackIndex
+        }
+        day.chosenExerciseIDs = orderedIDs
+        day.exerciseOrderByID = orderByID
     }
 }

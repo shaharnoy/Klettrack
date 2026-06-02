@@ -25,45 +25,15 @@ fileprivate enum LayoutGrid {
 // MARK: - Entry (keeps your existing type name)
 public struct ProgressViewScreen: View {
     // Live data via SwiftData
-    @Query(
-        filter: #Predicate<Session> { !$0.isSoftDeleted },
-        sort: \Session.date
-    ) private var allSessions: [Session]
-    @Query(
-        filter: #Predicate<ClimbEntry> { !$0.isSoftDeleted },
-        sort: \ClimbEntry.dateLogged
-    ) private var allClimbEntries: [ClimbEntry]
-    @Query(
-        filter: #Predicate<Plan> { !$0.isSoftDeleted },
-        sort: \Plan.startDate
-    ) private var allPlans: [Plan]
+    @Query(sort: \Session.date) private var allSessions: [Session]
+    @Query(sort: \ClimbEntry.dateLogged) private var allClimbEntries: [ClimbEntry]
+    @Query(sort: \Plan.startDate) private var allPlans: [Plan]
     
     @State private var tab: Tab = .climb
     @State private var climbVM  = ClimbStatsVM(input: .init(sessions: [], climbs: [], plans: []))
     @State private var exerciseVM = ExerciseStatsVM(input: .init(sessions: [], climbs: [], plans: []))
     @State private var hasRequestedReviewThisSession = false
     @AppStorage("filterReviewTriggerCount") private var filterCount = 0
-
-    private struct StatsInputVersion: Equatable {
-        struct SessionVersion: Equatable {
-            let id: UUID
-            let updatedAtClient: Date
-        }
-
-        struct ClimbVersion: Equatable {
-            let id: UUID
-            let updatedAtClient: Date
-        }
-
-        struct PlanVersion: Equatable {
-            let id: UUID
-            let updatedAtClient: Date
-        }
-
-        let sessions: [SessionVersion]
-        let climbs: [ClimbVersion]
-        let plans: [PlanVersion]
-    }
 
 
     public init() {}
@@ -97,27 +67,30 @@ public struct ProgressViewScreen: View {
         }
         .navigationTitle("PROGRESS")
         .navigationBarTitleDisplayMode(.large)
-        .task(id: statsInputVersion) {
-            syncViewModels()
+        .onAppear {
+            let data = StatsInputData(
+                sessions: allSessions,
+                climbs: allClimbEntries,
+                plans: allPlans
+            )
+            climbVM.updateInput(data)
+            exerciseVM.updateInput(data)
         }
-    }
-
-    private var statsInputVersion: StatsInputVersion {
-        StatsInputVersion(
-            sessions: allSessions.map { .init(id: $0.id, updatedAtClient: $0.updatedAtClient) },
-            climbs: allClimbEntries.map { .init(id: $0.id, updatedAtClient: $0.updatedAtClient) },
-            plans: allPlans.map { .init(id: $0.id, updatedAtClient: $0.updatedAtClient) }
-        )
-    }
-
-    private func syncViewModels() {
-        let data = StatsInputData(
-            sessions: allSessions,
-            climbs: allClimbEntries,
-            plans: allPlans
-        )
-        climbVM.updateInput(data)
-        exerciseVM.updateInput(data)
+        .onChange(of: allSessions) { _, _ in
+            let data = StatsInputData(sessions: allSessions, climbs: allClimbEntries, plans: allPlans)
+            climbVM.updateInput(data)
+            exerciseVM.updateInput(data)
+        }
+        .onChange(of: allClimbEntries) { _, _ in
+            let data = StatsInputData(sessions: allSessions, climbs: allClimbEntries, plans: allPlans)
+            climbVM.updateInput(data)
+            exerciseVM.updateInput(data)
+        }
+        .onChange(of: allPlans) { _, _ in
+            let data = StatsInputData(sessions: allSessions, climbs: allClimbEntries, plans: allPlans)
+            climbVM.updateInput(data)
+            exerciseVM.updateInput(data)
+        }
     }
 }
 

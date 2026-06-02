@@ -17,13 +17,10 @@ struct ClimbLogForm: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(
-        filter: #Predicate<ClimbStyle> { !$0.isSoftDeleted && $0.isHidden == false },
+        filter: #Predicate<ClimbStyle> { $0.isHidden == false },
         sort: [SortDescriptor(\ClimbStyle.name, order: .forward)]
     ) private var climbStyles: [ClimbStyle]
-    @Query(
-        filter: #Predicate<ClimbGym> { !$0.isSoftDeleted },
-        sort: [SortDescriptor(\ClimbGym.name, order: .forward)]
-    ) private var climbGyms: [ClimbGym]
+    @Query private var climbGyms: [ClimbGym]
     
     // Configuration
     let title: String
@@ -43,7 +40,7 @@ struct ClimbLogForm: View {
     @State private var grade: String = ""
     @State private var angleDegrees: String = ""
     @State private var selectedStyle: String = ""
-    @State private var attempts: String = ""
+    @State private var attempts: String = "1"
     @State private var isWorkInProgress: Bool = false
     @State private var selectedGym: String = ""
     @State private var selectedDate: Date
@@ -138,7 +135,6 @@ struct ClimbLogForm: View {
         self.onSave = onSave
 
         if let existingClimb {
-            // Prefill from the existing climb in edit mode.
             let climb = existingClimb
             _selectedClimbType = State(initialValue: climb.climbType)
             _selectedRopeClimbType = State(initialValue: climb.ropeClimbType ?? .lead)
@@ -146,13 +142,15 @@ struct ClimbLogForm: View {
             _feelsLikeGrade = State(initialValue: climb.feelsLikeGrade ?? "")
             _angleDegrees = State(initialValue: climb.angleDegrees.map { String($0) } ?? "")
             _selectedStyle = State(initialValue: climb.style == "Unknown" ? "" : climb.style)
-            _attempts = State(initialValue: climb.attempts ?? "")
+            _attempts = State(initialValue: (climb.attempts?.isEmpty == false) ? climb.attempts ?? "1" : "1")
             _isWorkInProgress = State(initialValue: climb.isWorkInProgress)
             _isPreviouslyClimbed = State(initialValue: climb.isPreviouslyClimbed ?? false)
             _selectedHoldColor = State(initialValue: climb.holdColor ?? .none)
             _selectedGym = State(initialValue: climb.gym == "Unknown" ? "" : climb.gym)
             _inputNotes = State(initialValue: climb.notes ?? "")
             _selectedDate = State(initialValue: climb.dateLogged)
+
+            // NEW: show already attached media as previews
             let previews = climb.media.map { media -> ClimbLogMediaPreview in
                 let thumbImage = media.thumbnailData.flatMap { UIImage(data: $0) }
                 switch media.type {
@@ -164,7 +162,6 @@ struct ClimbLogForm: View {
             }
             _mediaPreviews = State(initialValue: previews)
         } else if let prefillClimb {
-            // Prefill from an existing climb when creating a clone, but keep the selected date configurable.
             let climb = prefillClimb
             _selectedClimbType = State(initialValue: climb.climbType)
             _selectedRopeClimbType = State(initialValue: climb.ropeClimbType ?? .lead)
@@ -172,13 +169,14 @@ struct ClimbLogForm: View {
             _feelsLikeGrade = State(initialValue: climb.feelsLikeGrade ?? "")
             _angleDegrees = State(initialValue: climb.angleDegrees.map { String($0) } ?? "")
             _selectedStyle = State(initialValue: climb.style == "Unknown" ? "" : climb.style)
-            _attempts = State(initialValue: climb.attempts ?? "")
+            _attempts = State(initialValue: (climb.attempts?.isEmpty == false) ? climb.attempts ?? "1" : "1")
             _isWorkInProgress = State(initialValue: climb.isWorkInProgress)
             _isPreviouslyClimbed = State(initialValue: climb.isPreviouslyClimbed ?? false)
             _selectedHoldColor = State(initialValue: climb.holdColor ?? .none)
             _selectedGym = State(initialValue: climb.gym == "Unknown" ? "" : climb.gym)
             _inputNotes = State(initialValue: climb.notes ?? "")
             _selectedDate = State(initialValue: initialDate)
+
             let previews = climb.media.map { media -> ClimbLogMediaPreview in
                 let thumbImage = media.thumbnailData.flatMap { UIImage(data: $0) }
                 switch media.type {
@@ -192,6 +190,7 @@ struct ClimbLogForm: View {
         } else {
             // Add mode
             _selectedDate = State(initialValue: initialDate)
+            _attempts = State(initialValue: "1")
             _mediaPreviews = State(initialValue: [])
         }
     }
@@ -771,7 +770,7 @@ struct ClimbLogForm: View {
         defer { isSaving = false }
 
         let angleInt      = angleDegrees.isEmpty ? nil : Int(angleDegrees)
-        let attemptsText  = String(max(1, attemptsIntBinding.wrappedValue))
+        let attemptsText  = attempts.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "1" : attempts
         let notesText     = inputNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil
             : inputNotes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -796,7 +795,6 @@ struct ClimbLogForm: View {
             existing.gym                 = selectedGym.isEmpty ? "Unknown" : selectedGym
             existing.notes               = notesText
             existing.dateLogged          = selectedDate
-            SyncLocalMutation.touch(existing)
 
             target = existing
         } else {
@@ -825,14 +823,12 @@ struct ClimbLogForm: View {
             // Create the first climb
             let first = makeClimb()
             modelContext.insert(first)
-            SyncLocalMutation.touch(first)
 
             // Create clones (unique UUIDs because each ClimbEntry() generates a new one)
             if bulkCount > 1 {
                 for _ in 2...bulkCount {
                     let clone = makeClimb()
                     modelContext.insert(clone)
-                    SyncLocalMutation.touch(clone)
 
                     // Duplicate selected media for each clone.
                     if !mediaPreviews.isEmpty {
@@ -848,8 +844,8 @@ struct ClimbLogForm: View {
             }
             target = first
         }
-        // Handle media persistence for the saved climb. In clone/add mode, previews backed by
-        // existing media are copied into new ClimbMedia rows; in edit mode they remain attached.
+        // Handle media persistence. In clone/add mode, previews backed by existing media
+        // are copied into new ClimbMedia rows; in edit mode they remain attached.
         if !mediaPreviews.isEmpty {
             for preview in mediaPreviews {
                 insertMediaPreview(
@@ -913,7 +909,6 @@ struct ClimbLogForm: View {
     private func addNewStyle(_ styleName: String) {
         let newStyle = ClimbStyle(name: styleName, isDefault: false)
         modelContext.insert(newStyle)
-        SyncLocalMutation.touch(newStyle)
         try? modelContext.save()
         selectedStyle = styleName
     }
@@ -921,7 +916,6 @@ struct ClimbLogForm: View {
     private func addNewGym(_ gymName: String) {
         let newGym = ClimbGym(name: gymName, isDefault: false)
         modelContext.insert(newGym)
-        SyncLocalMutation.touch(newGym)
         try? modelContext.save()
         selectedGym = gymName
     }
@@ -1202,7 +1196,6 @@ extension ClimbLogForm {
                 climb: climb
             )
             modelContext.insert(media)
-            SyncLocalMutation.touch(media)
 
         case .video(let assetId, let thumbnail):
             let media = ClimbMedia(
@@ -1213,7 +1206,6 @@ extension ClimbLogForm {
                 climb: climb
             )
             modelContext.insert(media)
-            SyncLocalMutation.touch(media)
 
         case .existingPhoto(let media, let thumbnail):
             guard cloneExistingMedia else { return }
@@ -1225,7 +1217,6 @@ extension ClimbLogForm {
                 climb: climb
             )
             modelContext.insert(clonedMedia)
-            SyncLocalMutation.touch(clonedMedia)
 
         case .existingVideo(let media, let thumbnail):
             guard cloneExistingMedia else { return }
@@ -1237,14 +1228,13 @@ extension ClimbLogForm {
                 climb: climb
             )
             modelContext.insert(clonedMedia)
-            SyncLocalMutation.touch(clonedMedia)
         }
     }
 
     fileprivate func deletePreview(_ preview: ClimbLogMediaPreview) {
-        // Only delete stored media when editing the owning climb.
-        if existingClimb != nil, let existing = preview.existingMedia {
-            SyncLocalMutation.softDelete(existing)
+        // If this preview represents an existing ClimbMedia, delete it from the store
+        if let existing = preview.existingMedia {
+            modelContext.delete(existing)
         }
         mediaPreviews.removeAll { $0.id == preview.id }
     }

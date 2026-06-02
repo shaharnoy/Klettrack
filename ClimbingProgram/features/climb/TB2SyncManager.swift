@@ -241,7 +241,6 @@ enum TB2SyncManager {
                 tb2ClimbUUID: r.climbUUID
             )
             context.insert(entry)
-            SyncLocalMutation.touch(entry)
         }
         try? context.save()
     }
@@ -375,7 +374,7 @@ enum TB2SyncManager {
             let sorted = group.sorted { $0.id.uuidString < $1.id.uuidString }
             for dup in sorted.dropFirst() {
                 print("Deleting duplicate ClimbEntry \(dup.id.uuidString) at \(dup.dateLogged)")
-                SyncLocalMutation.softDelete(dup)
+                context.delete(dup)
                 deleted += 1
             }
         }

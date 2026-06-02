@@ -13,21 +13,31 @@ import AVFoundation
 import StoreKit
 
 struct ClimbView: View {
-    private enum AddClimbRoute: String, Identifiable {
+    private enum AddClimbRoute: Identifiable {
         case add
-        var id: String { rawValue }
+        case clone(id: UUID, climb: ClimbEntry, date: Date)
+
+        var id: String {
+            switch self {
+            case .add:
+                return "add"
+            case .clone(let id, _, let date):
+                return "clone-\(id.uuidString)-\(date.timeIntervalSinceReferenceDate)"
+            }
+        }
+    }
+
+    private struct CloneDateRoute: Identifiable {
+        let id: UUID
+        let climb: ClimbEntry
     }
 
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.modelContext) private var modelContext
     @Environment(\.undoManager) private var undoManager
-    @Query(
-        filter: #Predicate<ClimbEntry> { !$0.isSoftDeleted },
-        sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]
-    ) private var climbEntries: [ClimbEntry]
+    @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
     @State private var addClimbRoute: AddClimbRoute? = nil
-    @State private var climbToClone: ClimbEntry? = nil
-    @State private var showingCloneDatePrompt = false
+    @State private var cloneDateRoute: CloneDateRoute? = nil
     @State private var cloneTargetDate = Date()
     @State private var editingClimb: ClimbEntry? = nil
     
@@ -67,25 +77,9 @@ struct ClimbView: View {
     @AppStorage("klettrack.successfulSyncCount") private var successfulSyncCount = 0
     @AppStorage("klettrack.didRequestReviewAfterSync") private var didRequestReviewAfterSync = false
     @State private var pendingReviewReason: String? = nil
-
-    @State private var filteredClimbs: [ClimbEntry] = []
-
-    private struct ClimbFilterVersion: Equatable {
-        struct EntryVersion: Equatable {
-            let id: UUID
-            let updatedAtClient: Date
-            let dateLogged: Date
-        }
-
-        let entries: [EntryVersion]
-        let dateRange: DateRange
-        let wipFilter: WipFilter
-        let climbTypeFilter: ClimbTypeFilter
-        let resendFilter: ResendFilter
-        let searchQuery: String
-    }
-
-    private func buildFilteredClimbs() -> [ClimbEntry] {
+    
+    // Computed filtered climbs
+    private var filteredClimbs: [ClimbEntry] {
         var result = climbEntries
 
         // Date range
@@ -140,19 +134,6 @@ struct ClimbView: View {
         return result
     }
 
-    private var climbFilterVersion: ClimbFilterVersion {
-        ClimbFilterVersion(
-            entries: climbEntries.map {
-                .init(id: $0.id, updatedAtClient: $0.updatedAtClient, dateLogged: $0.dateLogged)
-            },
-            dateRange: dateRange,
-            wipFilter: wipFilter,
-            climbTypeFilter: climbTypeFilter,
-            resendFilter: resendFilter,
-            searchQuery: searchQuery
-        )
-    }
-
     
     // Small helper to avoid heavy inline Binding construction in .alert
     private var isShowingSyncAlert: Binding<Bool> {
@@ -178,18 +159,35 @@ struct ClimbView: View {
     }
     
     var body: some View {
-        content
+        NavigationStack {
+            if climbEntries.isEmpty { // base dataset empty (not just filters)
+                emptyStateCard
+            } else {
+                List {
+                    filterSection
+                    addClimbSection
+                    climbsSection
+                }
+                .listStyle(.plain)
+                .listRowSpacing(4)
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 16)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                syncToolbarButton
+                Button {
+                    onSyncTapped()
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+                .disabled(!isDataReady || isSyncing)
             }
 
             // Replaces the old lock button
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     guard isDataReady else { return }
-                    climbToClone = nil
-                    cloneTargetDate = Date()
                     bulkClimbCountText = "4"
                     showingBulkClimbPrompt = true
                 } label: {
@@ -201,30 +199,40 @@ struct ClimbView: View {
         }
         .sheet(item: $addClimbRoute, onDismiss: {
             pendingBulkClimbCount = 1
-            climbToClone = nil
-        }) { _ in
-            AddClimbView(
-                prefillClimb: climbToClone,
-                initialDate: cloneTargetDate,
-                bulkCount: pendingBulkClimbCount,
-                onSave: { _ in
-                ensureDateRangeInitialized()
-                pendingBulkClimbCount = 1 // reset for next time
-                climbToClone = nil
-                }
-            )
+        }) { route in
+            switch route {
+            case .add:
+                AddClimbView(bulkCount: pendingBulkClimbCount, onSave: { _ in
+                    ensureDateRangeInitialized()
+                    pendingBulkClimbCount = 1 // reset for next time
+                })
+            case .clone(_, let climb, let date):
+                AddClimbView(
+                    prefillClimb: climb,
+                    initialDate: date,
+                    bulkCount: 1,
+                    onSave: { _ in
+                        ensureDateRangeInitialized()
+                        pendingBulkClimbCount = 1
+                    }
+                )
+            }
         }
-        .sheet(isPresented: $showingCloneDatePrompt) {
+        .sheet(item: $cloneDateRoute) { route in
             CloneClimbDateSheet(
                 targetDate: $cloneTargetDate,
                 onCancel: {
-                    showingCloneDatePrompt = false
-                    climbToClone = nil
+                    cloneDateRoute = nil
                 },
                 onClone: {
-                    showingCloneDatePrompt = false
+                    let date = cloneTargetDate
+                    let climb = route.climb
+                    cloneDateRoute = nil
                     pendingBulkClimbCount = 1
-                    addClimbRoute = .add
+                    Task { @MainActor in
+                        await Task.yield()
+                        addClimbRoute = .clone(id: climb.id, climb: climb, date: date)
+                    }
                 }
             )
             .presentationDetents([.height(220)])
@@ -298,8 +306,6 @@ struct ClimbView: View {
             message: "How many climbs to add?"
         ) { count in
             pendingBulkClimbCount = count
-            climbToClone = nil
-            cloneTargetDate = Date()
             addClimbRoute = .add
         }
         .opacity(isDataReady ? 1 : 0)
@@ -328,6 +334,12 @@ struct ClimbView: View {
                 .padding(.bottom, 12)
             }
         }
+        // Board picker dialog
+        .confirmationDialog("Sync", isPresented: $showingBoardPicker, titleVisibility: .visible) {
+            Button("TB2") { startSync(board: .tension) }
+            Button("Kilter") { startSync(board: .kilter) }
+            Button("Cancel", role: .cancel) { }
+        }
         // Attach the scene's UndoManager to SwiftData and also to our delete handler
         .onAppear {
             dumpUndoContext("onAppear.before")
@@ -351,40 +363,6 @@ struct ClimbView: View {
         .onChange(of: climbEntries.count) { _, _ in
             dumpUndoContext("entries.count.change")
             ensureDateRangeInitialized()
-        }
-        .task(id: climbFilterVersion) {
-            filteredClimbs = buildFilteredClimbs()
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if climbEntries.isEmpty { // base dataset empty (not just filters)
-            emptyStateCard
-        } else {
-            List {
-                filterSection
-                addClimbSection
-                climbsSection
-            }
-            .listStyle(.plain)
-            .listRowSpacing(4)
-            .scrollContentBackground(.hidden)
-            .padding(.horizontal, 16)
-        }
-    }
-
-    private var syncToolbarButton: some View {
-        Button {
-            onSyncTapped()
-        } label: {
-            Image(systemName: "arrow.triangle.2.circlepath")
-        }
-        .disabled(!isDataReady || isSyncing)
-        .confirmationDialog("Sync", isPresented: $showingBoardPicker, titleVisibility: .visible) {
-            Button("TB2") { startSync(board: .tension) }
-            Button("Kilter") { startSync(board: .kilter) }
-            Button("Cancel", role: .cancel) { }
         }
     }
     
@@ -499,8 +477,6 @@ struct ClimbView: View {
                 guard isDataReady else {
                     return
                 }
-                climbToClone = nil
-                cloneTargetDate = Date()
                 addClimbRoute = .add
             } label: {
                 Text("Log a Climb")
@@ -759,11 +735,7 @@ struct ClimbView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             
-            Button(action: {
-                climbToClone = nil
-                cloneTargetDate = Date()
-                addClimbRoute = .add
-            }) {
+            Button(action: { addClimbRoute = .add }) {
                 Label("Add Your First Climb", systemImage: "plus.circle.fill")
                     .font(.headline)
                     .foregroundStyle(.white)
@@ -799,9 +771,8 @@ struct ClimbView: View {
 
     private func cloneClimb(_ climb: ClimbEntry) {
         guard isDataReady else { return }
-        climbToClone = climb
         cloneTargetDate = Date()
-        showingCloneDatePrompt = true
+        cloneDateRoute = CloneDateRoute(id: climb.id, climb: climb)
     }
 
     
@@ -1003,6 +974,12 @@ struct ClimbRowCard: View {
         .contextMenu {
             Button(action: onClone) {
                 Label("Clone", systemImage: "plus.square.on.square")
+            }
+
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }

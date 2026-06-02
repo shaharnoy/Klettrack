@@ -18,10 +18,7 @@ struct TimerTemplatesListView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isDataReady) private var isDataReady
 
-    @Query(
-        filter: #Predicate<TimerTemplate> { !$0.isSoftDeleted },
-        sort: [SortDescriptor(\TimerTemplate.name, order: .forward)]
-    ) private var templates: [TimerTemplate]
+    @Query(sort: [SortDescriptor(\TimerTemplate.name, order: .forward)]) private var templates: [TimerTemplate]
     
     @State private var sheetRoute: SheetRoute?
     @State private var editingTemplate: TimerTemplate? = nil
@@ -29,58 +26,61 @@ struct TimerTemplatesListView: View {
 
     
     var body: some View {
-        List {
-            if templates.isEmpty {
-                ContentUnavailableView(
-                    "No Timer Templates",
-                    systemImage: "timer",
-                    description: Text("Create your first timer template to get started")
-                )
-            } else {
-                ForEach(templates) { template in
-                    TimerTemplateListRow(template: template)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                delete(template)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+        NavigationStack {
+            List {
+                if templates.isEmpty {
+                    ContentUnavailableView(
+                        "No Timer Templates",
+                        systemImage: "timer",
+                        description: Text("Create your first timer template to get started")
+                    )
+                } else {
+                    ForEach(templates) { template in
+                        TimerTemplateListRow(template: template)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    delete(template)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
 
-                            Button {
-                                editingTemplate = template
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
+                                Button {
+                                    editingTemplate = template
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
                             }
-                            .tint(.blue)
-                        }
+                    }
+
                 }
             }
-        }
-        .navigationTitle("Timer Templates")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("New") {
-                    guard isDataReady else { return }
-                    sheetRoute = .newTemplate
+            .navigationTitle("Timer Templates")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("New") {
+                        guard isDataReady else { return }
+                        sheetRoute = .newTemplate
+                    }
+                    .disabled(!isDataReady)
                 }
-                .disabled(!isDataReady)
             }
-        }
-        .sheet(item: $sheetRoute) { route in
-            switch route {
-            case .newTemplate:
-                TimerTemplateEditor()
+            .sheet(item: $sheetRoute) { route in
+                switch route {
+                case .newTemplate:
+                    TimerTemplateEditor()
+                }
             }
-        }
-        .sheet(item: $editingTemplate) { template in
-            TimerTemplateEditor(existingTemplate: template)
+            .sheet(item: $editingTemplate) { template in
+                TimerTemplateEditor(existingTemplate: template)
+            }
         }
     }
     
     
     private func delete(_ template: TimerTemplate) {
-        SyncLocalMutation.softDelete(template)
+        context.delete(template)
         try? context.save()
     }
     // Touching relationships to ensure SwiftData realizes them before presenting the editor

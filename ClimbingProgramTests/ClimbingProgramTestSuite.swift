@@ -6,7 +6,6 @@ import XCTest
 import SwiftData
 @testable import klettrack
 
-@MainActor
 class ClimbingProgramTestSuite: XCTestCase {
 
     // Shared in-memory SwiftData container for each test case
@@ -23,8 +22,6 @@ class ClimbingProgramTestSuite: XCTestCase {
             TrainingType.self,
             BoulderCombination.self,
             Exercise.self,
-            SyncState.self,
-            SyncMutation.self,
 
             // Plans
             Plan.self,

@@ -5,6 +5,7 @@ struct BoardCredentialsSettingsView: View {
     @State private var credsUsername = ""
     @State private var credsPassword = ""
     @State private var boardCredentialsVersion = 0
+    @State private var errorMessage: String?
 
     var body: some View {
         List {
@@ -67,13 +68,21 @@ struct BoardCredentialsSettingsView: View {
                         boardCredentialsVersion += 1
                         activeBoard = nil
                     } catch {
-                        activeBoard = nil
+                        errorMessage = "Unable to save \(boardDisplayName(board)) credentials: \(error.localizedDescription)"
                     }
                 },
                 onCancel: {
                     activeBoard = nil
                 }
             )
+        }
+        .alert("Credential Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -97,7 +106,7 @@ struct BoardCredentialsSettingsView: View {
                 credsPassword = ""
             }
         } catch {
-            print("Failed to delete credentials for \(board): \(error)")
+            errorMessage = "Unable to clear \(boardDisplayName(board)) credentials: \(error.localizedDescription)"
         }
     }
 
@@ -107,5 +116,9 @@ struct BoardCredentialsSettingsView: View {
 
     private func boardCredentialStatus(for board: TB2Client.Board) -> String {
         hasBoardCredentials(for: board) ? "Configured" : "Not set"
+    }
+
+    private func boardDisplayName(_ board: TB2Client.Board) -> String {
+        board == .kilter ? "Kilter" : "Tension Board"
     }
 }

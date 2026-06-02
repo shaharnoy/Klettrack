@@ -66,7 +66,6 @@ struct RootTabView: View {
     @Environment(\.modelContext) private var context
     @State private var isDataReady = false
     @State private var timerAppState = TimerAppState()
-    @State private var authManager = AuthManager.shared
     @State private var sheetRoute: SheetRoute?
     
     var body: some View {
@@ -122,9 +121,7 @@ struct RootTabView: View {
         .sheet(item: $sheetRoute) { route in
             switch route {
             case .settings:
-                NavigationStack {
-                    SettingsSheet()
-                }
+                SettingsSheet()
             }
         }
     }
@@ -138,7 +135,7 @@ struct RootTabView: View {
         
         do {
             // Longer delay to ensure SwiftData container is fully ready
-            try await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+            try await Task.sleep(for: .milliseconds(300))
 
             //runDayTypesRepairIfNeeded(context)  // delete duplicate days and reseed
             SeedData.loadIfNeeded(context)      // Always seed - logic in place to not overwrite existing data
@@ -158,14 +155,11 @@ struct RootTabView: View {
                     }
                 }
             }
-            runOnce(per: "plan_day_sync_id_backfill_2026-02-10") {
-                backfillPlanDaySyncFields(context)
+            runOnce(per: "plan_day_exercise_id_backfill_2026-06-02") {
+                backfillPlanDayExerciseIDFields(context)
             }
-            runOnce(per: "sync_v2_relationship_backfill_2026-02-14") {
-                backfillSyncV2RelationshipsAndMetadata(context)
-            }
-            runOnce(per: "plan_sync_integrity_backfill_2026-02-24") {
-                backfillPlanSyncIntegrity(context)
+            runOnce(per: "climb_attempts_default_backfill_2026-06-02") {
+                backfillClimbEntryAttempts(context)
             }
             runOnce(per: "daytypedefaultflags_backfill_2025-11-08") {
                 backfillDefaultFlags(context)
@@ -185,14 +179,9 @@ struct RootTabView: View {
 
             // Ensure all changes are committed
             try context.save()
-
-            if FeatureFlags.isKlettrackWebSettingsEnabled {
-                authManager.configureIfNeeded(modelContainer: context.container)
-                await authManager.restoreSession()
-            }
             
             // Additional delay to ensure everything is settled
-            try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+            try await Task.sleep(for: .milliseconds(200))
             
         } catch {
             print("Error during data initialization: \(error)")

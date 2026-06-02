@@ -20,16 +20,13 @@ struct ClimbMetaManagerView: View {
 
     // Fetch all styles, gyms, days
     @Query(
-        filter: #Predicate<ClimbStyle> { !$0.isSoftDeleted && $0.isHidden == false },
+        filter: #Predicate<ClimbStyle> { $0.isHidden == false },
         sort: [SortDescriptor(\ClimbStyle.name, order: .forward)]
     ) private var styles: [ClimbStyle]
-    @Query(
-        filter: #Predicate<ClimbGym> { !$0.isSoftDeleted },
-        sort: [SortDescriptor(\ClimbGym.name, order: .forward)]
-    ) private var gyms: [ClimbGym]
+    @Query(sort: [SortDescriptor(\ClimbGym.name, order: .forward)]) private var gyms: [ClimbGym]
     // Exclude hidden (soft-deleted) day types from UI lists
     @Query(
-        filter: #Predicate<DayTypeModel> { !$0.isSoftDeleted && $0.isHidden == false },
+        filter: #Predicate<DayTypeModel> { $0.isHidden == false },
         sort: [SortDescriptor(\DayTypeModel.name, order: .forward)]
     ) private var days: [DayTypeModel]
     
@@ -59,7 +56,9 @@ struct ClimbMetaManagerView: View {
     @State private var changingDayColor: DayTypeModel? = nil
 
     var body: some View {
-        mainList
+        NavigationStack {
+            mainList
+        }
     }
     
     private var mainList: some View {
@@ -85,9 +84,7 @@ struct ClimbMetaManagerView: View {
                               name: $gymDraft) {
                     let trimmed = gymDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { return }
-                    let gym = ClimbGym(name: trimmed, isDefault: false)
-                    context.insert(gym)
-                    SyncLocalMutation.touch(gym)
+                    context.insert(ClimbGym(name: trimmed, isDefault: false))
                     try? context.save()
                 }
             case .day:
@@ -107,7 +104,6 @@ struct ClimbMetaManagerView: View {
                 let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
                 style.name = trimmed
-                SyncLocalMutation.touch(style)
                 try? context.save()
             }
         }
@@ -118,7 +114,6 @@ struct ClimbMetaManagerView: View {
                 let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
                 gym.name = trimmed
-                SyncLocalMutation.touch(gym)
                 try? context.save()
             }
         }
@@ -180,7 +175,6 @@ struct ClimbMetaManagerView: View {
                 existing.isHidden = false
                 existing.name = trimmed
                 existing.colorKey = safeColor
-                SyncLocalMutation.touch(existing)
                 try? context.save()
                 resultAlert = InfoAlert(message: "Restored deleted day type “\(trimmed)”.")
                 return true
@@ -190,14 +184,12 @@ struct ClimbMetaManagerView: View {
             }
         }
 
-        let dayType = DayTypeModel(
+        context.insert(DayTypeModel(
             key: key,
             name: trimmed,
             order: (days.map { $0.order }.max() ?? 0) + 10,
             colorKey: safeColor
-        )
-        context.insert(dayType)
-        SyncLocalMutation.touch(dayType)
+        ))
         try? context.save()
         return true
     }
@@ -212,7 +204,6 @@ struct ClimbMetaManagerView: View {
             if existing.isDefault == false && existing.isHidden == true {
                 existing.isHidden = false
                 existing.name = trimmed
-                SyncLocalMutation.touch(existing)
                 try? context.save()
                 resultAlert = InfoAlert(message: "Restored deleted style “\(trimmed)”.")
                 return
@@ -221,9 +212,7 @@ struct ClimbMetaManagerView: View {
                 return
             }
         }
-        let style = ClimbStyle(name: trimmed, isDefault: false)
-        context.insert(style)
-        SyncLocalMutation.touch(style)
+        context.insert(ClimbStyle(name: trimmed, isDefault: false))
         try? context.save()
     }
 
@@ -234,7 +223,6 @@ struct ClimbMetaManagerView: View {
         if DayTypeModel.allowedColorKeys.contains(newColorKey) {
             day.colorKey = newColorKey
         }
-        SyncLocalMutation.touch(day)
         try? context.save()
         return true
     }
@@ -450,19 +438,17 @@ struct ClimbMetaManagerView: View {
     // MARK: - Deletes
     private func safeDeleteStyle(_ style: ClimbStyle) {
         style.isHidden = true
-        SyncLocalMutation.softDelete(style)
         try? context.save()
     }
 
     private func safeDeleteDay(_ day: DayTypeModel) {
         // Soft delete: hide instead of removing from the store
         day.isHidden = true
-        SyncLocalMutation.softDelete(day)
         try? context.save()
     }
 
     private func deleteGym(_ gym: ClimbGym) {
-        SyncLocalMutation.softDelete(gym)
+        context.delete(gym)
         try? context.save()
     }
 
@@ -478,7 +464,6 @@ struct ClimbMetaManagerView: View {
         let allStyles: [ClimbStyle] = (try? context.fetch(FetchDescriptor<ClimbStyle>())) ?? []
         for s in allStyles where s.isDefault && s.isHidden {
             s.isHidden = false
-            SyncLocalMutation.touch(s)
         }
         // Insert missing default day types (by key)
         let defaults: [DayTypeModel]
@@ -495,7 +480,6 @@ struct ClimbMetaManagerView: View {
             if !existingDayKeys.contains(key) {
                 let model = DayTypeModel(key: d.key, name: d.name, order: d.order, colorKey: d.colorKey)
                 context.insert(model)
-                SyncLocalMutation.touch(model)
                 insertedCount += 1
             }
         }

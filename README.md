@@ -36,9 +36,7 @@ See [![App Store](https://img.shields.io/badge/App_Store-Download-blue?logo=appl
 ## 📖 Table of Contents
 * [Requirements](#requirements)
 * [Getting Started](#getting-started)
-* [Repository Components](#repository-components)
 * [Project Structure](#project-structure)
-* [Operational Docs](#operational-docs)
 * [Testing](#testing)
 * [Contributing](#contributing)
 * [Credits](#credits)
@@ -70,40 +68,19 @@ See [![App Store](https://img.shields.io/badge/App_Store-Download-blue?logo=appl
 
 ---
 
-## 🧩 Repository Components
-
-This repository is a monorepo with three runtime components:
-
-- iOS app: `ClimbingProgram` and `ClimbingProgram.xcodeproj`
-- Web app: `app.html` with assets under `web`
-- Supabase backend: `supabase/functions` and `supabase/migrations`
-
----
-
 ## 📂 Project Structure
 
 ```
-<repo-root>
-├── ClimbingProgram/                 # iOS source
-├── ClimbingProgramTests/            # iOS tests
-├── web/                             # Web JS/CSS modules
-├── supabase/                        # Edge functions + SQL migrations
-├── scripts/                         # Validation and operations scripts
-└── docs/
-    ├── current/                     # Canonical active docs
-    └── archive/                     # Quarantined historical notes
+ClimbingProgram
+├── app/                  # App entrypoint & root views
+├── data/                 # Models, persistence, CSV I/O
+├── design/               # App-wide design system (theme, colors)
+├── docs/                 # Documentation
+├── features/             # Modular feature groups
+├── shared/               # Reusable UI components
+├── Assets.xcassets       # Images, colors, symbols
+ClimbingProgramTests
 ```
-
----
-
-## 📚 Operational Docs
-
-- Deployment matrix: `docs/current/operations/deployment_matrix.md`
-- Secrets policy: `docs/current/operations/secrets_policy.md`
-- Supabase runbooks: `docs/current/operations/supabase_sync_runbooks.md`
-- Supabase keepalive healthcheck: `docs/current/operations/supabase_healthcheck_keepalive.md`
-- Supabase rollout checklist: `docs/current/operations/supabase_sync_rollout_checklist.md`
-- Web testing guide: `docs/current/web/web_and_node_testing.md`
 
 ---
 
@@ -155,3 +132,5 @@ The binary version distributed via the **Apple App Store** is released under a *
 ⚠️ **Note:**  
 - Commercial redistribution, rebranding, or publishing this app under another name (e.g., on the App Store) is **not permitted**.  
 - For personal use and contributions only.  
+
+

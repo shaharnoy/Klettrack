@@ -53,11 +53,7 @@ public struct UndoableDeleteHandler<S: UndoSnapshotting> {
         lastDeletedID = item.id
         lastSnapshot = snapshotter.makeSnapshot(from: item)
 
-        if let syncItem = item as? any SyncLocallyMutable {
-            SyncLocalMutation.softDelete(syncItem)
-        } else {
-            context.delete(item)
-        }
+        context.delete(item)
         undoManager?.endUndoGrouping()
 
         do { try context.save() } catch { }

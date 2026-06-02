@@ -10,50 +10,22 @@ import Foundation
 
 struct MediaManagerView: View {
     @Environment(\.modelContext) private var context
-    @Query(
-        filter: #Predicate<ClimbMedia> { !$0.isSoftDeleted },
-        sort: [SortDescriptor(\ClimbMedia.createdAt, order: .reverse)]
-    )
+    @Query(sort: [SortDescriptor(\ClimbMedia.createdAt, order: .reverse)])
     private var mediaItems: [ClimbMedia]
 
     @State private var fullScreenMedia: ClimbMedia?
     @State private var editingClimb: ClimbEntry?
-    @State private var groupedByMonth: [(month: Date, items: [ClimbMedia])] = []
 
-    private struct MediaItemsVersion: Equatable {
-        struct ItemVersion: Equatable {
-            let id: UUID
-            let createdAt: Date
-            let updatedAtClient: Date
-            let climbDate: Date
-        }
-
-        let items: [ItemVersion]
-    }
-
-    private func rebuildGroupedByMonth() {
+    private var groupedByMonth: [(month: Date, items: [ClimbMedia])] {
         let calendar = Calendar.current
         let groups = Dictionary(grouping: mediaItems) { (media: ClimbMedia) -> Date in
             let comps = calendar.dateComponents([.year, .month], from: media.climb.dateLogged)
             return calendar.date(from: comps) ?? media.climb.dateLogged
         }
 
-        groupedByMonth = groups
+        return groups
             .map { (month: $0.key, items: $0.value.sorted { $0.createdAt > $1.createdAt }) }
             .sorted { $0.month > $1.month }
-    }
-
-    private var mediaItemsVersion: MediaItemsVersion {
-        MediaItemsVersion(
-            items: mediaItems.map {
-                .init(
-                    id: $0.id,
-                    createdAt: $0.createdAt,
-                    updatedAtClient: $0.updatedAtClient,
-                    climbDate: $0.climb.dateLogged
-                )
-            }
-        )
     }
 
     var body: some View {
@@ -104,13 +76,10 @@ struct MediaManagerView: View {
                 onSave: nil
             )
         }
-        .task(id: mediaItemsVersion) {
-            rebuildGroupedByMonth()
-        }
     }
 
     private func delete(_ media: ClimbMedia) {
-        SyncLocalMutation.softDelete(media)
+        context.delete(media)
         try? context.save()
     }
     
@@ -213,3 +182,5 @@ struct MediaManagerView: View {
 
     }
 }
+
+
