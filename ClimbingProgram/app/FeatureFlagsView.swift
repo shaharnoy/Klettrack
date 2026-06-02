@@ -9,6 +9,7 @@ import SwiftUI
 struct FeatureFlagsView: View {
     @AppStorage(FeatureFlags.forcePreferMyGradeInProgress) private var forcePreferMyGradeInProgress = false
     @AppStorage(FeatureFlags.showNotesWhenGymMissing) private var showNotesWhenGymMissing = false
+    @AppStorage(FeatureFlags.persistProgressFilters) private var persistProgressFilters = false
 
     var body: some View {
         List {
@@ -32,10 +33,19 @@ struct FeatureFlagsView: View {
                             .lineLimit(2)
                     }
                 }
+
+                Toggle(isOn: $persistProgressFilters) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Remember Progress Filters")
+                        Text("Saves and restores the last used filters on the Progress screen.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
             }
         }
         .navigationTitle("Feature Flags")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
-

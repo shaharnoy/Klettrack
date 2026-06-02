@@ -28,4 +28,10 @@ final class FeatureFlagRulesTests: XCTestCase {
         )
         XCTAssertNil(value)
     }
+
+    func testProgressFilterPersistenceFlagUsesDedicatedStorageKey() {
+        XCTAssertEqual(FeatureFlags.persistProgressFilters, "featureFlag.persistProgressFilters")
+        XCTAssertNotEqual(FeatureFlags.persistProgressFilters, FeatureFlags.forcePreferMyGradeInProgress)
+        XCTAssertNotEqual(FeatureFlags.persistProgressFilters, FeatureFlags.showNotesWhenGymMissing)
+    }
 }

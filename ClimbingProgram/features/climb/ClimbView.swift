@@ -18,11 +18,19 @@ struct ClimbView: View {
         var id: String { rawValue }
     }
 
+    private struct CloneDateRoute: Identifiable {
+        let id: UUID
+        let climb: ClimbEntry
+    }
+
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.modelContext) private var modelContext
     @Environment(\.undoManager) private var undoManager
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
     @State private var addClimbRoute: AddClimbRoute? = nil
+    @State private var cloneDateRoute: CloneDateRoute? = nil
+    @State private var climbToClone: ClimbEntry? = nil
+    @State private var cloneTargetDate = Date()
     @State private var editingClimb: ClimbEntry? = nil
     
     // Filters
@@ -181,11 +189,36 @@ struct ClimbView: View {
                 .accessibilityLabel("Bulk add climbs")
             }
         }
-        .sheet(item: $addClimbRoute) { _ in
-            AddClimbView(bulkCount: pendingBulkClimbCount, onSave: { _ in
+        .sheet(item: $addClimbRoute, onDismiss: {
+            pendingBulkClimbCount = 1
+            climbToClone = nil
+        }) { _ in
+            AddClimbView(
+                prefillClimb: climbToClone,
+                initialDate: cloneTargetDate,
+                bulkCount: pendingBulkClimbCount,
+                onSave: { _ in
                 ensureDateRangeInitialized()
                 pendingBulkClimbCount = 1 // reset for next time
+                climbToClone = nil
             })
+        }
+        .sheet(item: $cloneDateRoute) { route in
+            CloneClimbDateSheet(
+                targetDate: $cloneTargetDate,
+                onCancel: {
+                    cloneDateRoute = nil
+                    climbToClone = nil
+                },
+                onClone: {
+                    climbToClone = route.climb
+                    cloneDateRoute = nil
+                    pendingBulkClimbCount = 1
+                    addClimbRoute = .add
+                }
+            )
+            .presentationDetents([.height(220)])
+            .presentationDragIndicator(.visible)
         }
 
         .sheet(item: $editingClimb) { climb in
@@ -457,7 +490,12 @@ struct ClimbView: View {
                 .listRowSeparator(.hidden)
             } else {
                 ForEach(filteredClimbs) { climb in
-                    ClimbRowCard(climb: climb, onDelete: { deleteClimb(climb) }, onEdit: { editingClimb = climb })
+                    ClimbRowCard(
+                        climb: climb,
+                        onDelete: { deleteClimb(climb) },
+                        onEdit: { editingClimb = climb },
+                        onClone: { cloneClimb(climb) }
+                    )
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
@@ -713,10 +751,49 @@ struct ClimbView: View {
         }
     }
 
+    private func cloneClimb(_ climb: ClimbEntry) {
+        guard isDataReady else { return }
+        cloneTargetDate = Date()
+        cloneDateRoute = CloneDateRoute(id: climb.id, climb: climb)
+    }
+
     
     private func handleUndoTap() {
         // If you still call this from anywhere, route through the snackbar controller
         undoSnackbar.performUndo()
+    }
+}
+
+private struct CloneClimbDateSheet: View {
+    @Binding var targetDate: Date
+    let onCancel: () -> Void
+    let onClone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                DatePicker("Clone date", selection: $targetDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+
+                Text("The cloned climb will be created with this date.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Clone Climb")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Clone", action: onClone)
+                }
+            }
+        }
     }
 }
 
@@ -741,6 +818,7 @@ struct ClimbRowCard: View {
     let climb: ClimbEntry
     let onDelete: () -> Void
     let onEdit: () -> Void
+    let onClone: () -> Void
     @AppStorage(FeatureFlags.showNotesWhenGymMissing) private var showNotesWhenGymMissing = false
     
     private var climbTypeColor: Color {
@@ -876,6 +954,10 @@ struct ClimbRowCard: View {
                 .stroke(climbTypeColor.opacity(0.25), lineWidth: 1)
         )
         .contextMenu {
+            Button(action: onClone) {
+                Label("Clone", systemImage: "plus.square.on.square")
+            }
+
             Button(role: .destructive) {
                 onDelete()
             } label: {

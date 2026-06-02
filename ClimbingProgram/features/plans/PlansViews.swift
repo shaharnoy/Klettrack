@@ -20,6 +20,11 @@ private func dbg(_ msg: String) {
 @MainActor
 @Observable
 private final class PlanDayEditorCache {
+    struct ExerciseCatalogInfo {
+        let activityName: String
+        let activityColor: Color
+        let order: Int
+    }
 
     struct ExerciseGuidance {
         let repsText: String?
@@ -36,6 +41,7 @@ private final class PlanDayEditorCache {
 
     var guidanceByName: [String: ExerciseGuidance] = [:]
     var boulderingExerciseNames: Set<String> = []
+    var catalogInfoByExerciseName: [String: ExerciseCatalogInfo] = [:]
     var parentPlan: Plan? = nil
     var loggedItemsForDay: [SessionItem] = []
 
@@ -977,6 +983,7 @@ struct PlanDayEditor: View {
 
 
         let isQuickLogged = isExerciseQuickLogged(name: name)
+        let activityColor = cache.catalogInfoByExerciseName[name]?.activityColor ?? .clear
         // Guidance: use real values only when caches are ready, otherwise a stable placeholder.
         let exerciseInfo = cache.isWarm
             ? getExerciseInfo(name: name)
@@ -986,8 +993,15 @@ struct PlanDayEditor: View {
 
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Text(name)
-                    .lineLimit(2)
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(activityColor)
+                        .frame(width: 8, height: 8)
+                        .opacity(cache.isWarm ? 1 : 0)
+
+                    Text(name)
+                        .lineLimit(2)
+                }
 
                 Spacer()
 
@@ -1181,17 +1195,13 @@ struct PlanDayEditor: View {
                 }
                 .padding(.vertical, 8)
             } else {
-
-                let groupedExercises = groupedChosenExercises()
-                ForEach(groupedExercises, id: \.activityName) { group in
-                    ActivityGroupView(
-                        group: group,
-                        day: $day,
-                        context: context,
-                        exerciseRowBuilder: exerciseRow,
-                        onReorder: { didReorder = true }
-                    )
-                }
+                OrderedChosenExercisesView(
+                    exercises: sortedChosenExercises(),
+                    day: $day,
+                    context: context,
+                    exerciseRowBuilder: exerciseRow,
+                    onReorder: { didReorder = true }
+                )
             }
             
             Button {
@@ -1512,13 +1522,55 @@ struct PlanDayEditor: View {
         let actDesc = FetchDescriptor<Activity>()
         let activities = (try? context.fetch(actDesc)) ?? []
         var boulderSet: Set<String> = []
-        for a in activities where a.name.localizedLowercase.contains("boulder") {
+
+        var catalogInfoByExerciseName: [String: PlanDayEditorCache.ExerciseCatalogInfo] = [:]
+
+        func upsertCatalogInfo(
+            exerciseName: String,
+            order: Int,
+            activityName: String,
+            activityColor: Color
+        ) {
+            if let existing = catalogInfoByExerciseName[exerciseName], existing.order <= order {
+                return
+            }
+            catalogInfoByExerciseName[exerciseName] = .init(
+                activityName: activityName,
+                activityColor: activityColor,
+                order: order
+            )
+        }
+
+        for a in activities {
             for t in a.types {
-                for ex in t.exercises { boulderSet.insert(ex.name) }
-                for c in t.combinations { for ex in c.exercises { boulderSet.insert(ex.name) } }
+                for ex in t.exercises {
+                    if a.name.localizedLowercase.contains("boulder") {
+                        boulderSet.insert(ex.name)
+                    }
+                    upsertCatalogInfo(
+                        exerciseName: ex.name,
+                        order: ex.order,
+                        activityName: a.name,
+                        activityColor: a.hue.color
+                    )
+                }
+                for c in t.combinations {
+                    for ex in c.exercises {
+                        if a.name.localizedLowercase.contains("boulder") {
+                            boulderSet.insert(ex.name)
+                        }
+                        upsertCatalogInfo(
+                            exerciseName: ex.name,
+                            order: ex.order,
+                            activityName: a.name,
+                            activityColor: a.hue.color
+                        )
+                    }
+                }
             }
         }
         cache.boulderingExerciseNames = boulderSet
+        cache.catalogInfoByExerciseName = catalogInfoByExerciseName
 
         // 3) Parent plan (resolve once)
         let planDesc = FetchDescriptor<Plan>()
@@ -2966,6 +3018,133 @@ private struct CloneRecurringSheet: View {
 }
 
 
+
+// MARK: Ordered Exercise List Component
+private struct OrderedChosenExercisesView<RowContent: View>: View {
+    let exercises: [String]
+    @Binding var day: PlanDay
+    let context: ModelContext
+    @ViewBuilder let exerciseRowBuilder: (String) -> RowContent
+    let onReorder: () -> Void
+
+    @Environment(\.editMode) private var editMode
+    @State private var localOrder: [String]
+
+    init(
+        exercises: [String],
+        day: Binding<PlanDay>,
+        context: ModelContext,
+        @ViewBuilder exerciseRowBuilder: @escaping (String) -> RowContent,
+        onReorder: @escaping () -> Void
+    ) {
+        self.exercises = exercises
+        self._day = day
+        self.context = context
+        self.exerciseRowBuilder = exerciseRowBuilder
+        self.onReorder = onReorder
+        self._localOrder = State(initialValue: exercises)
+    }
+
+    var body: some View {
+        ForEach(localOrder, id: \.self) { name in
+            exerciseRowBuilder(name)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        delete(names: [name])
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+        }
+        .onMove { source, destination in
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                var order = localOrder
+                order.move(fromOffsets: source, toOffset: destination)
+                localOrder = order
+            }
+        }
+        .moveDisabled(false)
+        .onChange(of: editMode?.wrappedValue) { _, newValue in
+            if newValue != .active {
+                commitOrder()
+            }
+        }
+        .onDisappear {
+            commitOrder()
+        }
+        .onChange(of: exercises) { _, newValue in
+            if editMode?.wrappedValue != .active {
+                localOrder = newValue
+            }
+        }
+        .onAppear {
+            if localOrder.isEmpty {
+                localOrder = exercises
+            }
+        }
+    }
+
+    private func commitOrder() {
+        guard localOrder != exercises else { return }
+        for (idx, name) in localOrder.enumerated() {
+            day.exerciseOrder[name] = idx
+        }
+        reconcileExerciseIDOrder()
+        onReorder()
+        try? context.save()
+    }
+
+    private func delete(names: [String]) {
+        localOrder.removeAll { names.contains($0) }
+        day.chosenExercises.removeAll { names.contains($0) }
+
+        for name in names {
+            day.exerciseOrder.removeValue(forKey: name)
+        }
+
+        let idsToDelete = exerciseIDs(for: names)
+        day.chosenExerciseIDs.removeAll { idsToDelete.contains($0) }
+        for id in idsToDelete {
+            day.exerciseOrderByID.removeValue(forKey: id.uuidString)
+        }
+
+        for (idx, name) in localOrder.enumerated() {
+            day.exerciseOrder[name] = idx
+        }
+
+        reconcileExerciseIDOrder()
+        onReorder()
+        try? context.save()
+    }
+
+    private func exerciseIDs(for names: [String]) -> Set<UUID> {
+        let descriptor = FetchDescriptor<Exercise>()
+        let exercises = (try? context.fetch(descriptor)) ?? []
+        let names = Set(names)
+        return Set(exercises.filter { names.contains($0.name) }.map(\.id))
+    }
+
+    private func reconcileExerciseIDOrder() {
+        let descriptor = FetchDescriptor<Exercise>()
+        let exercises = (try? context.fetch(descriptor)) ?? []
+        var idByName: [String: UUID] = [:]
+        for exercise in exercises where idByName[exercise.name] == nil {
+            idByName[exercise.name] = exercise.id
+        }
+
+        var orderedIDs: [UUID] = []
+        var orderByID: [String: Int] = [:]
+        for (fallbackIndex, name) in day.chosenExercises.enumerated() {
+            guard let id = idByName[name] else { continue }
+            orderedIDs.append(id)
+            orderByID[id.uuidString] = day.exerciseOrder[name] ?? fallbackIndex
+        }
+        day.chosenExerciseIDs = orderedIDs
+        day.exerciseOrderByID = orderByID
+    }
+}
 
 // MARK: Activity Group View Component
 private struct ActivityGroupView<RowContent: View>: View {

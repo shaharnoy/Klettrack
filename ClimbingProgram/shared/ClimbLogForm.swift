@@ -27,6 +27,7 @@ struct ClimbLogForm: View {
     let initialDate: Date
     let onSave: ((ClimbEntry) -> Void)?
     let existingClimb: ClimbEntry?
+    let prefillClimb: ClimbEntry?
     let initialNotes: String?
     let bulkCount: Int
 
@@ -119,6 +120,7 @@ struct ClimbLogForm: View {
         title: String = "Add Climb",
         initialDate: Date = Date(),
         existingClimb: ClimbEntry? = nil,
+        prefillClimb: ClimbEntry? = nil,
         initialNotes: String? = nil,
         bulkCount: Int = 1,
         onSave: ((ClimbEntry) -> Void)? = nil
@@ -128,11 +130,12 @@ struct ClimbLogForm: View {
         self.initialDate = initialDate
         self.initialNotes = initialNotes
         self.existingClimb = existingClimb
+        self.prefillClimb = prefillClimb
         self.bulkCount = max(1, bulkCount)
         self.onSave = onSave
 
-        if let climb = existingClimb {
-            // Prefill from the existing climb (edit mode)
+        if let existingClimb {
+            let climb = existingClimb
             _selectedClimbType = State(initialValue: climb.climbType)
             _selectedRopeClimbType = State(initialValue: climb.ropeClimbType ?? .lead)
             _grade = State(initialValue: climb.grade == "Unknown" ? "" : climb.grade)
@@ -148,6 +151,32 @@ struct ClimbLogForm: View {
             _selectedDate = State(initialValue: climb.dateLogged)
 
             // NEW: show already attached media as previews
+            let previews = climb.media.map { media -> ClimbLogMediaPreview in
+                let thumbImage = media.thumbnailData.flatMap { UIImage(data: $0) }
+                switch media.type {
+                case .photo:
+                    return ClimbLogMediaPreview(kind: .existingPhoto(media: media, thumbnail: thumbImage))
+                case .video:
+                    return ClimbLogMediaPreview(kind: .existingVideo(media: media, thumbnail: thumbImage))
+                }
+            }
+            _mediaPreviews = State(initialValue: previews)
+        } else if let prefillClimb {
+            let climb = prefillClimb
+            _selectedClimbType = State(initialValue: climb.climbType)
+            _selectedRopeClimbType = State(initialValue: climb.ropeClimbType ?? .lead)
+            _grade = State(initialValue: climb.grade == "Unknown" ? "" : climb.grade)
+            _feelsLikeGrade = State(initialValue: climb.feelsLikeGrade ?? "")
+            _angleDegrees = State(initialValue: climb.angleDegrees.map { String($0) } ?? "")
+            _selectedStyle = State(initialValue: climb.style == "Unknown" ? "" : climb.style)
+            _attempts = State(initialValue: (climb.attempts?.isEmpty == false) ? climb.attempts ?? "1" : "1")
+            _isWorkInProgress = State(initialValue: climb.isWorkInProgress)
+            _isPreviouslyClimbed = State(initialValue: climb.isPreviouslyClimbed ?? false)
+            _selectedHoldColor = State(initialValue: climb.holdColor ?? .none)
+            _selectedGym = State(initialValue: climb.gym == "Unknown" ? "" : climb.gym)
+            _inputNotes = State(initialValue: climb.notes ?? "")
+            _selectedDate = State(initialValue: initialDate)
+
             let previews = climb.media.map { media -> ClimbLogMediaPreview in
                 let thumbImage = media.thumbnailData.flatMap { UIImage(data: $0) }
                 switch media.type {
@@ -209,8 +238,8 @@ struct ClimbLogForm: View {
             //.navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                // Only apply session defaults for new climbs, not when editing
-                if existingClimb == nil {
+                // Only apply session defaults for brand new climbs, not edits or clones.
+                if existingClimb == nil, prefillClimb == nil {
                     loadSessionDefaults()
                 }
             }
@@ -746,6 +775,7 @@ struct ClimbLogForm: View {
             ? nil
             : inputNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         let ropeType: RopeClimbType? = (selectedClimbType == .sport) ? selectedRopeClimbType : nil
+        let shouldCloneExistingMedia = existingClimb == nil
 
         // Decide whether we’re creating a new climb or updating an existing one
         let target: ClimbEntry
@@ -800,70 +830,29 @@ struct ClimbLogForm: View {
                     let clone = makeClimb()
                     modelContext.insert(clone)
 
-                    // Duplicate media picks for each clone (same asset references, new ClimbMedia rows)
+                    // Duplicate selected media for each clone.
                     if !mediaPreviews.isEmpty {
                         for preview in mediaPreviews {
-                            switch preview.kind {
-                            case .photo(let assetId, let thumbnail):
-                                let media = ClimbMedia(
-                                    assetLocalIdentifier: assetId,
-                                    thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
-                                    type: .photo,
-                                    createdAt: .now,
-                                    climb: clone
-                                )
-                                modelContext.insert(media)
-
-                            case .video(let assetId, let thumbnail):
-                                let media = ClimbMedia(
-                                    assetLocalIdentifier: assetId,
-                                    thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
-                                    type: .video,
-                                    createdAt: .now,
-                                    climb: clone
-                                )
-                                modelContext.insert(media)
-
-                            case .existingPhoto, .existingVideo:
-                                // In Add mode these shouldn't appear; ignore if they do.
-                                break
-                            }
+                            insertMediaPreview(
+                                preview,
+                                onto: clone,
+                                cloneExistingMedia: shouldCloneExistingMedia
+                            )
                         }
                     }
                 }
             }
             target = first
         }
-        // Handle media persistence
-        // - existingPhoto / existingVideo: already stored on `target` (we only delete them via deletePreview)
-        // - photo / video: new picks, insert as new ClimbMedia rows
+        // Handle media persistence. In clone/add mode, previews backed by existing media
+        // are copied into new ClimbMedia rows; in edit mode they remain attached.
         if !mediaPreviews.isEmpty {
             for preview in mediaPreviews {
-                switch preview.kind {
-                case .photo(let assetId, let thumbnail):
-                    let media = ClimbMedia(
-                        assetLocalIdentifier: assetId,
-                        thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
-                        type: .photo,
-                        createdAt: .now,
-                        climb: target
-                    )
-                    modelContext.insert(media)
-
-                case .video(let assetId, let thumbnail):
-                    let media = ClimbMedia(
-                        assetLocalIdentifier: assetId,
-                        thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
-                        type: .video,
-                        createdAt: .now,
-                        climb: target
-                    )
-                    modelContext.insert(media)
-
-                case .existingPhoto, .existingVideo:
-                    // Already stored and linked to `target`; no extra insert
-                    break
-                }
+                insertMediaPreview(
+                    preview,
+                    onto: target,
+                    cloneExistingMedia: shouldCloneExistingMedia
+                )
             }
         }
 
@@ -1192,6 +1181,56 @@ struct ClimbLogMediaFullScreenView: View {
 // MARK: - Media handling helpers for ClimbLogForm
 
 extension ClimbLogForm {
+    fileprivate func insertMediaPreview(
+        _ preview: ClimbLogMediaPreview,
+        onto climb: ClimbEntry,
+        cloneExistingMedia: Bool
+    ) {
+        switch preview.kind {
+        case .photo(let assetId, let thumbnail):
+            let media = ClimbMedia(
+                assetLocalIdentifier: assetId,
+                thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
+                type: .photo,
+                createdAt: .now,
+                climb: climb
+            )
+            modelContext.insert(media)
+
+        case .video(let assetId, let thumbnail):
+            let media = ClimbMedia(
+                assetLocalIdentifier: assetId,
+                thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7),
+                type: .video,
+                createdAt: .now,
+                climb: climb
+            )
+            modelContext.insert(media)
+
+        case .existingPhoto(let media, let thumbnail):
+            guard cloneExistingMedia else { return }
+            let clonedMedia = ClimbMedia(
+                assetLocalIdentifier: media.assetLocalIdentifier,
+                thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7) ?? media.thumbnailData,
+                type: .photo,
+                createdAt: .now,
+                climb: climb
+            )
+            modelContext.insert(clonedMedia)
+
+        case .existingVideo(let media, let thumbnail):
+            guard cloneExistingMedia else { return }
+            let clonedMedia = ClimbMedia(
+                assetLocalIdentifier: media.assetLocalIdentifier,
+                thumbnailData: thumbnail?.jpegData(compressionQuality: 0.7) ?? media.thumbnailData,
+                type: .video,
+                createdAt: .now,
+                climb: climb
+            )
+            modelContext.insert(clonedMedia)
+        }
+    }
+
     fileprivate func deletePreview(_ preview: ClimbLogMediaPreview) {
         // If this preview represents an existing ClimbMedia, delete it from the store
         if let existing = preview.existingMedia {
