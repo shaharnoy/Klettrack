@@ -60,6 +60,24 @@ struct SettingsSheet: View {
                         }
                         .padding(.vertical, 1)
                     }
+
+                    NavigationLink {
+                        MigrateGradesView()
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Migrate Grades")
+                                    .font(.body)
+                                Text("Bulk update logged grades for a gym")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 1)
+                    }
+
                     NavigationLink {
                         FeatureFlagsView()
                     } label: {
