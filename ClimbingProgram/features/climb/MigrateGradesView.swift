@@ -2,15 +2,23 @@ import SwiftData
 import SwiftUI
 
 struct MigrateGradesView: View {
+    fileprivate struct GradeMappingDraft: Identifiable, Equatable {
+        let id = UUID()
+        let oldGrade: String
+        let count: Int
+        var newGrade: String = ""
+        var newFeelsLikeGrade: String = ""
+    }
+
     private struct ResultAlert: Identifiable {
         let id = UUID()
         let title: String
         let message: String
     }
 
-    private enum FocusedField: Hashable {
-        case newGrade
-        case newFeelsLikeGrade
+    fileprivate enum FocusedField: Hashable {
+        case newGrade(UUID)
+        case newFeelsLikeGrade(UUID)
     }
 
     @Environment(\.modelContext) private var context
@@ -18,9 +26,7 @@ struct MigrateGradesView: View {
     @Query(sort: [SortDescriptor(\ClimbGym.name, order: .forward)]) private var gyms: [ClimbGym]
 
     @State private var selectedGym = ""
-    @State private var selectedOldGrade = ""
-    @State private var newGrade = ""
-    @State private var newFeelsLikeGrade = ""
+    @State private var mappingDrafts: [GradeMappingDraft] = []
     @State private var showingConfirmation = false
     @State private var resultAlert: ResultAlert?
     @FocusState private var focusedField: FocusedField?
@@ -31,45 +37,56 @@ struct MigrateGradesView: View {
             .filter { !$0.isEmpty }
     }
 
-    private var oldGradeOptions: [String] {
-        GradeMigrationService.availableOldGrades(in: context, gym: selectedGym)
+    private var mappings: [GradeMigrationService.Mapping] {
+        mappingDrafts.map {
+            GradeMigrationService.Mapping(
+                oldGrade: $0.oldGrade,
+                newGrade: $0.newGrade,
+                newFeelsLikeGrade: $0.newFeelsLikeGrade
+            )
+        }
     }
 
-    private var trimmedNewGrade: String {
-        newGrade.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var trimmedNewFeelsLikeGrade: String {
-        newFeelsLikeGrade.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var affectedCount: Int {
-        GradeMigrationService.matchingCount(in: context, gym: selectedGym, oldGrade: selectedOldGrade)
+    private var previewSummary: GradeMigrationService.Summary {
+        GradeMigrationService.preview(in: context, gym: selectedGym, mappings: mappings)
     }
 
     private var canMigrate: Bool {
-        !selectedGym.isEmpty &&
-        !selectedOldGrade.isEmpty &&
-        !trimmedNewGrade.isEmpty
+        !selectedGym.isEmpty && previewSummary.count > 0
     }
 
     private var confirmationMessage: String {
-        var message = "This will change \(affectedCount) climb\(affectedCount == 1 ? "" : "s") at \(selectedGym) from \(selectedOldGrade) to \(trimmedNewGrade). You can migrate back later by running this again with the grades swapped."
-        if !trimmedNewFeelsLikeGrade.isEmpty {
-            message += "\n\nMy Grade will be set to \(trimmedNewFeelsLikeGrade)."
+        guard !previewSummary.rows.isEmpty else {
+            return "No grades will be changed."
         }
-        return message
+
+        let rows = previewSummary.rows.map { row in
+            var text = "\(row.count) climb\(row.count == 1 ? "" : "s"): \(row.oldGrade) -> \(row.newGrade)"
+            if let newFeelsLikeGrade = row.newFeelsLikeGrade {
+                text += " (My Grade: \(newFeelsLikeGrade))"
+            }
+            return text
+        }
+
+        return """
+        This will change \(previewSummary.count) climb\(previewSummary.count == 1 ? "" : "s") at \(selectedGym):
+
+        \(rows.joined(separator: "\n"))
+
+        The migration is based on the current grades before any row is changed, so remapping chains like 4 -> 5 and 5 -> 6 will not cascade.
+        """
     }
 
     var body: some View {
         List {
-            migrationSection
+            gymSection
+            mappingsSection
             previewSection
         }
         .navigationTitle("Migrate Grades")
         .navigationBarTitleDisplayMode(.large)
         .onChange(of: selectedGym) {
-            resetOldGradeIfNeeded()
+            loadMappingDrafts()
         }
         .safeAreaInset(edge: .bottom) {
             migrateButton
@@ -99,7 +116,7 @@ struct MigrateGradesView: View {
         }
     }
 
-    private var migrationSection: some View {
+    private var gymSection: some View {
         Section {
             Picker("Gym", selection: $selectedGym) {
                 Text("Select Gym").tag("")
@@ -108,41 +125,81 @@ struct MigrateGradesView: View {
                 }
             }
             .disabled(gymNames.isEmpty)
+        } header: {
+            Text("Gym")
+        }
+    }
 
-            Picker("Old Grade", selection: $selectedOldGrade) {
-                Text("Select Grade").tag("")
-                ForEach(oldGradeOptions, id: \.self) { grade in
-                    Text(grade).tag(grade)
+    private var mappingsSection: some View {
+        Section {
+            if gymNames.isEmpty {
+                ContentUnavailableView(
+                    "No Gyms",
+                    systemImage: "building.2",
+                    description: Text("Add gyms before migrating grades.")
+                )
+            } else if selectedGym.isEmpty {
+                ContentUnavailableView(
+                    "Select Gym",
+                    systemImage: "building.2",
+                    description: Text("Choose a gym to see its logged grades.")
+                )
+            } else if mappingDrafts.isEmpty {
+                ContentUnavailableView(
+                    "No Grades",
+                    systemImage: "number",
+                    description: Text("This gym does not have logged grades yet.")
+                )
+            } else {
+                GradeMappingHeader()
+                ForEach($mappingDrafts) { $draft in
+                    GradeMappingRow(
+                        draft: $draft,
+                        focusedField: $focusedField
+                    )
                 }
             }
-            .disabled(selectedGym.isEmpty || oldGradeOptions.isEmpty)
-
-            TextField("New grade", text: $newGrade)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .focused($focusedField, equals: .newGrade)
-                .submitLabel(.done)
-                .onSubmit {
-                    focusedField = nil
-                }
-
-            TextField("New My Grade (optional)", text: $newFeelsLikeGrade)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .focused($focusedField, equals: .newFeelsLikeGrade)
-                .submitLabel(.done)
-                .onSubmit {
-                    focusedField = nil
-                }
         } header: {
-            Text("Migration")
+            Text("Grade Mapping")
         } footer: {
-            Text("Blank My Grade leaves existing My Grade values unchanged.")
+            Text("Leave a target grade blank to keep that grade unchanged. Blank My Grade leaves existing My Grade values unchanged.")
+        }
+    }
+
+    private var previewSection: some View {
+        Section {
+            LabeledContent("Affected Climbs") {
+                Text(previewSummary.count, format: .number)
+            }
+
+            if previewSummary.rows.isEmpty {
+                Text("No grade changes selected.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(previewSummary.rows) { row in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(row.oldGrade) -> \(row.newGrade)")
+                        HStack(spacing: 8) {
+                            Text(row.count, format: .number)
+                            Text(row.count == 1 ? "climb" : "climbs")
+                            if let newFeelsLikeGrade = row.newFeelsLikeGrade {
+                                Text("My Grade: \(newFeelsLikeGrade)")
+                            }
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        } header: {
+            Text("Preview")
         }
     }
 
     private var migrateButton: some View {
         Button {
+            focusedField = nil
             showingConfirmation = true
         } label: {
             Label("Migrate Grades", systemImage: "arrow.triangle.2.circlepath")
@@ -158,54 +215,21 @@ struct MigrateGradesView: View {
         .background(.bar)
     }
 
-    private var previewSection: some View {
-        Section {
-            if gymNames.isEmpty {
-                ContentUnavailableView(
-                    "No Gyms",
-                    systemImage: "building.2",
-                    description: Text("Add gyms before migrating grades.")
-                )
-            } else if !selectedGym.isEmpty && oldGradeOptions.isEmpty {
-                ContentUnavailableView(
-                    "No Grades",
-                    systemImage: "number",
-                    description: Text("This gym does not have logged grades yet.")
-                )
-            } else {
-                LabeledContent("Affected Climbs") {
-                    Text(affectedCount, format: .number)
-                }
-                if !selectedGym.isEmpty {
-                    LabeledContent("Gym", value: selectedGym)
-                }
-                if !selectedOldGrade.isEmpty {
-                    LabeledContent("Old Grade", value: selectedOldGrade)
-                }
-            }
-        } header: {
-            Text("Preview")
-        }
-    }
-
-    private func resetOldGradeIfNeeded() {
-        if !oldGradeOptions.contains(selectedOldGrade) {
-            selectedOldGrade = ""
-        }
+    private func loadMappingDrafts() {
+        focusedField = nil
+        mappingDrafts = GradeMigrationService
+            .gradeCounts(in: context, gym: selectedGym)
+            .map { GradeMappingDraft(oldGrade: $0.grade, count: $0.count) }
     }
 
     private func runMigration() {
         do {
-            let summary = try GradeMigrationService.migrate(
+            let summary = try GradeMigrationService.migrateAll(
                 in: context,
                 gym: selectedGym,
-                oldGrade: selectedOldGrade,
-                newGrade: newGrade,
-                newFeelsLikeGrade: newFeelsLikeGrade
+                mappings: mappings
             )
-            newGrade = ""
-            newFeelsLikeGrade = ""
-            resetOldGradeIfNeeded()
+            loadMappingDrafts()
             resultAlert = ResultAlert(
                 title: "Migration Complete",
                 message: "Updated \(summary.count) climb\(summary.count == 1 ? "" : "s")."
@@ -216,6 +240,59 @@ struct MigrateGradesView: View {
                 message: error.localizedDescription
             )
         }
+    }
+}
+
+private struct GradeMappingHeader: View {
+    var body: some View {
+        Grid(horizontalSpacing: 12, verticalSpacing: 8) {
+            GridRow {
+                Text("Current")
+                Text("Target")
+                Text("My Grade")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct GradeMappingRow: View {
+    @Binding var draft: MigrateGradesView.GradeMappingDraft
+    var focusedField: FocusState<MigrateGradesView.FocusedField?>.Binding
+
+    var body: some View {
+        Grid(horizontalSpacing: 12, verticalSpacing: 8) {
+            GridRow {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(draft.oldGrade)
+                        .font(.body)
+                    Text("\(draft.count) \(draft.count == 1 ? "climb" : "climbs")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .gridColumnAlignment(.leading)
+
+                TextField("No change", text: $draft.newGrade)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused(focusedField, equals: .newGrade(draft.id))
+                    .submitLabel(.done)
+                    .onSubmit {
+                        focusedField.wrappedValue = nil
+                    }
+
+                TextField("Optional", text: $draft.newFeelsLikeGrade)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused(focusedField, equals: .newFeelsLikeGrade(draft.id))
+                    .submitLabel(.done)
+                    .onSubmit {
+                        focusedField.wrappedValue = nil
+                    }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

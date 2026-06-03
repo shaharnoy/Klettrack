@@ -80,6 +80,111 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
     }
 
     @MainActor
+    func testBulkMigrationUsesOriginalGradesAndDoesNotCascade() throws {
+        let originalFour = makeClimb(gym: "Ostbloc", grade: "4")
+        let originalFive = makeClimb(gym: "Ostbloc", grade: "5")
+        let otherGymFour = makeClimb(gym: "Bouldergarten", grade: "4")
+
+        let summary = try GradeMigrationService.migrateAll(
+            in: context,
+            gym: "Ostbloc",
+            mappings: [
+                .init(oldGrade: "4", newGrade: "5", newFeelsLikeGrade: nil),
+                .init(oldGrade: "5", newGrade: "6", newFeelsLikeGrade: nil)
+            ]
+        )
+
+        XCTAssertEqual(summary.count, 2)
+        XCTAssertEqual(originalFour.grade, "5")
+        XCTAssertEqual(originalFive.grade, "6")
+        XCTAssertEqual(otherGymFour.grade, "4")
+        XCTAssertEqual(
+            summary.rows,
+            [
+                .init(oldGrade: "4", newGrade: "5", newFeelsLikeGrade: nil, count: 1),
+                .init(oldGrade: "5", newGrade: "6", newFeelsLikeGrade: nil, count: 1)
+            ]
+        )
+    }
+
+    @MainActor
+    func testBulkMigrationCanMapMultipleOldGradesToSameTargetGrade() throws {
+        let v4 = makeClimb(gym: "Ostbloc", grade: "V4")
+        let v5 = makeClimb(gym: "Ostbloc", grade: "V5")
+
+        let summary = try GradeMigrationService.migrateAll(
+            in: context,
+            gym: "Ostbloc",
+            mappings: [
+                .init(oldGrade: "V4", newGrade: "V6", newFeelsLikeGrade: nil),
+                .init(oldGrade: "V5", newGrade: "V6", newFeelsLikeGrade: nil)
+            ]
+        )
+
+        XCTAssertEqual(summary.count, 2)
+        XCTAssertEqual(v4.grade, "V6")
+        XCTAssertEqual(v5.grade, "V6")
+    }
+
+    @MainActor
+    func testBulkMigrationLeavesUnmappedGradesUnchanged() throws {
+        let mapped = makeClimb(gym: "Ostbloc", grade: "V4", feelsLikeGrade: "V5")
+        let unmapped = makeClimb(gym: "Ostbloc", grade: "V5", feelsLikeGrade: "V6")
+
+        let summary = try GradeMigrationService.migrateAll(
+            in: context,
+            gym: "Ostbloc",
+            mappings: [
+                .init(oldGrade: "V4", newGrade: "V6", newFeelsLikeGrade: "V7")
+            ]
+        )
+
+        XCTAssertEqual(summary.count, 1)
+        XCTAssertEqual(mapped.grade, "V6")
+        XCTAssertEqual(mapped.feelsLikeGrade, "V7")
+        XCTAssertEqual(unmapped.grade, "V5")
+        XCTAssertEqual(unmapped.feelsLikeGrade, "V6")
+    }
+
+    @MainActor
+    func testBulkMigrationIgnoresBlankTargetsAndNoOpMappings() throws {
+        let noTarget = makeClimb(gym: "Ostbloc", grade: "V4", feelsLikeGrade: "V5")
+        let noChange = makeClimb(gym: "Ostbloc", grade: "V5", feelsLikeGrade: "V6")
+
+        let summary = try GradeMigrationService.migrateAll(
+            in: context,
+            gym: "Ostbloc",
+            mappings: [
+                .init(oldGrade: "V4", newGrade: " ", newFeelsLikeGrade: nil),
+                .init(oldGrade: "V5", newGrade: "V5", newFeelsLikeGrade: " ")
+            ]
+        )
+
+        XCTAssertEqual(summary.count, 0)
+        XCTAssertEqual(noTarget.grade, "V4")
+        XCTAssertEqual(noTarget.feelsLikeGrade, "V5")
+        XCTAssertEqual(noChange.grade, "V5")
+        XCTAssertEqual(noChange.feelsLikeGrade, "V6")
+    }
+
+    @MainActor
+    func testBulkMigrationAllowsFeelsLikeOnlyForSameGrade() throws {
+        let climb = makeClimb(gym: "Ostbloc", grade: "V5", feelsLikeGrade: "V6")
+
+        let summary = try GradeMigrationService.migrateAll(
+            in: context,
+            gym: "Ostbloc",
+            mappings: [
+                .init(oldGrade: "V5", newGrade: "V5", newFeelsLikeGrade: "V7")
+            ]
+        )
+
+        XCTAssertEqual(summary.count, 1)
+        XCTAssertEqual(climb.grade, "V5")
+        XCTAssertEqual(climb.feelsLikeGrade, "V7")
+    }
+
+    @MainActor
     func testAvailableOldGradesReturnsDistinctSortedGradesForSelectedGym() {
         makeClimb(gym: "Ostbloc", grade: "V5")
         makeClimb(gym: "Ostbloc", grade: "V3")
@@ -89,6 +194,24 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
         let grades = GradeMigrationService.availableOldGrades(in: context, gym: "Ostbloc")
 
         XCTAssertEqual(grades, ["V3", "V5"])
+    }
+
+    @MainActor
+    func testGradeCountsReturnsDistinctSortedGradesWithCountsForSelectedGym() {
+        makeClimb(gym: "Ostbloc", grade: "V5")
+        makeClimb(gym: "Ostbloc", grade: "V3")
+        makeClimb(gym: "Ostbloc", grade: "V5")
+        makeClimb(gym: "Bouldergarten", grade: "V1")
+
+        let counts = GradeMigrationService.gradeCounts(in: context, gym: "Ostbloc")
+
+        XCTAssertEqual(
+            counts,
+            [
+                .init(grade: "V3", count: 1),
+                .init(grade: "V5", count: 2)
+            ]
+        )
     }
 
     @MainActor
