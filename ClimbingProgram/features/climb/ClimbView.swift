@@ -57,8 +57,8 @@ struct ClimbView: View {
     @State private var isSyncing = false
     @State private var syncMessage: String? = nil
     @State private var showingBoardPicker = false
-    @State private var activeBoard: TB2Client.Board? = nil
-    @State private var pendingSyncBoard: TB2Client.Board? = nil
+    @State private var activeBoard: BoardConnection? = nil
+    @State private var pendingSyncBoard: BoardConnection? = nil
     
     // Shared undo components
     @State private var undoSnackbar = UndoSnackbarController()
@@ -255,35 +255,38 @@ struct ClimbView: View {
         // Credentials prompt sheet
         .sheet(item: $activeBoard) { board in
             TB2CredentialsSheet(
-                header: (board == .kilter) ? "Kilter login details" : "TB2 login details",
+                header: board.credentialsHeader,
                 username: $credsUsername,
                 password: $credsPassword,
                 onSave: {
                     let username = credsUsername.trimmingCharacters(in: .whitespacesAndNewlines)
                     let password = credsPassword
+                    let syncAfterSave = pendingSyncBoard
                     
                     do {
                         if username.isEmpty && password.isEmpty {
                             // Both empty → treat as "remove credentials"
-                            try CredentialsStore.deleteBoardCredentials(for: board)
+                            try deleteCredentials(for: board)
                         } else {
                             // Non-empty → save/update credentials
-                            try CredentialsStore.saveBoardCredentials(
-                                for: board,
-                                username: username,
-                                password: password
-                            )
+                            try saveCredentials(for: board, username: username, password: password)
                         }
                         
                         isEditingCredentials = false
+                        pendingSyncBoard = nil
                         activeBoard = nil
+                        if let syncAfterSave {
+                            Task { await runSyncIfPossible(board: syncAfterSave) }
+                        }
                     } catch {
                         isEditingCredentials = false
+                        pendingSyncBoard = nil
                         activeBoard = nil
                     }
                 },
                 onCancel: {
                     isEditingCredentials = false
+                    pendingSyncBoard = nil
                     activeBoard = nil
                 }
             )
@@ -561,8 +564,8 @@ struct ClimbView: View {
         }
     }
     
-    private func openCredentialsEditor(for board: TB2Client.Board) {
-        if let creds = CredentialsStore.loadBoardCredentials(for: board) {
+    private func openCredentialsEditor(for board: BoardConnection) {
+        if let creds = loadCredentials(for: board) {
             credsUsername = creds.username
             credsPassword = creds.password
         } else {
@@ -575,8 +578,8 @@ struct ClimbView: View {
     }
 
 
-    private func startSync(board: TB2Client.Board) {
-        if let _ = CredentialsStore.loadBoardCredentials(for: board) {
+    private func startSync(board: BoardConnection) {
+        if loadCredentials(for: board) != nil {
             Task { await runSyncIfPossible(board: board) }
         } else {
             // Missing creds → open sheet for this board, then sync after saving
@@ -589,15 +592,27 @@ struct ClimbView: View {
     }
 
     
-    private func runSyncIfPossible(board: TB2Client.Board) async {
-        guard let creds = CredentialsStore.loadBoardCredentials(for: board) else {
-            syncMessage = "Please enter your \(board == .kilter ? "Kilter" : "Tension") board credentials."
+    private func runSyncIfPossible(board: BoardConnection) async {
+        guard let creds = loadCredentials(for: board) else {
+            syncMessage = board.missingCredentialsMessage
             return
         }
         isSyncing = true
         defer { isSyncing = false }
         do {
-            try await TB2SyncManager.sync(using: creds, board: board, into: modelContext)
+            switch board {
+            case .tension:
+                try await TB2SyncManager.sync(
+                    using: TB2Credentials(username: creds.username, password: creds.password),
+                    board: .tension,
+                    into: modelContext
+                )
+            case .kilter:
+                try await KilterSyncManager.sync(
+                    using: KilterCredentials(username: creds.username, password: creds.password),
+                    into: modelContext
+                )
+            }
             syncMessage = "Sync completed."
 
             // Count successful syncs (any board). After 3+, arm a one-time review request.
@@ -607,6 +622,35 @@ struct ClimbView: View {
             }
         } catch {
             syncMessage = "Sync failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func loadCredentials(for board: BoardConnection) -> TB2Credentials? {
+        switch board {
+        case .tension:
+            return CredentialsStore.loadBoardCredentials(for: .tension)
+        case .kilter:
+            return CredentialsStore.loadKilterCredentials().map {
+                TB2Credentials(username: $0.username, password: $0.password)
+            }
+        }
+    }
+
+    private func saveCredentials(for board: BoardConnection, username: String, password: String) throws {
+        switch board {
+        case .tension:
+            try CredentialsStore.saveBoardCredentials(for: .tension, username: username, password: password)
+        case .kilter:
+            try CredentialsStore.saveKilterCredentials(username: username, password: password)
+        }
+    }
+
+    private func deleteCredentials(for board: BoardConnection) throws {
+        switch board {
+        case .tension:
+            try CredentialsStore.deleteBoardCredentials(for: .tension)
+        case .kilter:
+            try CredentialsStore.deleteKilterCredentials()
         }
     }
 

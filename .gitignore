@@ -2,6 +2,7 @@
 
 # macOS
 .DS_Store
+**/.DS_Store
 
 # Xcode user-specific stuff (never commit)
 *.xcuserstate
@@ -76,4 +77,3 @@ playground.xcworkspace
 *.tmp
 *.lock
 *.log
-

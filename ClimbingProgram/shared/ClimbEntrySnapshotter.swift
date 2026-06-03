@@ -40,6 +40,8 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             notes: c.notes,
             dateLogged: c.dateLogged,
             tb2ClimbUUID: c.tb2ClimbUUID,
+            kilterLogUuid: c.kilterLogUuid,
+            kilterClimbUuid: c.kilterClimbUuid,
             media: mediaSnapshots
         )
     }
@@ -64,7 +66,9 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             gym: s.gym,
             notes: s.notes,
             dateLogged: s.dateLogged,
-            tb2ClimbUUID: s.tb2ClimbUUID
+            tb2ClimbUUID: s.tb2ClimbUUID,
+            kilterLogUuid: s.kilterLogUuid,
+            kilterClimbUuid: s.kilterClimbUuid
         )
         context.insert(restored)
 
@@ -105,6 +109,8 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
         let notes: String?
         let dateLogged: Date
         let tb2ClimbUUID: String?
+        let kilterLogUuid: String?
+        let kilterClimbUuid: String?
 
         // NEW: snapshot of all media entries for this climb
         let media: [MediaSnapshot]
