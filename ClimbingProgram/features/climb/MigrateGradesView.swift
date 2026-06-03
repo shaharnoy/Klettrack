@@ -84,14 +84,6 @@ struct MigrateGradesView: View {
         .safeAreaInset(edge: .bottom) {
             migrateButton
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    focusedField = nil
-                }
-            }
-        }
         .alert("Migrate Grades?", isPresented: $showingConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Migrate", role: .destructive) {
@@ -234,43 +226,46 @@ struct MigrateGradesView: View {
 }
 
 private struct GradeMappingHeader: View {
+    private let targetColumnWidth: CGFloat = 112
+
     var body: some View {
-        Grid(horizontalSpacing: 12, verticalSpacing: 8) {
-            GridRow {
-                Text("Current")
-                Text("Target")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            Text("Current")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Target")
+                .frame(width: targetColumnWidth, alignment: .leading)
         }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }
 
 private struct GradeMappingRow: View {
+    private let targetColumnWidth: CGFloat = 112
+
     @Binding var draft: MigrateGradesView.GradeMappingDraft
     var focusedField: FocusState<MigrateGradesView.FocusedField?>.Binding
 
     var body: some View {
-        Grid(horizontalSpacing: 12, verticalSpacing: 8) {
-            GridRow {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(draft.oldGrade)
-                        .font(.body)
-                    Text("\(draft.count) \(draft.count == 1 ? "climb" : "climbs")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .gridColumnAlignment(.leading)
-
-                TextField("No change", text: $draft.newGrade)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .focused(focusedField, equals: .newGrade(draft.id))
-                    .submitLabel(.done)
-                    .onSubmit {
-                        focusedField.wrappedValue = nil
-                    }
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(draft.oldGrade)
+                    .font(.body)
+                Text("\(draft.count) \(draft.count == 1 ? "climb" : "climbs")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            TextField("No change", text: $draft.newGrade)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused(focusedField, equals: .newGrade(draft.id))
+                .submitLabel(.done)
+                .frame(width: targetColumnWidth, alignment: .leading)
+                .onSubmit {
+                    focusedField.wrappedValue = nil
+                }
         }
         .padding(.vertical, 4)
     }
