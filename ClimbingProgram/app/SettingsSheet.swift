@@ -60,15 +60,16 @@ struct SettingsSheet: View {
                         }
                         .padding(.vertical, 1)
                     }
+                    //migrate grades
                     NavigationLink {
-                        FeatureFlagsView()
+                        MigrateGradesView()
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Image(systemName: "switch.2")
+                            Image(systemName: "arrow.triangle.2.circlepath")
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Feature Flags")
+                                Text("Migrate Grades")
                                     .font(.body)
-                                Text("Enable or disable experimental behavior")
+                                Text("Bulk update logged grades")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
@@ -94,6 +95,25 @@ struct SettingsSheet: View {
                         .padding(.vertical, 1)
                     }
                     
+                    //feature flags
+                    NavigationLink {
+                        FeatureFlagsView()
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "switch.2")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Feature Flags")
+                                    .font(.body)
+                                Text("Enable or disable different features")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(.vertical, 1)
+                    }
+
+                    //timertemplates
                     NavigationLink {
                         TimerTemplatesListView()
                     } label: {
@@ -110,7 +130,7 @@ struct SettingsSheet: View {
                         }
                         .padding(.vertical, 1)
                     }
-
+                    //BoardCredentials
                     NavigationLink {
                         BoardCredentialsSettingsView()
                     } label: {
