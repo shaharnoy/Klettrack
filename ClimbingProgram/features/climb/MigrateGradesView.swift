@@ -8,6 +8,11 @@ struct MigrateGradesView: View {
         let message: String
     }
 
+    private enum FocusedField: Hashable {
+        case newGrade
+        case newFeelsLikeGrade
+    }
+
     @Environment(\.modelContext) private var context
 
     @Query(sort: [SortDescriptor(\ClimbGym.name, order: .forward)]) private var gyms: [ClimbGym]
@@ -18,6 +23,7 @@ struct MigrateGradesView: View {
     @State private var newFeelsLikeGrade = ""
     @State private var showingConfirmation = false
     @State private var resultAlert: ResultAlert?
+    @FocusState private var focusedField: FocusedField?
 
     private var gymNames: [String] {
         gyms
@@ -68,6 +74,14 @@ struct MigrateGradesView: View {
         .safeAreaInset(edge: .bottom) {
             migrateButton
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
+            }
+        }
         .alert("Migrate Grades?", isPresented: $showingConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Migrate", role: .destructive) {
@@ -106,10 +120,20 @@ struct MigrateGradesView: View {
             TextField("New grade", text: $newGrade)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .focused($focusedField, equals: .newGrade)
+                .submitLabel(.done)
+                .onSubmit {
+                    focusedField = nil
+                }
 
             TextField("New My Grade (optional)", text: $newFeelsLikeGrade)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .focused($focusedField, equals: .newFeelsLikeGrade)
+                .submitLabel(.done)
+                .onSubmit {
+                    focusedField = nil
+                }
         } header: {
             Text("Migration")
         } footer: {
