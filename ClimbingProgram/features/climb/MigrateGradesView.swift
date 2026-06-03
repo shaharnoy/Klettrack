@@ -7,7 +7,6 @@ struct MigrateGradesView: View {
         let oldGrade: String
         let count: Int
         var newGrade: String = ""
-        var newFeelsLikeGrade: String = ""
     }
 
     private struct ResultAlert: Identifiable {
@@ -18,7 +17,6 @@ struct MigrateGradesView: View {
 
     fileprivate enum FocusedField: Hashable {
         case newGrade(UUID)
-        case newFeelsLikeGrade(UUID)
     }
 
     @Environment(\.modelContext) private var context
@@ -41,8 +39,7 @@ struct MigrateGradesView: View {
         mappingDrafts.map {
             GradeMigrationService.Mapping(
                 oldGrade: $0.oldGrade,
-                newGrade: $0.newGrade,
-                newFeelsLikeGrade: $0.newFeelsLikeGrade
+                newGrade: $0.newGrade
             )
         }
     }
@@ -61,11 +58,7 @@ struct MigrateGradesView: View {
         }
 
         let rows = previewSummary.rows.map { row in
-            var text = "\(row.count) climb\(row.count == 1 ? "" : "s"): \(row.oldGrade) -> \(row.newGrade)"
-            if let newFeelsLikeGrade = row.newFeelsLikeGrade {
-                text += " (My Grade: \(newFeelsLikeGrade))"
-            }
-            return text
+            "\(row.count) climb\(row.count == 1 ? "" : "s"): \(row.oldGrade) -> \(row.newGrade)"
         }
 
         return """
@@ -162,7 +155,7 @@ struct MigrateGradesView: View {
         } header: {
             Text("Grade Mapping")
         } footer: {
-            Text("Leave a target grade blank to keep that grade unchanged. Blank My Grade leaves existing My Grade values unchanged.")
+            Text("Leave a target grade blank to keep that grade unchanged.")
         }
     }
 
@@ -182,9 +175,6 @@ struct MigrateGradesView: View {
                         HStack(spacing: 8) {
                             Text(row.count, format: .number)
                             Text(row.count == 1 ? "climb" : "climbs")
-                            if let newFeelsLikeGrade = row.newFeelsLikeGrade {
-                                Text("My Grade: \(newFeelsLikeGrade)")
-                            }
                         }
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -249,7 +239,6 @@ private struct GradeMappingHeader: View {
             GridRow {
                 Text("Current")
                 Text("Target")
-                Text("My Grade")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -277,15 +266,6 @@ private struct GradeMappingRow: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused(focusedField, equals: .newGrade(draft.id))
-                    .submitLabel(.done)
-                    .onSubmit {
-                        focusedField.wrappedValue = nil
-                    }
-
-                TextField("Optional", text: $draft.newFeelsLikeGrade)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .focused(focusedField, equals: .newFeelsLikeGrade(draft.id))
                     .submitLabel(.done)
                     .onSubmit {
                         focusedField.wrappedValue = nil

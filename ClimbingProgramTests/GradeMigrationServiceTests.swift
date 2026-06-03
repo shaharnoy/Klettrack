@@ -14,52 +14,31 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
             in: context,
             gym: "Ostbloc",
             oldGrade: "V4",
-            newGrade: "V6",
-            newFeelsLikeGrade: nil
+            newGrade: "V6"
         )
 
         XCTAssertEqual(summary.count, 2)
         XCTAssertEqual(matchingOne.grade, "V6")
+        XCTAssertEqual(matchingOne.feelsLikeGrade, "V5")
         XCTAssertEqual(matchingTwo.grade, "V6")
         XCTAssertEqual(sameGradeOtherGym.grade, "V4")
         XCTAssertEqual(otherGradeSameGym.grade, "V5")
     }
 
     @MainActor
-    func testMigrationUpdatesFeelsLikeGradeWhenProvided() throws {
+    func testMigrationLeavesFeelsLikeGradeUnchanged() throws {
         let climb = makeClimb(gym: "Ostbloc", grade: "6a", feelsLikeGrade: "6b")
 
         let summary = try GradeMigrationService.migrate(
             in: context,
             gym: "Ostbloc",
             oldGrade: "6a",
-            newGrade: "6c",
-            newFeelsLikeGrade: " 7a "
+            newGrade: "6c"
         )
 
         XCTAssertEqual(summary.count, 1)
         XCTAssertEqual(climb.grade, "6c")
-        XCTAssertEqual(climb.feelsLikeGrade, "7a")
-    }
-
-    @MainActor
-    func testMigrationLeavesFeelsLikeGradeUnchangedWhenBlank() throws {
-        let climbWithValue = makeClimb(gym: "Ostbloc", grade: "6a", feelsLikeGrade: "6b")
-        let climbWithoutValue = makeClimb(gym: "Ostbloc", grade: "6a", feelsLikeGrade: nil)
-
-        let summary = try GradeMigrationService.migrate(
-            in: context,
-            gym: "Ostbloc",
-            oldGrade: "6a",
-            newGrade: "6c",
-            newFeelsLikeGrade: " "
-        )
-
-        XCTAssertEqual(summary.count, 2)
-        XCTAssertEqual(climbWithValue.grade, "6c")
-        XCTAssertEqual(climbWithValue.feelsLikeGrade, "6b")
-        XCTAssertEqual(climbWithoutValue.grade, "6c")
-        XCTAssertNil(climbWithoutValue.feelsLikeGrade)
+        XCTAssertEqual(climb.feelsLikeGrade, "6b")
     }
 
     @MainActor
@@ -70,8 +49,7 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
             in: context,
             gym: "Ostbloc",
             oldGrade: "V3",
-            newGrade: "V5",
-            newFeelsLikeGrade: "V6"
+            newGrade: "V5"
         )
 
         XCTAssertEqual(summary.count, 0)
@@ -89,8 +67,8 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
             in: context,
             gym: "Ostbloc",
             mappings: [
-                .init(oldGrade: "4", newGrade: "5", newFeelsLikeGrade: nil),
-                .init(oldGrade: "5", newGrade: "6", newFeelsLikeGrade: nil)
+                .init(oldGrade: "4", newGrade: "5"),
+                .init(oldGrade: "5", newGrade: "6")
             ]
         )
 
@@ -101,8 +79,8 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
         XCTAssertEqual(
             summary.rows,
             [
-                .init(oldGrade: "4", newGrade: "5", newFeelsLikeGrade: nil, count: 1),
-                .init(oldGrade: "5", newGrade: "6", newFeelsLikeGrade: nil, count: 1)
+                .init(oldGrade: "4", newGrade: "5", count: 1),
+                .init(oldGrade: "5", newGrade: "6", count: 1)
             ]
         )
     }
@@ -116,8 +94,8 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
             in: context,
             gym: "Ostbloc",
             mappings: [
-                .init(oldGrade: "V4", newGrade: "V6", newFeelsLikeGrade: nil),
-                .init(oldGrade: "V5", newGrade: "V6", newFeelsLikeGrade: nil)
+                .init(oldGrade: "V4", newGrade: "V6"),
+                .init(oldGrade: "V5", newGrade: "V6")
             ]
         )
 
@@ -135,13 +113,13 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
             in: context,
             gym: "Ostbloc",
             mappings: [
-                .init(oldGrade: "V4", newGrade: "V6", newFeelsLikeGrade: "V7")
+                .init(oldGrade: "V4", newGrade: "V6")
             ]
         )
 
         XCTAssertEqual(summary.count, 1)
         XCTAssertEqual(mapped.grade, "V6")
-        XCTAssertEqual(mapped.feelsLikeGrade, "V7")
+        XCTAssertEqual(mapped.feelsLikeGrade, "V5")
         XCTAssertEqual(unmapped.grade, "V5")
         XCTAssertEqual(unmapped.feelsLikeGrade, "V6")
     }
@@ -155,8 +133,8 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
             in: context,
             gym: "Ostbloc",
             mappings: [
-                .init(oldGrade: "V4", newGrade: " ", newFeelsLikeGrade: nil),
-                .init(oldGrade: "V5", newGrade: "V5", newFeelsLikeGrade: " ")
+                .init(oldGrade: "V4", newGrade: " "),
+                .init(oldGrade: "V5", newGrade: "V5")
             ]
         )
 
@@ -165,23 +143,6 @@ final class GradeMigrationServiceTests: ClimbingProgramTestSuite {
         XCTAssertEqual(noTarget.feelsLikeGrade, "V5")
         XCTAssertEqual(noChange.grade, "V5")
         XCTAssertEqual(noChange.feelsLikeGrade, "V6")
-    }
-
-    @MainActor
-    func testBulkMigrationAllowsFeelsLikeOnlyForSameGrade() throws {
-        let climb = makeClimb(gym: "Ostbloc", grade: "V5", feelsLikeGrade: "V6")
-
-        let summary = try GradeMigrationService.migrateAll(
-            in: context,
-            gym: "Ostbloc",
-            mappings: [
-                .init(oldGrade: "V5", newGrade: "V5", newFeelsLikeGrade: "V7")
-            ]
-        )
-
-        XCTAssertEqual(summary.count, 1)
-        XCTAssertEqual(climb.grade, "V5")
-        XCTAssertEqual(climb.feelsLikeGrade, "V7")
     }
 
     @MainActor

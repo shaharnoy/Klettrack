@@ -17,14 +17,12 @@ enum GradeMigrationService {
     struct Mapping: Equatable {
         let oldGrade: String
         let newGrade: String
-        let newFeelsLikeGrade: String?
     }
 
     struct RowSummary: Equatable, Identifiable {
         var id: String { oldGrade }
         let oldGrade: String
         let newGrade: String
-        let newFeelsLikeGrade: String?
         let count: Int
     }
 
@@ -102,7 +100,6 @@ enum GradeMigrationService {
             return RowSummary(
                 oldGrade: mapping.oldGrade,
                 newGrade: mapping.newGrade,
-                newFeelsLikeGrade: mapping.newFeelsLikeGrade,
                 count: count
             )
         }
@@ -118,13 +115,11 @@ enum GradeMigrationService {
         in context: ModelContext,
         gym: String,
         oldGrade: String,
-        newGrade: String,
-        newFeelsLikeGrade: String?
+        newGrade: String
     ) throws -> Summary {
         let trimmedGym = gym.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedOldGrade = oldGrade.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNewGrade = newGrade.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedFeelsLike = newFeelsLikeGrade?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedGym.isEmpty, !trimmedOldGrade.isEmpty, !trimmedNewGrade.isEmpty else {
             return Summary(count: 0, rows: [])
@@ -139,9 +134,6 @@ enum GradeMigrationService {
 
         for entry in entries {
             entry.grade = trimmedNewGrade
-            if let trimmedFeelsLike, !trimmedFeelsLike.isEmpty {
-                entry.feelsLikeGrade = trimmedFeelsLike
-            }
         }
 
         try context.save()
@@ -151,7 +143,6 @@ enum GradeMigrationService {
                 RowSummary(
                     oldGrade: trimmedOldGrade,
                     newGrade: trimmedNewGrade,
-                    newFeelsLikeGrade: trimmedFeelsLike?.isEmpty == false ? trimmedFeelsLike : nil,
                     count: entries.count
                 )
             ]
@@ -184,9 +175,6 @@ enum GradeMigrationService {
             guard let mapping = mappingByOldGrade[originalGrade] else { continue }
 
             entry.grade = mapping.newGrade
-            if let newFeelsLikeGrade = mapping.newFeelsLikeGrade {
-                entry.feelsLikeGrade = newFeelsLikeGrade
-            }
             changedCounts[mapping.oldGrade, default: 0] += 1
         }
 
@@ -198,7 +186,6 @@ enum GradeMigrationService {
             return RowSummary(
                 oldGrade: mapping.oldGrade,
                 newGrade: mapping.newGrade,
-                newFeelsLikeGrade: mapping.newFeelsLikeGrade,
                 count: count
             )
         }
@@ -214,17 +201,15 @@ enum GradeMigrationService {
         return mappings.compactMap { mapping in
             let oldGrade = mapping.oldGrade.trimmingCharacters(in: .whitespacesAndNewlines)
             let newGrade = mapping.newGrade.trimmingCharacters(in: .whitespacesAndNewlines)
-            let newFeelsLikeGrade = mapping.newFeelsLikeGrade?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !oldGrade.isEmpty, !newGrade.isEmpty else { return nil }
             guard !seenOldGrades.contains(oldGrade) else { return nil }
-            if oldGrade == newGrade && (newFeelsLikeGrade?.isEmpty ?? true) {
+            if oldGrade == newGrade {
                 return nil
             }
             seenOldGrades.insert(oldGrade)
             return Mapping(
                 oldGrade: oldGrade,
-                newGrade: newGrade,
-                newFeelsLikeGrade: newFeelsLikeGrade?.isEmpty == false ? newFeelsLikeGrade : nil
+                newGrade: newGrade
             )
         }
     }
