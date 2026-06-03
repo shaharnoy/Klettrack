@@ -302,6 +302,16 @@ struct ClimbLogForm: View {
                     }
                 }
 
+                ToolbarItem(placement: .principal) {
+                    DatePicker(
+                        "Climb date",
+                        selection: $selectedDate,
+                        displayedComponents: .date
+                    )
+                    .labelsHidden()
+                    .disabled(isSaving)
+                }
+
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         Task { await saveClimb(bulkCount: bulkCount) }

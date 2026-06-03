@@ -3057,13 +3057,15 @@ private struct OrderedChosenExercisesView<RowContent: View>: View {
                 }
         }
         .onMove { source, destination in
+            var order = localOrder
+            order.move(fromOffsets: source, toOffset: destination)
+
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                var order = localOrder
-                order.move(fromOffsets: source, toOffset: destination)
                 localOrder = order
             }
+            persistOrder(order)
         }
         .moveDisabled(false)
         .onChange(of: editMode?.wrappedValue) { _, newValue in
@@ -3087,10 +3089,14 @@ private struct OrderedChosenExercisesView<RowContent: View>: View {
     }
 
     private func commitOrder() {
-        guard !localOrder.isEmpty else { return }
-        day.chosenExercises = localOrder
-        day.exerciseOrder = day.exerciseOrder.filter { localOrder.contains($0.key) }
-        for (idx, name) in localOrder.enumerated() {
+        persistOrder(localOrder)
+    }
+
+    private func persistOrder(_ orderedNames: [String]) {
+        guard !orderedNames.isEmpty else { return }
+        day.chosenExercises = orderedNames
+        day.exerciseOrder = day.exerciseOrder.filter { orderedNames.contains($0.key) }
+        for (idx, name) in orderedNames.enumerated() {
             day.exerciseOrder[name] = idx
         }
         reconcileExerciseIDOrder()
