@@ -74,12 +74,7 @@ struct TimerView: View {
                                     sheetRoute = .customTimer
                                 }
                             }
-                            
-                            Section("Template Management") {
-                                Button("All Templates", systemImage: "folder") {
-                                    sheetRoute = .allTemplates
-                                }
-                            }
+
                         } label: {
                             Image(systemName: "ellipsis.circle")
                                 .font(.title3)
