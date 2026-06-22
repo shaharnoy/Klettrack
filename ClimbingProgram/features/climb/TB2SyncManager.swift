@@ -56,7 +56,7 @@ enum TB2SyncManager {
         
         for b in bids {
             guard let uuid = b.climbUUID else { continue }
-            guard let date = BoardDateParser.parse(b.climbedAt) else { continue } // strict: no fallback to now
+            guard let date = BoardDateParser.parseTensionClimbedAt(b.climbedAt) else { continue } // strict: no fallback to now
             let day = date
             let key = BidKey(uuid: uuid, day: day, angle: b.angle, isMirror: b.isMirror)
             var sum = bidSummary[key] ?? BidSum(tries: 0, comment: nil)
@@ -93,7 +93,7 @@ enum TB2SyncManager {
             let disp = dispNum ?? loggedNum
             let loggedGrade = BoardGradeMapper.grade(of: loggedNum)
             let displayedGrade = BoardGradeMapper.grade(of: disp)
-            guard let date = BoardDateParser.parse(a.climbedAt) else { continue }
+            guard let date = BoardDateParser.parseTensionClimbedAt(a.climbedAt) else { continue }
             let day = date
             let tries = (a.bidCount ?? a.attemptID ?? 1)
             let key = BidKey(uuid: uuid ?? "", day: day, angle: angle, isMirror: a.isMirror)

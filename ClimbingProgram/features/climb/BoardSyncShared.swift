@@ -118,6 +118,34 @@ enum BoardDateParser {
     static let f9 = makeFormatter("yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX")
     static let f10 = makeFormatter("yyyy-MM-dd'T'HH:mm:ssXXXXX")
 
+    /// Tension Board returns some `climbed_at` values without an offset. Those values
+    /// represent the time the climber recorded locally, rather than a UTC timestamp.
+    /// Parse only those offset-less values in the device timezone; timestamps that
+    /// include an offset retain their original absolute instant.
+    static func parseTensionClimbedAt(_ value: String?, timeZone: TimeZone = .current) -> Date? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+
+        guard !hasExplicitTimeZone(value) else {
+            return parse(value)
+        }
+
+        for format in [
+            "yyyy-MM-dd HH:mm:ss.SSSSSS",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSSSS",
+            "yyyy-MM-dd'T'HH:mm:ss"
+        ] {
+            let formatter = makeFormatter(format, timeZone: timeZone)
+            if let date = formatter.date(from: value) {
+                return date
+            }
+        }
+
+        return nil
+    }
+
     static func parse(_ s: String?) -> Date? {
         guard var s = s?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
 
@@ -141,6 +169,20 @@ enum BoardDateParser {
             }
         }
         return nil
+    }
+
+    private static func makeFormatter(_ format: String, timeZone: TimeZone) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = format
+        return formatter
+    }
+
+    private static func hasExplicitTimeZone(_ value: String) -> Bool {
+        value.hasSuffix("Z") ||
+        value.hasSuffix(" UTC") ||
+        value.range(of: #"[+-]\d{2}:?\d{2}$"#, options: .regularExpression) != nil
     }
 }
 
