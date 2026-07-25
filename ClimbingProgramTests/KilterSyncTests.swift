@@ -134,6 +134,55 @@ final class KilterSyncTests: ClimbingProgramTestSuite {
         XCTAssertEqual(updated.notes, "First updated")
     }
 
+    @MainActor
+    func testKilterSyncReportsProgressStages() async throws {
+        let recorder = KilterRequestRecorder(responses: [
+            (
+                Data("""
+                {
+                  "access_token": "token-123",
+                  "expires_in": 14400,
+                  "refresh_token": "refresh-123",
+                  "token_type": "Bearer"
+                }
+                """.utf8),
+                200
+            ),
+            (
+                Data("""
+                [
+                  {
+                    "logUuid": "log-1",
+                    "climbUuid": "climb-1",
+                    "angle": 40,
+                    "flashed": false,
+                    "topped": false,
+                    "attempts": 3,
+                    "createdAt": "2026-06-02T18:53:20.416361Z",
+                    "climbName": "Corporate Shrubbery",
+                    "currentDifficultyId": 19
+                  }
+                ]
+                """.utf8),
+                200
+            )
+        ])
+        let client = KilterClient(dataLoader: { request in
+            try await recorder.load(request)
+        })
+        var stages: [KilterSyncManager.SyncStage] = []
+
+        try await KilterSyncManager.sync(
+            using: KilterCredentials(username: "user@example.com", password: "password"),
+            into: context,
+            client: client
+        ) { progress in
+            stages.append(progress.stage)
+        }
+
+        XCTAssertEqual(stages, [.loggingIn, .fetchingLogs, .applyingRows, .finished])
+    }
+
     func testKilterLogsDecodeWithOptionalClimbRating() throws {
         let data = Data("""
         [

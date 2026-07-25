@@ -79,6 +79,7 @@ struct ClimbView: View {
     @State private var syncProgressText = "Syncing…"
     @State private var syncShowsStepProgress = false
     @State private var activeSyncStep: SyncStep? = nil
+    @State private var syncVisibleSteps = SyncStep.allCases
     @State private var syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
     @State private var syncDismissCountdownFraction = 0.0
     @State private var activeSyncTask: Task<Void, Never>? = nil
@@ -637,6 +638,7 @@ struct ClimbView: View {
         syncProgressText = "Syncing…"
         syncShowsStepProgress = false
         activeSyncStep = nil
+        syncVisibleSteps = SyncStep.allCases
         syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
         syncDismissCountdownFraction = 0.0
         if shouldRequestReview, let reason = pendingReviewReason {
@@ -650,7 +652,7 @@ struct ClimbView: View {
         VStack(alignment: .leading, spacing: 12) {
             if syncShowsStepProgress {
                 VStack(spacing: 10) {
-                    ForEach(SyncStep.allCases) { step in
+                    ForEach(syncVisibleSteps) { step in
                         syncStepRow(step)
                     }
                 }
@@ -741,6 +743,7 @@ struct ClimbView: View {
         syncProgressText = "Syncing…"
         syncShowsStepProgress = false
         activeSyncStep = nil
+        syncVisibleSteps = SyncStep.allCases
         syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
         syncDismissCountdownFraction = 0.0
         syncDismissTask?.cancel()
@@ -753,6 +756,7 @@ struct ClimbView: View {
             switch board {
             case .tension:
                 syncShowsStepProgress = true
+                syncVisibleSteps = SyncStep.allCases
                 try await TB2SyncManager.sync(
                     using: TB2Credentials(username: creds.username, password: creds.password),
                     board: .tension,
@@ -761,11 +765,14 @@ struct ClimbView: View {
                     applyTB2SyncProgress(progress)
                 }
             case .kilter:
-                syncProgressText = "Syncing Kilter Board…"
+                syncShowsStepProgress = true
+                syncVisibleSteps = [.logbook]
                 try await KilterSyncManager.sync(
                     using: KilterCredentials(username: creds.username, password: creds.password),
                     into: modelContext
-                )
+                ) { progress in
+                    applyKilterSyncProgress(progress)
+                }
             }
             canDismissSyncStatus = true
             startSyncDismissCountdown()
@@ -824,6 +831,22 @@ struct ClimbView: View {
         }
     }
 
+    private func applyKilterSyncProgress(_ progress: KilterSyncManager.SyncProgress) {
+        syncProgressText = kilterSyncProgressText(progress)
+
+        switch progress.stage {
+        case .loggingIn:
+            setSyncStep(.logbook, to: 0.05)
+        case .fetchingLogs:
+            setSyncStep(.logbook, to: 0.35)
+        case .applyingRows:
+            setSyncStep(.logbook, to: 0.9)
+        case .finished:
+            activeSyncStep = nil
+            setSyncStep(.logbook, to: 1)
+        }
+    }
+
     private func setSyncStep(_ step: SyncStep, to fraction: Double) {
         let next = max(syncStepFractions[step.rawValue], min(max(fraction, 0), 1))
         syncStepFractions[step.rawValue] = next
@@ -867,6 +890,19 @@ struct ClimbView: View {
         }
         let percent = Int((fraction(for: progress) * 100).rounded())
         return "\(base) - \(percent)%"
+    }
+
+    private func kilterSyncProgressText(_ progress: KilterSyncManager.SyncProgress) -> String {
+        switch progress.stage {
+        case .loggingIn:
+            return "Signing in to Kilter Board…"
+        case .fetchingLogs:
+            return "Fetching climbs…"
+        case .applyingRows:
+            return "Saving climbs…"
+        case .finished:
+            return "Finishing sync…"
+        }
     }
 
     private func loadCredentials(for board: BoardConnection) -> TB2Credentials? {

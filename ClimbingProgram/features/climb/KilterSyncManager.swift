@@ -7,6 +7,17 @@ import Foundation
 import SwiftData
 
 enum KilterSyncManager {
+    enum SyncStage: Equatable, Sendable {
+        case loggingIn
+        case fetchingLogs
+        case applyingRows
+        case finished
+    }
+
+    struct SyncProgress: Sendable {
+        let stage: SyncStage
+    }
+
     struct Row: Sendable {
         let logUuid: String
         let climbUuid: String
@@ -20,13 +31,22 @@ enum KilterSyncManager {
         let feelsLikeGrade: String?
     }
 
-    static func sync(using creds: KilterCredentials, into context: ModelContext, client: KilterClient = KilterClient()) async throws {
+    static func sync(
+        using creds: KilterCredentials,
+        into context: ModelContext,
+        client: KilterClient = KilterClient(),
+        progress: (@MainActor (SyncProgress) -> Void)? = nil
+    ) async throws {
+        await progress?(SyncProgress(stage: .loggingIn))
         var token = try await client.login(username: creds.username, password: creds.password)
         let logs: [KilterLog]
         do {
+            await progress?(SyncProgress(stage: .fetchingLogs))
             logs = try await client.fetchLogs(accessToken: token.accessToken)
         } catch let error as NSError where error.domain == "Kilter" && error.code == 401 {
+            await progress?(SyncProgress(stage: .loggingIn))
             token = try await client.login(username: creds.username, password: creds.password)
+            await progress?(SyncProgress(stage: .fetchingLogs))
             logs = try await client.fetchLogs(accessToken: token.accessToken)
         }
 
@@ -47,7 +67,9 @@ enum KilterSyncManager {
         }
         .sorted { $0.day < $1.day }
 
+        await progress?(SyncProgress(stage: .applyingRows))
         try await applyRows(rows, into: context)
+        await progress?(SyncProgress(stage: .finished))
     }
 
     @MainActor
