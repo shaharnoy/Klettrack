@@ -85,6 +85,7 @@ struct MediaManagerView: View {
     
     struct ClimbRowCardSummary: View {
         let climb: ClimbEntry
+        @AppStorage(FeatureFlags.showSyncedBoardGradesAsVScale) private var showSyncedBoardGradesAsVScale = false
 
         private var climbTypeColor: Color {
             switch climb.climbType {
@@ -109,28 +110,22 @@ struct MediaManagerView: View {
                                     .stroke(Color.primary.opacity(0.3), lineWidth: 1)
                             )
                     }
-                    // show grade only if filled, show alternative grade if grade isn't there,
-                    // show grade& alterntive grade if both exist
-                    let hasGrade = climb.grade != "Unknown" && !climb.grade.isEmpty
-                    let hasFeels = (climb.feelsLikeGrade ?? "").isEmpty == false
+                    let gradeDisplay = BoardGradeDisplayRules.displayText(
+                        grade: climb.grade,
+                        feelsLikeGrade: climb.feelsLikeGrade,
+                        tb2ClimbUUID: climb.tb2ClimbUUID,
+                        kilterClimbUuid: climb.kilterClimbUuid,
+                        showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+                    )
 
-                    if hasGrade || hasFeels {
-                        let display: String = {
-                            switch (hasGrade, hasFeels) {
-                            case (true, true):  return "\(climb.grade) (\(climb.feelsLikeGrade!))"
-                            case (true, false): return climb.grade
-                            case (false, true): return climb.feelsLikeGrade!   // only feels-like
-                            default:            return ""
-                            }
-                        }()
-
-                        Text(display)
+                    if let gradeDisplay {
+                        Text(gradeDisplay)
                             .font(.body)
                             .foregroundStyle(.primary)
                     }
                     // Angle
                     if let angle = climb.angleDegrees {
-                        if climb.grade != "Unknown" && !climb.grade.isEmpty && (climb.feelsLikeGrade ?? "").isEmpty == false {
+                        if gradeDisplay != nil {
                             Text("•")
                                 .font(.body)
                                 .foregroundStyle(.secondary)
@@ -182,5 +177,3 @@ struct MediaManagerView: View {
 
     }
 }
-
-

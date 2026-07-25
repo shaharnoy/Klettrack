@@ -10,6 +10,7 @@ struct FeatureFlagsView: View {
     @AppStorage(FeatureFlags.forcePreferMyGradeInProgress) private var forcePreferMyGradeInProgress = false
     @AppStorage(FeatureFlags.showNotesWhenGymMissing) private var showNotesWhenGymMissing = false
     @AppStorage(FeatureFlags.persistProgressFilters) private var persistProgressFilters = false
+    @AppStorage(FeatureFlags.showSyncedBoardGradesAsVScale) private var showSyncedBoardGradesAsVScale = false
 
     var body: some View {
         List {
@@ -38,6 +39,16 @@ struct FeatureFlagsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Remember Progress Filters")
                         Text("Saves and restores the last used filters on the Progress screen.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Toggle(isOn: $showSyncedBoardGradesAsVScale) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show Board Grades in V Scale")
+                        Text("Displays TB2 and Kilter synced grades as V grades.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)

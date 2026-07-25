@@ -147,6 +147,7 @@ fileprivate struct ClimbFilterSnapshot: Codable {
     var workInProgress: String
     var preferFeelsLikeGrade: Bool
     var searchQuery: String
+    var showSyncedBoardGradesAsVScale: Bool?
 }
 
 fileprivate enum ProgressFilterPersistence {
@@ -511,6 +512,7 @@ fileprivate final class ClimbStatsVM {
     var gradeFeelCells: [GradeFeelCell] = []
     var preferFeelsLikeGrade: Bool = false
     var searchQuery: String = ""
+    var showSyncedBoardGradesAsVScale: Bool = false
 
 
 
@@ -528,6 +530,16 @@ fileprivate final class ClimbStatsVM {
             recomputeAll()
         }
     }
+    func setShowSyncedBoardGradesAsVScale(_ isEnabled: Bool, clearGradeFilters: Bool) {
+        guard showSyncedBoardGradesAsVScale != isEnabled else { return }
+        showSyncedBoardGradesAsVScale = isEnabled
+        if clearGradeFilters {
+            grades.removeAll()
+        }
+        buildCatalogs()
+        recomputeAll()
+    }
+
     func clearAll() {
         climbType = nil
         sportType = nil
@@ -581,26 +593,7 @@ fileprivate final class ClimbStatsVM {
         })
         availableGyms = gymsSet.sorted().map { .init(id: $0, label: $0) }
         
-        let gradeOptions: Set<String> = Set(
-            climbs.flatMap { e -> [String] in
-                var options: [String] = []
-
-                // Normal grade
-                let g = e.grade.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !g.isEmpty && g.lowercased() != "unknown" {
-                    options.append(g)
-                }
-
-                // Feels-like grade
-                if let feels = e.feelsLikeGrade?.trimmingCharacters(in: .whitespacesAndNewlines) {
-                    if !feels.isEmpty && feels.lowercased() != "unknown" {
-                        options.append(feels)
-                    }
-                }
-
-                return options
-            }
-        )
+        let gradeOptions: Set<String> = Set(climbs.flatMap(displayGradeOptions(for:)))
         availableGrades = gradeOptions.sorted().map { .init(id: $0, label: $0) }
 
         availableStyles = Set(climbs.map { $0.style }).sorted().map { .init(id: $0, label: $0) }
@@ -660,7 +653,10 @@ fileprivate final class ClimbStatsVM {
         // Distributions
         let sendsBase = filtered.filter { !$0.isWorkInProgress }   // non-WIP “sends”
         
-        gradeFeelCells = buildGradeFeelHeatmap(entries: filtered)  //grade vs feels-like matrix
+        gradeFeelCells = buildGradeFeelHeatmap(
+            entries: filtered,
+            showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+        )  //grade vs feels-like matrix
 
         var style: [String:Int] = [:], grade: [String:Int] = [:], angle: [String:Int] = [:]
 
@@ -707,7 +703,8 @@ fileprivate final class ClimbStatsVM {
             return value.localizedStandardContains(query)
         }
         // same fields as in ClimbView search
-        return contains(climb.grade)
+        return displayGradeOptions(for: climb).contains { contains($0) }
+            || contains(climb.grade)
             || contains(climb.feelsLikeGrade)
             || contains(climb.style)
             || contains(climb.gym)
@@ -989,7 +986,8 @@ fileprivate final class ClimbStatsVM {
             styles: Array(styles).sorted(),
             workInProgress: workInProgress.rawValue,
             preferFeelsLikeGrade: preferFeelsLikeGrade,
-            searchQuery: searchQuery
+            searchQuery: searchQuery,
+            showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
         )
     }
 
@@ -1002,7 +1000,12 @@ fileprivate final class ClimbStatsVM {
             sportType = nil
         }
         gyms = Set(snapshot.gyms)
-        grades = Set(snapshot.grades)
+        let savedGradeScale = snapshot.showSyncedBoardGradesAsVScale ?? false
+        if savedGradeScale == showSyncedBoardGradesAsVScale {
+            grades = Set(snapshot.grades)
+        } else {
+            grades.removeAll()
+        }
         styles = Set(snapshot.styles)
         workInProgress = WipFilter(rawValue: snapshot.workInProgress) ?? .all
         preferFeelsLikeGrade = snapshot.preferFeelsLikeGrade
@@ -1011,32 +1014,25 @@ fileprivate final class ClimbStatsVM {
     }
     
     private func resolvedGrade(_ e: ClimbEntry) -> String {
-        let logged = e.grade.trimmingCharacters(in: .whitespacesAndNewlines)
-        let feels  = e.feelsLikeGrade?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        func isValid(_ s: String?) -> Bool {
-            guard let s = s else { return false }
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !t.isEmpty && t.lowercased() != "unknown"
-        }
-
-        if preferFeelsLikeGrade {
-            // “Prefer my grade” toggle  = ON → prefer feels-like
-            if isValid(feels)  { return feels! }
-            if isValid(logged) { return logged }
-        } else {
-            // “Prefer my grade” toggle = OFF → prefer logged grade
-            if isValid(logged) { return logged }
-            if isValid(feels)  { return feels! }
-        }
-
-        // Fallbacks
-        if !logged.isEmpty { return logged }
-        if let f = feels, !f.isEmpty { return f }
-        return "Unknown"
+        BoardGradeDisplayRules.resolvedGrade(
+            grade: e.grade,
+            feelsLikeGrade: e.feelsLikeGrade,
+            preferFeelsLikeGrade: preferFeelsLikeGrade,
+            tb2ClimbUUID: e.tb2ClimbUUID,
+            kilterClimbUuid: e.kilterClimbUuid,
+            showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+        )
     }
 
-
+    private func displayGradeOptions(for climb: ClimbEntry) -> [String] {
+        BoardGradeDisplayRules.displayGradeOptions(
+            grade: climb.grade,
+            feelsLikeGrade: climb.feelsLikeGrade,
+            tb2ClimbUUID: climb.tb2ClimbUUID,
+            kilterClimbUuid: climb.kilterClimbUuid,
+            showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+        )
+    }
 }
 
 // MARK: - Time bucketing helper
@@ -1214,6 +1210,7 @@ fileprivate struct ClimbStatsView: View {
     @State private var didLoadPersistedFilters = false
     @AppStorage(FeatureFlags.forcePreferMyGradeInProgress) private var forcePreferMyGradeInProgress = false
     @AppStorage(FeatureFlags.persistProgressFilters) private var persistProgressFilters = false
+    @AppStorage(FeatureFlags.showSyncedBoardGradesAsVScale) private var showSyncedBoardGradesAsVScale = false
     @AppStorage("progress.climbFilters.v1") private var persistedClimbFilters = ""
 
     var body: some View {
@@ -1418,6 +1415,11 @@ fileprivate struct ClimbStatsView: View {
                 ReviewTrigger.shared.filtersChanged()
                 persistFiltersIfNeeded()
             }
+            .onChange(of: showSyncedBoardGradesAsVScale) { _, isEnabled in
+                vm.setShowSyncedBoardGradesAsVScale(isEnabled, clearGradeFilters: true)
+                ReviewTrigger.shared.filtersChanged()
+                persistFiltersIfNeeded()
+            }
             .onChange(of: persistProgressFilters) { _, isEnabled in
                 if isEnabled {
                     persistFiltersIfNeeded()
@@ -1431,6 +1433,7 @@ fileprivate struct ClimbStatsView: View {
             .onAppear {
                 guard !didLoadPersistedFilters else { return }
                 didLoadPersistedFilters = true
+                vm.setShowSyncedBoardGradesAsVScale(showSyncedBoardGradesAsVScale, clearGradeFilters: false)
 
                 if persistProgressFilters,
                    let snapshot = ProgressFilterPersistence.decode(
@@ -1670,20 +1673,24 @@ fileprivate struct GradeFeelCell: Identifiable, Hashable {
     let count: Int
 }
 
-private func buildGradeFeelHeatmap(entries: [ClimbEntry]) -> [GradeFeelCell] {
+private func buildGradeFeelHeatmap(entries: [ClimbEntry], showSyncedBoardGradesAsVScale: Bool) -> [GradeFeelCell] {
     // Only keep climbs where both grade & feelsLike are non-empty and not "Unknown"
     var counts: [String: [String: Int]] = [:]
 
     for e in entries {
-        let logged = e.grade.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !logged.isEmpty, logged.lowercased() != "unknown" else { continue }
+        guard let logged = BoardGradeDisplayRules.displayGrade(
+            e.grade,
+            tb2ClimbUUID: e.tb2ClimbUUID,
+            kilterClimbUuid: e.kilterClimbUuid,
+            showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+        ) else { continue }
 
-        guard let feelsRaw = e.feelsLikeGrade?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !feelsRaw.isEmpty,
-              feelsRaw.lowercased() != "unknown"
-        else {
-            continue
-        }
+        guard let feelsRaw = BoardGradeDisplayRules.displayGrade(
+            e.feelsLikeGrade,
+            tb2ClimbUUID: e.tb2ClimbUUID,
+            kilterClimbUuid: e.kilterClimbUuid,
+            showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+        ) else { continue }
 
         counts[logged, default: [:]][feelsRaw, default: 0] += 1
     }

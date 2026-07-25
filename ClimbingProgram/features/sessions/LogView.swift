@@ -349,18 +349,16 @@ struct SessionItemRow: View {
 // MARK: - Climb row styled like SessionItemRow
 struct LogClimbRow: View {
     let climb: ClimbEntry
+    @AppStorage(FeatureFlags.showSyncedBoardGradesAsVScale) private var showSyncedBoardGradesAsVScale = false
     
     private var gradeDisplay: String {
-        let hasGrade = climb.grade != "Unknown" && !climb.grade.isEmpty
-        let feels = climb.feelsLikeGrade ?? ""
-        let hasFeels = !feels.isEmpty
-        
-        switch (hasGrade, hasFeels) {
-        case (true, true):  return "\(climb.grade) (\(feels))"
-        case (true, false): return climb.grade
-        case (false, true): return feels
-        default:            return ""
-        }
+        BoardGradeDisplayRules.displayText(
+            grade: climb.grade,
+            feelsLikeGrade: climb.feelsLikeGrade,
+            tb2ClimbUUID: climb.tb2ClimbUUID,
+            kilterClimbUuid: climb.kilterClimbUuid,
+            showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+        ) ?? ""
     }
     
     private var secondaryLineText: String? {

@@ -42,11 +42,11 @@ struct ClimbView: View {
         var title: String {
             switch self {
             case .climbNames:
-                return "Collecting climbs metadata"
+                return "Building metadata cache"
             case .climbGrades:
-                return "Collecting climbs grades"
+                return "Building grade cache"
             case .logbook:
-                return "Sync your climbs"
+                return "Syncing climbs"
             }
         }
     }
@@ -80,7 +80,9 @@ struct ClimbView: View {
     @State private var syncShowsStepProgress = false
     @State private var activeSyncStep: SyncStep? = nil
     @State private var syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
+    @State private var syncDismissCountdownFraction = 0.0
     @State private var activeSyncTask: Task<Void, Never>? = nil
+    @State private var syncDismissTask: Task<Void, Never>? = nil
     @State private var syncMessage: String? = nil
     @State private var showingBoardPicker = false
     @State private var activeBoard: BoardConnection? = nil
@@ -102,6 +104,7 @@ struct ClimbView: View {
     // Track successful syncs across launches + pending review trigger
     @AppStorage("klettrack.successfulSyncCount") private var successfulSyncCount = 0
     @AppStorage("klettrack.didRequestReviewAfterSync") private var didRequestReviewAfterSync = false
+    @AppStorage(FeatureFlags.showSyncedBoardGradesAsVScale) private var showSyncedBoardGradesAsVScale = false
     @State private var pendingReviewReason: String? = nil
     
     // Computed filtered climbs
@@ -604,6 +607,7 @@ struct ClimbView: View {
     private func startSync(board: BoardConnection) {
         if loadCredentials(for: board) != nil {
             activeSyncTask?.cancel()
+            syncDismissTask?.cancel()
             activeSyncTask = Task { await runSyncIfPossible(board: board) }
         } else {
             // Missing creds → open sheet for this board, then sync after saving
@@ -617,19 +621,24 @@ struct ClimbView: View {
 
     private func cancelActiveSync() {
         activeSyncTask?.cancel()
+        syncDismissTask?.cancel()
         activeSyncTask = nil
+        syncDismissTask = nil
         isSyncing = false
         dismissSyncStatus()
     }
 
     private func dismissSyncStatus() {
         let shouldRequestReview = canDismissSyncStatus
+        syncDismissTask?.cancel()
+        syncDismissTask = nil
         isSyncStatusVisible = false
         canDismissSyncStatus = false
         syncProgressText = "Syncing…"
         syncShowsStepProgress = false
         activeSyncStep = nil
         syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
+        syncDismissCountdownFraction = 0.0
         if shouldRequestReview, let reason = pendingReviewReason {
             requestReviewIfEligible(reason)
             pendingReviewReason = nil
@@ -662,17 +671,39 @@ struct ClimbView: View {
 
                 Spacer(minLength: 8)
 
-                Button("OK") {
-                    dismissSyncStatus()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canDismissSyncStatus)
+                syncOKButton
             }
             .font(.caption)
         }
         .padding(14)
         .frame(maxWidth: 280)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var syncOKButton: some View {
+        Button {
+            dismissSyncStatus()
+        } label: {
+            Text("OK")
+                .font(.caption.weight(.semibold))
+                .frame(width: 42, height: 42)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(canDismissSyncStatus ? Color.accentColor : Color.secondary)
+        .background(.thinMaterial, in: Circle())
+        .overlay {
+            Circle()
+                .stroke(Color.secondary.opacity(0.25), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: syncDismissCountdownFraction)
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .opacity(canDismissSyncStatus ? 1 : 0)
+        }
+        .opacity(canDismissSyncStatus ? 1 : 0.55)
+        .disabled(!canDismissSyncStatus)
+        .accessibilityLabel("Dismiss sync status")
     }
 
     private func syncStepRow(_ step: SyncStep) -> some View {
@@ -711,6 +742,9 @@ struct ClimbView: View {
         syncShowsStepProgress = false
         activeSyncStep = nil
         syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
+        syncDismissCountdownFraction = 0.0
+        syncDismissTask?.cancel()
+        syncDismissTask = nil
         defer {
             isSyncing = false
             activeSyncTask = nil
@@ -734,6 +768,7 @@ struct ClimbView: View {
                 )
             }
             canDismissSyncStatus = true
+            startSyncDismissCountdown()
 
             // Count successful syncs (any board). After 3+, arm a one-time review request.
             successfulSyncCount += 1
@@ -745,6 +780,22 @@ struct ClimbView: View {
         } catch {
             dismissSyncStatus()
             syncMessage = "Sync failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func startSyncDismissCountdown() {
+        syncDismissTask?.cancel()
+        syncDismissCountdownFraction = 0.0
+        syncDismissTask = Task { @MainActor in
+            let tickCount = 30
+            for tick in 1...tickCount {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                guard !Task.isCancelled else { return }
+                syncDismissCountdownFraction = Double(tick) / Double(tickCount)
+            }
+
+            guard canDismissSyncStatus, isSyncStatusVisible else { return }
+            dismissSyncStatus()
         }
     }
 
@@ -930,8 +981,17 @@ struct ClimbView: View {
             return value.localizedStandardContains(query)
         }
 
+        let displayGrades = BoardGradeDisplayRules.displayGradeOptions(
+            grade: climb.grade,
+            feelsLikeGrade: climb.feelsLikeGrade,
+            tb2ClimbUUID: climb.tb2ClimbUUID,
+            kilterClimbUuid: climb.kilterClimbUuid,
+            showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+        )
+
         // Add any other string fields you care about here
-        return contains(climb.grade)
+        return displayGrades.contains { contains($0) }
+            || contains(climb.grade)
             || contains(climb.feelsLikeGrade)
             || contains(climb.style)
             || contains(climb.gym)
@@ -1075,6 +1135,7 @@ struct ClimbRowCard: View {
     let onEdit: () -> Void
     let onClone: () -> Void
     @AppStorage(FeatureFlags.showNotesWhenGymMissing) private var showNotesWhenGymMissing = false
+    @AppStorage(FeatureFlags.showSyncedBoardGradesAsVScale) private var showSyncedBoardGradesAsVScale = false
     
     private var climbTypeColor: Color {
         switch climb.climbType {
@@ -1100,21 +1161,13 @@ struct ClimbRowCard: View {
                     .foregroundStyle(climbTypeColor)
                     .clipShape(.rect(cornerRadius: 3))
                 
-                // show grade only if filled, show alternative grade if grade isn't there,
-                // show grade& alterntive grade if both exist
-                let hasGrade = climb.grade != "Unknown" && !climb.grade.isEmpty
-                let hasFeels = (climb.feelsLikeGrade ?? "").isEmpty == false
-
-                if hasGrade || hasFeels {
-                    let display: String = {
-                        switch (hasGrade, hasFeels) {
-                        case (true, true):  return "\(climb.grade) (\(climb.feelsLikeGrade!))"
-                        case (true, false): return climb.grade
-                        case (false, true): return climb.feelsLikeGrade!   // only feels-like
-                        default:            return ""
-                        }
-                    }()
-
+                if let display = BoardGradeDisplayRules.displayText(
+                    grade: climb.grade,
+                    feelsLikeGrade: climb.feelsLikeGrade,
+                    tb2ClimbUUID: climb.tb2ClimbUUID,
+                    kilterClimbUuid: climb.kilterClimbUuid,
+                    showSyncedBoardGradesAsVScale: showSyncedBoardGradesAsVScale
+                ) {
                     Text(display)
                         .font(.body)
                         .foregroundStyle(.primary)

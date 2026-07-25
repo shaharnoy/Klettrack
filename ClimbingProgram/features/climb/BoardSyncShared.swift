@@ -7,6 +7,11 @@ import CryptoKit
 import Foundation
 
 enum BoardGradeMapper {
+    struct Mapping {
+        let fontGrade: String
+        let vGrade: String
+    }
+
     static let mappingCSV = """
     difficulty,grade_label
     1,1a/V0
@@ -50,16 +55,25 @@ enum BoardGradeMapper {
     39,9c+/V22
     """
 
-    static let diffToGrade: [Int: String] = {
-        var out: [Int: String] = [:]
+    static let diffToMapping: [Int: Mapping] = {
+        var out: [Int: Mapping] = [:]
         for line in mappingCSV.split(separator: "\n") {
             let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if t.isEmpty || t.hasPrefix("#") || t.lowercased().hasPrefix("difficulty") { continue }
             let parts = t.split(separator: ",", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
             guard parts.count >= 2, let n = Int(parts[0]) else { continue }
-            out[n] = leftPart(of: parts[1])
+            let fontGrade = leftPart(of: parts[1])
+            let vGrade = rightPart(of: parts[1])
+            guard !fontGrade.isEmpty, !vGrade.isEmpty else { continue }
+            out[n] = Mapping(fontGrade: fontGrade, vGrade: vGrade)
         }
         return out
+    }()
+
+    static let diffToGrade: [Int: String] = diffToMapping.mapValues(\.fontGrade)
+    static let diffToVGrade: [Int: String] = diffToMapping.mapValues(\.vGrade)
+    static let fontGradeToVGrade: [String: String] = {
+        Dictionary(uniqueKeysWithValues: diffToMapping.values.map { (normalizedGrade($0.fontGrade), $0.vGrade) })
     }()
 
     static func leftPart(of label: String) -> String {
@@ -68,7 +82,26 @@ enum BoardGradeMapper {
         return String(leftDot).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static func rightPart(of label: String) -> String {
+        let parts = label.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count > 1 else { return "" }
+        let rightDot = parts[1].split(separator: "·", maxSplits: 1, omittingEmptySubsequences: false).first ?? Substring("")
+        return String(rightDot).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func grade(of number: Any?) -> String? {
+        difficultyKey(from: number).flatMap { diffToGrade[$0] }
+    }
+
+    static func vGrade(of number: Any?) -> String? {
+        difficultyKey(from: number).flatMap { diffToVGrade[$0] }
+    }
+
+    static func vGrade(fromFontGrade grade: String) -> String? {
+        fontGradeToVGrade[normalizedGrade(grade)]
+    }
+
+    private static func difficultyKey(from number: Any?) -> Int? {
         guard let n = number else { return nil }
         let value: Double?
         if let i = n as? Int {
@@ -81,8 +114,11 @@ enum BoardGradeMapper {
             value = nil
         }
         guard let v = value else { return nil }
-        let key = Int(v.rounded())
-        return diffToGrade[key]
+        return Int(v.rounded())
+    }
+
+    private static func normalizedGrade(_ grade: String) -> String {
+        grade.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
 
