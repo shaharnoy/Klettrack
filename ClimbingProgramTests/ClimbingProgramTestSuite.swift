@@ -41,7 +41,9 @@ class ClimbingProgramTestSuite: XCTestCase {
             ClimbEntry.self,
             ClimbStyle.self,
             ClimbGym.self,
-            ClimbMedia.self
+            ClimbMedia.self,
+            TB2ClimbMetadata.self,
+            TB2ClimbStatsMetadata.self
         ])
 
         // In-memory configuration for isolation and speed

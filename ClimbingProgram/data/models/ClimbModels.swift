@@ -74,6 +74,61 @@ final class ClimbEntry {
     }
 }
 
+@Model
+final class TB2ClimbMetadata {
+    var boardRawValue: String = ""
+    var uuid: String = ""
+    var name: String = ""
+    var updatedAt: String?
+    var layoutID: Int?
+    var isListed: Bool?
+
+    init(
+        boardRawValue: String = "",
+        uuid: String = "",
+        name: String = "",
+        updatedAt: String? = nil,
+        layoutID: Int? = nil,
+        isListed: Bool? = nil
+    ) {
+        self.boardRawValue = boardRawValue
+        self.uuid = uuid
+        self.name = name
+        self.updatedAt = updatedAt
+        self.layoutID = layoutID
+        self.isListed = isListed
+    }
+}
+
+@Model
+final class TB2ClimbStatsMetadata {
+    var boardRawValue: String = ""
+    var climbUUID: String = ""
+    var angle: Int = 0
+    var difficultyAverage: Double?
+    var displayDifficulty: Double?
+    var ascensionistCount: Int?
+    var qualityAverage: Double?
+
+    init(
+        boardRawValue: String = "",
+        climbUUID: String = "",
+        angle: Int = 0,
+        difficultyAverage: Double? = nil,
+        displayDifficulty: Double? = nil,
+        ascensionistCount: Int? = nil,
+        qualityAverage: Double? = nil
+    ) {
+        self.boardRawValue = boardRawValue
+        self.climbUUID = climbUUID
+        self.angle = angle
+        self.difficultyAverage = difficultyAverage
+        self.displayDifficulty = displayDifficulty
+        self.ascensionistCount = ascensionistCount
+        self.qualityAverage = qualityAverage
+    }
+}
+
 
 // MARK: - Enums
 

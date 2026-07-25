@@ -17,6 +17,7 @@ final class LogCSVMediaRoundtripTests: XCTestCase {
         // ---------- 1) EXPORT SIDE: create climb + media in a fresh in-memory store ----------
         let exportContainer = try ModelContainer(
             for: ClimbEntry.self, ClimbMedia.self, Session.self, SessionItem.self, Plan.self, PlanKindModel.self,
+            TB2ClimbMetadata.self, TB2ClimbStatsMetadata.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let exportContext = ModelContext(exportContainer)
@@ -73,6 +74,7 @@ final class LogCSVMediaRoundtripTests: XCTestCase {
         // ---------- 2) IMPORT SIDE: new empty store, import CSV there ----------
         let importContainer = try ModelContainer(
             for: ClimbEntry.self, ClimbMedia.self, Session.self, SessionItem.self, Plan.self, PlanKindModel.self,
+            TB2ClimbMetadata.self, TB2ClimbStatsMetadata.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let importContext = ModelContext(importContainer)

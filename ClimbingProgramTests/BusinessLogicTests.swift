@@ -267,6 +267,402 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         XCTAssertTrue(afterAscent)
     }
 
+    @MainActor
+    func testTB2ClimbMetadataCacheInsertsAndUpdatesRows() throws {
+        let initial = TB2Client.SyncResponse(
+            complete: true,
+            ascents: nil,
+            bids: nil,
+            climbs: [
+                TB2Client.Climb(
+                    uuid: "climb-1",
+                    name: "Original Name",
+                    updatedAt: "2026-01-01 00:00:00.000000",
+                    layoutID: 9,
+                    isListed: true
+                )
+            ],
+            climbStats: nil,
+            difficulties: nil,
+            userSyncs: nil,
+            sharedSyncs: nil
+        )
+
+        XCTAssertTrue(TB2SyncManager.upsertClimbMetadata(from: [initial], board: .tension, into: context))
+        var names = TB2SyncManager.cachedClimbNames(board: .tension, in: context)
+        XCTAssertEqual(names["climb-1"], "Original Name")
+
+        let delta = TB2Client.SyncResponse(
+            complete: true,
+            ascents: nil,
+            bids: nil,
+            climbs: [
+                TB2Client.Climb(
+                    uuid: "climb-1",
+                    name: "Updated Name",
+                    updatedAt: "2026-01-02 00:00:00.000000",
+                    layoutID: 10,
+                    isListed: false
+                )
+            ],
+            climbStats: nil,
+            difficulties: nil,
+            userSyncs: nil,
+            sharedSyncs: nil
+        )
+
+        XCTAssertTrue(TB2SyncManager.upsertClimbMetadata(from: [delta], board: .tension, into: context))
+        names = TB2SyncManager.cachedClimbNames(board: .tension, in: context)
+        XCTAssertEqual(names["climb-1"], "Updated Name")
+
+        let stored = try XCTUnwrap(try context.fetch(FetchDescriptor<TB2ClimbMetadata>()).first)
+        XCTAssertEqual(stored.updatedAt, "2026-01-02 00:00:00.000000")
+        XCTAssertEqual(stored.layoutID, 10)
+        XCTAssertEqual(stored.isListed, false)
+    }
+
+    func testTB2ClimbCacheCursorSavesOnlyWhenComplete() {
+        UserDefaults.standard.removeObject(forKey: "tb2.climbsCache.tension.lastSynchronizedAt")
+        UserDefaults.standard.removeObject(forKey: "tb2.climbsCache.tension.complete")
+        defer {
+            UserDefaults.standard.removeObject(forKey: "tb2.climbsCache.tension.lastSynchronizedAt")
+            UserDefaults.standard.removeObject(forKey: "tb2.climbsCache.tension.complete")
+        }
+
+        let incomplete = TB2Client.SyncResponse(
+            complete: false,
+            ascents: nil,
+            bids: nil,
+            climbs: nil,
+            climbStats: nil,
+            difficulties: nil,
+            userSyncs: nil,
+            sharedSyncs: [
+                TB2Client.TableSync(tableName: "climbs", lastSynchronizedAt: "2026-01-01 00:00:00.000000")
+            ]
+        )
+
+        TB2SyncManager.saveClimbCacheCursor(from: [incomplete], board: .tension)
+        var state = TB2SyncManager.climbCacheState(for: .tension)
+        XCTAssertFalse(state.isComplete)
+        XCTAssertNil(state.lastSynchronizedAt)
+
+        let complete = TB2Client.SyncResponse(
+            complete: true,
+            ascents: nil,
+            bids: nil,
+            climbs: nil,
+            climbStats: nil,
+            difficulties: nil,
+            userSyncs: nil,
+            sharedSyncs: [
+                TB2Client.TableSync(tableName: "climbs", lastSynchronizedAt: "2026-01-02 00:00:00.000000")
+            ]
+        )
+
+        TB2SyncManager.saveClimbCacheCursor(from: [complete], board: .tension)
+        state = TB2SyncManager.climbCacheState(for: .tension)
+        XCTAssertTrue(state.isComplete)
+        XCTAssertEqual(state.lastSynchronizedAt, "2026-01-02 00:00:00.000000")
+    }
+
+    @MainActor
+    func testTB2ClimbStatsMetadataCacheInsertsAndUpdatesRows() throws {
+        let initial = TB2Client.SyncResponse(
+            complete: true,
+            ascents: nil,
+            bids: nil,
+            climbs: nil,
+            climbStats: [
+                TB2Client.ClimbStats(
+                    climbUUID: "climb-1",
+                    angle: 40,
+                    difficultyAverage: 19.2,
+                    displayDifficulty: 19.0,
+                    ascensionistCount: 12,
+                    qualityAverage: 3.5
+                )
+            ],
+            difficulties: nil,
+            userSyncs: nil,
+            sharedSyncs: nil
+        )
+
+        XCTAssertTrue(TB2SyncManager.upsertClimbStatsMetadata(from: [initial], board: .tension, into: context))
+        var grades = TB2SyncManager.cachedClimbStatsDifficulties(board: .tension, in: context)
+        XCTAssertEqual(grades[TB2SyncManager.DiffKey(uuid: "climb-1", angle: 40)], 19)
+
+        let delta = TB2Client.SyncResponse(
+            complete: true,
+            ascents: nil,
+            bids: nil,
+            climbs: nil,
+            climbStats: [
+                TB2Client.ClimbStats(
+                    climbUUID: "climb-1",
+                    angle: 40,
+                    difficultyAverage: 20.6,
+                    displayDifficulty: 20.0,
+                    ascensionistCount: 14,
+                    qualityAverage: 3.9
+                )
+            ],
+            difficulties: nil,
+            userSyncs: nil,
+            sharedSyncs: nil
+        )
+
+        XCTAssertTrue(TB2SyncManager.upsertClimbStatsMetadata(from: [delta], board: .tension, into: context))
+        grades = TB2SyncManager.cachedClimbStatsDifficulties(board: .tension, in: context)
+        XCTAssertEqual(grades[TB2SyncManager.DiffKey(uuid: "climb-1", angle: 40)], 21)
+
+        let stored = try XCTUnwrap(try context.fetch(FetchDescriptor<TB2ClimbStatsMetadata>()).first)
+        XCTAssertEqual(stored.difficultyAverage, 20.6)
+        XCTAssertEqual(stored.displayDifficulty, 20.0)
+        XCTAssertEqual(stored.ascensionistCount, 14)
+        XCTAssertEqual(stored.qualityAverage, 3.9)
+    }
+
+    func testTB2ClimbStatsCacheCursorSavesOnlyWhenComplete() {
+        UserDefaults.standard.removeObject(forKey: "tb2.climbStatsCache.tension.lastSynchronizedAt")
+        UserDefaults.standard.removeObject(forKey: "tb2.climbStatsCache.tension.complete")
+        defer {
+            UserDefaults.standard.removeObject(forKey: "tb2.climbStatsCache.tension.lastSynchronizedAt")
+            UserDefaults.standard.removeObject(forKey: "tb2.climbStatsCache.tension.complete")
+        }
+
+        let incomplete = TB2Client.SyncResponse(
+            complete: false,
+            ascents: nil,
+            bids: nil,
+            climbs: nil,
+            climbStats: nil,
+            difficulties: nil,
+            userSyncs: nil,
+            sharedSyncs: [
+                TB2Client.TableSync(tableName: "climb_stats", lastSynchronizedAt: "2026-01-01 00:00:00.000000")
+            ]
+        )
+
+        TB2SyncManager.saveClimbStatsCacheCursor(from: [incomplete], board: .tension)
+        var state = TB2SyncManager.climbStatsCacheState(for: .tension)
+        XCTAssertFalse(state.isComplete)
+        XCTAssertNil(state.lastSynchronizedAt)
+
+        let complete = TB2Client.SyncResponse(
+            complete: true,
+            ascents: nil,
+            bids: nil,
+            climbs: nil,
+            climbStats: nil,
+            difficulties: nil,
+            userSyncs: nil,
+            sharedSyncs: [
+                TB2Client.TableSync(tableName: "climb_stats", lastSynchronizedAt: "2026-01-02 00:00:00.000000")
+            ]
+        )
+
+        TB2SyncManager.saveClimbStatsCacheCursor(from: [complete], board: .tension)
+        state = TB2SyncManager.climbStatsCacheState(for: .tension)
+        XCTAssertTrue(state.isComplete)
+        XCTAssertEqual(state.lastSynchronizedAt, "2026-01-02 00:00:00.000000")
+    }
+
+    @MainActor
+    func testTB2ApplyRowsUsesCachedNameForFreshRows() throws {
+        context.insert(TB2ClimbMetadata(boardRawValue: "tension", uuid: "climb-cached", name: "Cached Name"))
+        let names = TB2SyncManager.cachedClimbNames(board: .tension, in: context)
+        let date = try XCTUnwrap(BoardDateParser.parse("2026-01-03 10:00:00"))
+
+        try TB2SyncManager.applyRows([
+            TB2SyncManager.Row(
+                climbUUID: "climb-cached",
+                angle: 40,
+                isMirror: false,
+                day: date,
+                climbName: names["climb-cached"],
+                loggedDifficultyNum: 20,
+                displayedDifficultyNum: 20,
+                loggedGrade: "6c",
+                displayedGrade: "6c",
+                isBenchmark: false,
+                tries: 2,
+                isAscent: true,
+                comment: nil
+            )
+        ], styleName: "Tension board", into: context)
+
+        let entry = try XCTUnwrap(try context.fetch(FetchDescriptor<ClimbEntry>()).first)
+        XCTAssertEqual(entry.gym, "Cached Name")
+        XCTAssertEqual(entry.notes, "Cached Name")
+    }
+
+    @MainActor
+    func testTB2ApplyRowsUsesCachedStatsGradeForBidOnlyRows() throws {
+        context.insert(TB2ClimbStatsMetadata(
+            boardRawValue: "tension",
+            climbUUID: "stats-climb",
+            angle: 40,
+            difficultyAverage: 19.6,
+            displayDifficulty: 18.0
+        ))
+        let stats = TB2SyncManager.cachedClimbStatsDifficulties(board: .tension, in: context)
+        let difficulty = stats[TB2SyncManager.DiffKey(uuid: "stats-climb", angle: 40)]
+        let date = try XCTUnwrap(BoardDateParser.parse("2026-01-03 10:00:00"))
+
+        try TB2SyncManager.applyRows([
+            TB2SyncManager.Row(
+                climbUUID: "stats-climb",
+                angle: 40,
+                isMirror: false,
+                day: date,
+                climbName: nil,
+                loggedDifficultyNum: difficulty,
+                displayedDifficultyNum: difficulty,
+                loggedGrade: BoardGradeMapper.grade(of: difficulty),
+                displayedGrade: nil,
+                isBenchmark: false,
+                tries: 3,
+                isAscent: false,
+                comment: nil
+            )
+        ], styleName: "Tension board", into: context)
+
+        let entry = try XCTUnwrap(try context.fetch(FetchDescriptor<ClimbEntry>()).first)
+        XCTAssertEqual(entry.grade, "6c")
+        XCTAssertTrue(entry.isWorkInProgress)
+    }
+
+    @MainActor
+    func testTB2CachedStatsRequiresExactAngleAndFallsBackToDisplayDifficulty() throws {
+        context.insert(TB2ClimbStatsMetadata(
+            boardRawValue: "tension",
+            climbUUID: "fallback-climb",
+            angle: 30,
+            difficultyAverage: nil,
+            displayDifficulty: 22.2
+        ))
+        context.insert(TB2ClimbStatsMetadata(
+            boardRawValue: "tension",
+            climbUUID: "angle-climb",
+            angle: 40,
+            difficultyAverage: 18.2,
+            displayDifficulty: nil
+        ))
+
+        let stats = TB2SyncManager.cachedClimbStatsDifficulties(board: .tension, in: context)
+
+        XCTAssertEqual(stats[TB2SyncManager.DiffKey(uuid: "fallback-climb", angle: 30)], 22)
+        XCTAssertNil(stats[TB2SyncManager.DiffKey(uuid: "angle-climb", angle: 30)])
+        XCTAssertNil(stats[TB2SyncManager.DiffKey(uuid: "missing-climb", angle: 40)])
+    }
+
+    @MainActor
+    func testTB2BackfillMissingNamesPreservesUserText() throws {
+        context.insert(TB2ClimbMetadata(boardRawValue: "tension", uuid: "missing-fields", name: "Recovered Name"))
+        context.insert(TB2ClimbMetadata(boardRawValue: "tension", uuid: "user-edited", name: "Should Not Overwrite"))
+
+        let missing = ClimbEntry(
+            climbType: .boulder,
+            grade: "6a",
+            angleDegrees: 30,
+            style: "Tension board",
+            attempts: "1",
+            gym: "",
+            notes: nil,
+            tb2ClimbUUID: "missing-fields"
+        )
+        let userEdited = ClimbEntry(
+            climbType: .boulder,
+            grade: "6a",
+            angleDegrees: 30,
+            style: "Tension board",
+            attempts: "1",
+            gym: "User Gym",
+            notes: "User note",
+            tb2ClimbUUID: "user-edited"
+        )
+        context.insert(missing)
+        context.insert(userEdited)
+        try context.save()
+
+        try TB2SyncManager.backfillMissingNames(board: .tension, into: context)
+
+        XCTAssertEqual(missing.gym, "Recovered Name")
+        XCTAssertEqual(missing.notes, "Recovered Name")
+        XCTAssertEqual(userEdited.gym, "User Gym")
+        XCTAssertEqual(userEdited.notes, "User note")
+    }
+
+    @MainActor
+    func testTB2BackfillMissingGradesFromClimbStatsPreservesExistingGrades() throws {
+        context.insert(TB2ClimbStatsMetadata(
+            boardRawValue: "tension",
+            climbUUID: "missing-grade",
+            angle: 40,
+            difficultyAverage: 20.6,
+            displayDifficulty: nil
+        ))
+        context.insert(TB2ClimbStatsMetadata(
+            boardRawValue: "tension",
+            climbUUID: "existing-grade",
+            angle: 40,
+            difficultyAverage: 22.0,
+            displayDifficulty: nil
+        ))
+        context.insert(TB2ClimbStatsMetadata(
+            boardRawValue: "tension",
+            climbUUID: "wrong-angle",
+            angle: 50,
+            difficultyAverage: 23.0,
+            displayDifficulty: nil
+        ))
+
+        let missing = ClimbEntry(
+            climbType: .boulder,
+            grade: "",
+            angleDegrees: 40,
+            style: "Tension board",
+            attempts: "2",
+            isWorkInProgress: true,
+            gym: "",
+            notes: nil,
+            tb2ClimbUUID: "missing-grade"
+        )
+        let existing = ClimbEntry(
+            climbType: .boulder,
+            grade: "6a",
+            angleDegrees: 40,
+            style: "Tension board",
+            attempts: "2",
+            isWorkInProgress: true,
+            gym: "",
+            notes: nil,
+            tb2ClimbUUID: "existing-grade"
+        )
+        let mismatchedAngle = ClimbEntry(
+            climbType: .boulder,
+            grade: "",
+            angleDegrees: 40,
+            style: "Tension board",
+            attempts: "2",
+            isWorkInProgress: true,
+            gym: "",
+            notes: nil,
+            tb2ClimbUUID: "wrong-angle"
+        )
+        context.insert(missing)
+        context.insert(existing)
+        context.insert(mismatchedAngle)
+        try context.save()
+
+        try TB2SyncManager.backfillMissingGradesFromClimbStats(board: .tension, into: context)
+
+        XCTAssertEqual(missing.grade, "6c+")
+        XCTAssertEqual(existing.grade, "6a")
+        XCTAssertEqual(mismatchedAngle.grade, "")
+    }
+
     
     // MARK: - Exercise Catalog Management Tests
     
@@ -441,4 +837,3 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         XCTAssertFalse(activities.isEmpty, "Should have seeded activities")
     }
 }
-

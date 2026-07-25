@@ -24,11 +24,12 @@ struct TB2Client {
         static let userAgent = "Kilter%20Board/202 CFNetwork/1568.100.1 Darwin/24.0.0"
     }
     
-    struct SyncResponse: Decodable {
+    struct SyncResponse: Decodable, Sendable {
         let complete: Bool?
         let ascents: [Ascent]?
         let bids: [Bid]?
         let climbs: [Climb]?
+        let climbStats: [ClimbStats]?
         let difficulties: [Difficulty]?
         let userSyncs: [TableSync]?
         let sharedSyncs: [TableSync]?
@@ -36,12 +37,13 @@ struct TB2Client {
         enum CodingKeys: String, CodingKey {
             case complete = "_complete"
             case ascents, bids, climbs, difficulties
+            case climbStats = "climb_stats"
             case userSyncs = "user_syncs"
             case sharedSyncs = "shared_syncs"
         }
     }
     
-    struct TableSync: Decodable {
+    struct TableSync: Decodable, Sendable {
         let tableName: String
         let lastSynchronizedAt: String?
         enum CodingKeys: String, CodingKey {
@@ -50,7 +52,7 @@ struct TB2Client {
         }
     }
     
-    struct Ascent: Decodable {
+    struct Ascent: Decodable, Sendable {
         let isListed: Bool?
         let climbUUID: String?
         let angle: Int?
@@ -76,7 +78,7 @@ struct TB2Client {
         }
     }
     
-    struct Bid: Decodable {
+    struct Bid: Decodable, Sendable {
         let climbUUID: String?
         let angle: Int?
         let isMirror: Bool?
@@ -94,12 +96,40 @@ struct TB2Client {
         }
     }
     
-    struct Climb: Decodable {
+    struct Climb: Decodable, Sendable {
         let uuid: String?
         let name: String?
+        let updatedAt: String?
+        let layoutID: Int?
+        let isListed: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case uuid, name
+            case updatedAt = "updated_at"
+            case layoutID = "layout_id"
+            case isListed = "is_listed"
+        }
+    }
+
+    struct ClimbStats: Decodable, Sendable {
+        let climbUUID: String?
+        let angle: Int?
+        let difficultyAverage: Double?
+        let displayDifficulty: Double?
+        let ascensionistCount: Int?
+        let qualityAverage: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case climbUUID = "climb_uuid"
+            case angle
+            case difficultyAverage = "difficulty_average"
+            case displayDifficulty = "display_difficulty"
+            case ascensionistCount = "ascensionist_count"
+            case qualityAverage = "quality_average"
+        }
     }
     
-    struct Difficulty: Decodable {
+    struct Difficulty: Decodable, Sendable {
         let climbUUID: String?
         let uuid: String?
         let angle: Int?
@@ -188,7 +218,13 @@ struct TB2Client {
         return (data, http)
     }
     
-    func syncPages(board: Board, tablesAndSyncDates: [String: String], token: String?, maxPages: Int = Constants.defaultMaxSyncPages) async throws -> [SyncResponse] {
+    func syncPages(
+        board: Board,
+        tablesAndSyncDates: [String: String],
+        token: String?,
+        maxPages: Int = Constants.defaultMaxSyncPages,
+        progress: (@MainActor @Sendable (Int, Bool) -> Void)? = nil
+    ) async throws -> [SyncResponse] {
         var headers: [String: String] = [
             "Accept": "application/json",
             "User-Agent": Constants.userAgent,
@@ -203,8 +239,10 @@ struct TB2Client {
         let base = board.webBaseURL.appendingPathComponent("sync")
         
         while !complete && pageCount < maxPages {
+            try Task.checkCancellation()
             let body = urlFormBody(payload)
             let (data, http) = try await postSync(url: base, body: body, headers: headers)
+            try Task.checkCancellation()
             if http.statusCode == 401 {
                 throw NSError(domain: "TB2", code: 401, userInfo: [NSLocalizedDescriptionKey: "Unauthorized (401). Token invalid/expired."])
             }
@@ -215,6 +253,8 @@ struct TB2Client {
             let page = try JSONDecoder().decode(SyncResponse.self, from: data)
             complete = page.complete ?? false
             pages.append(page)
+            pageCount += 1
+            await progress?(pageCount, complete)
             
             // advance per table if timestamps are provided
             if token != nil {
@@ -229,7 +269,6 @@ struct TB2Client {
                     payload[ss.tableName] = last
                 }
             }
-            pageCount += 1
         }
         return pages
     }

@@ -32,6 +32,25 @@ struct ClimbView: View {
         let climb: ClimbEntry
     }
 
+    private enum SyncStep: Int, CaseIterable, Identifiable {
+        case climbNames
+        case climbGrades
+        case logbook
+
+        var id: Int { rawValue }
+
+        var title: String {
+            switch self {
+            case .climbNames:
+                return "Collecting climbs metadata"
+            case .climbGrades:
+                return "Collecting climbs grades"
+            case .logbook:
+                return "Sync your climbs"
+            }
+        }
+    }
+
     @Environment(\.isDataReady) private var isDataReady
     @Environment(\.modelContext) private var modelContext
     @Environment(\.undoManager) private var undoManager
@@ -55,6 +74,13 @@ struct ClimbView: View {
     @State private var credsPassword: String = ""
     @State private var isEditingCredentials = false
     @State private var isSyncing = false
+    @State private var isSyncStatusVisible = false
+    @State private var canDismissSyncStatus = false
+    @State private var syncProgressText = "Syncing…"
+    @State private var syncShowsStepProgress = false
+    @State private var activeSyncStep: SyncStep? = nil
+    @State private var syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
+    @State private var activeSyncTask: Task<Void, Never>? = nil
     @State private var syncMessage: String? = nil
     @State private var showingBoardPicker = false
     @State private var activeBoard: BoardConnection? = nil
@@ -314,13 +340,10 @@ struct ClimbView: View {
         .opacity(isDataReady ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isDataReady)
         .navigationTitle("CLIMB")
-        // Optional small overlay to show syncing in progress
+        // Optional small overlay to show syncing status
         .overlay {
-            if isSyncing {
-                ProgressView("Syncing…")
-               
-                    .padding(12)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            if isSyncStatusVisible {
+                syncProgressOverlay
             }
         }
         // Visible Undo banner overlay at the bottom (shared component)
@@ -580,7 +603,8 @@ struct ClimbView: View {
 
     private func startSync(board: BoardConnection) {
         if loadCredentials(for: board) != nil {
-            Task { await runSyncIfPossible(board: board) }
+            activeSyncTask?.cancel()
+            activeSyncTask = Task { await runSyncIfPossible(board: board) }
         } else {
             // Missing creds → open sheet for this board, then sync after saving
             credsUsername = ""
@@ -591,6 +615,89 @@ struct ClimbView: View {
         }
     }
 
+    private func cancelActiveSync() {
+        activeSyncTask?.cancel()
+        activeSyncTask = nil
+        isSyncing = false
+        dismissSyncStatus()
+    }
+
+    private func dismissSyncStatus() {
+        let shouldRequestReview = canDismissSyncStatus
+        isSyncStatusVisible = false
+        canDismissSyncStatus = false
+        syncProgressText = "Syncing…"
+        syncShowsStepProgress = false
+        activeSyncStep = nil
+        syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
+        if shouldRequestReview, let reason = pendingReviewReason {
+            requestReviewIfEligible(reason)
+            pendingReviewReason = nil
+            didRequestReviewAfterSync = true
+        }
+    }
+
+    private var syncProgressOverlay: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if syncShowsStepProgress {
+                VStack(spacing: 10) {
+                    ForEach(SyncStep.allCases) { step in
+                        syncStepRow(step)
+                    }
+                }
+            } else {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(syncProgressText)
+                        .font(.subheadline)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button("Cancel", role: .cancel) {
+                    cancelActiveSync()
+                }
+                .disabled(!isSyncing)
+
+                Spacer(minLength: 8)
+
+                Button("OK") {
+                    dismissSyncStatus()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canDismissSyncStatus)
+            }
+            .font(.caption)
+        }
+        .padding(14)
+        .frame(maxWidth: 280)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func syncStepRow(_ step: SyncStep) -> some View {
+        let fraction = syncStepFractions[step.rawValue]
+        let percent = Int((fraction * 100).rounded())
+        let isActive = activeSyncStep == step
+        let isDone = fraction >= 1
+
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Image(systemName: isDone ? "checkmark.circle.fill" : isActive ? "arrow.triangle.2.circlepath.circle.fill" : "circle")
+                    .foregroundStyle(isDone ? .green : isActive ? .accentColor : .secondary)
+                Text(step.title)
+                    .font(.caption)
+                    .fontWeight(isActive ? .semibold : .regular)
+                Spacer(minLength: 8)
+                Text("\(percent)%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: fraction)
+                .progressViewStyle(.linear)
+        }
+    }
+
     
     private func runSyncIfPossible(board: BoardConnection) async {
         guard let creds = loadCredentials(for: board) else {
@@ -598,31 +705,117 @@ struct ClimbView: View {
             return
         }
         isSyncing = true
-        defer { isSyncing = false }
+        isSyncStatusVisible = true
+        canDismissSyncStatus = false
+        syncProgressText = "Syncing…"
+        syncShowsStepProgress = false
+        activeSyncStep = nil
+        syncStepFractions = Array(repeating: 0.0, count: SyncStep.allCases.count)
+        defer {
+            isSyncing = false
+            activeSyncTask = nil
+        }
         do {
             switch board {
             case .tension:
+                syncShowsStepProgress = true
                 try await TB2SyncManager.sync(
                     using: TB2Credentials(username: creds.username, password: creds.password),
                     board: .tension,
                     into: modelContext
-                )
+                ) { progress in
+                    applyTB2SyncProgress(progress)
+                }
             case .kilter:
+                syncProgressText = "Syncing Kilter Board…"
                 try await KilterSyncManager.sync(
                     using: KilterCredentials(username: creds.username, password: creds.password),
                     into: modelContext
                 )
             }
-            syncMessage = "Sync completed."
+            canDismissSyncStatus = true
 
             // Count successful syncs (any board). After 3+, arm a one-time review request.
             successfulSyncCount += 1
             if successfulSyncCount >= 3 && !didRequestReviewAfterSync {
                 pendingReviewReason = "board_sync"
             }
+        } catch is CancellationError {
+            dismissSyncStatus()
         } catch {
+            dismissSyncStatus()
             syncMessage = "Sync failed: \(error.localizedDescription)"
         }
+    }
+
+    private func applyTB2SyncProgress(_ progress: TB2SyncManager.SyncProgress) {
+        syncProgressText = tb2SyncProgressText(progress)
+
+        switch progress.stage {
+        case .loggingIn:
+            activeSyncStep = nil
+        case .cachingClimbs:
+            setSyncStep(.climbNames, to: fraction(for: progress))
+        case .cachingClimbStats:
+            setSyncStep(.climbNames, to: 1)
+            setSyncStep(.climbGrades, to: fraction(for: progress))
+        case .loadingDifficulties, .loadingLogbook:
+            setSyncStep(.climbNames, to: 1)
+            setSyncStep(.climbGrades, to: 1)
+            setSyncStep(.logbook, to: fraction(for: progress))
+        case .applyingRows, .backfillingNames, .backfillingGrades:
+            setSyncStep(.climbNames, to: 1)
+            setSyncStep(.climbGrades, to: 1)
+            setSyncStep(.logbook, to: 0.9)
+        case .finished:
+            activeSyncStep = nil
+            syncStepFractions = Array(repeating: 1.0, count: SyncStep.allCases.count)
+        }
+    }
+
+    private func setSyncStep(_ step: SyncStep, to fraction: Double) {
+        let next = max(syncStepFractions[step.rawValue], min(max(fraction, 0), 1))
+        syncStepFractions[step.rawValue] = next
+        if next < 1 {
+            activeSyncStep = step
+        } else if activeSyncStep == step {
+            activeSyncStep = nil
+        }
+    }
+
+    private func fraction(for progress: TB2SyncManager.SyncProgress) -> Double {
+        if progress.isComplete == true { return 1 }
+        guard let page = progress.page else { return 0.05 }
+        return min(max(Double(page) / Double(TB2Client.Constants.defaultMaxSyncPages), 0.05), 0.95)
+    }
+
+    private func tb2SyncProgressText(_ progress: TB2SyncManager.SyncProgress) -> String {
+        let base: String
+        switch progress.stage {
+        case .loggingIn:
+            base = "Signing in to Tension Board…"
+        case .cachingClimbs:
+            base = "Caching climb names"
+        case .cachingClimbStats:
+            base = "Caching climb grades"
+        case .loadingDifficulties:
+            base = "Loading grade metadata…"
+        case .loadingLogbook:
+            base = "Loading ascents and attempts"
+        case .applyingRows:
+            base = "Saving climbs…"
+        case .backfillingNames, .backfillingGrades:
+            base = "Finalizing ascents and attempts…"
+        case .finished:
+            base = "Finishing sync…"
+        }
+
+        guard progress.page != nil else { return base }
+        if progress.isComplete == true {
+            return "\(base) - complete"
+        }
+        let percent = Int((fraction(for: progress) * 100).rounded())
+        return "\(base) - \(percent)%"
     }
 
     private func loadCredentials(for board: BoardConnection) -> TB2Credentials? {
