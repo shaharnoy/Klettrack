@@ -1019,6 +1019,18 @@ struct PlanDayEditor: View {
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Show progress for \(name)")
 
+                // Start a timer for this exercise
+                Button {
+                    timerAppState.switchToTimer(with: day, exerciseName: name)
+                } label: {
+                    Image(systemName: "timer")
+                }
+                .labelStyle(.iconOnly)
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .foregroundStyle(.orange)
+                .accessibilityLabel("Start timer for \(name)")
+
                 // Conditional logging button based on exercise type (no “wrong icon then swap”)
                 if isBouldering == true {
                     Button {

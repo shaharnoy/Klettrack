@@ -27,15 +27,24 @@ struct TimerView: View {
     @State private var sheetRoute: SheetRoute?
     
     let planDay: PlanDay?
-    
+    var exerciseName: String? = nil
+
     // Computed property to access the timer manager
     private var timerManager: TimerManager {
         sharedTimerManager.timerManager
     }
-    
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
+                // Exercise context (when launched from a plan day exercise)
+                if let exerciseName {
+                    Label(exerciseName, systemImage: "figure.climbing")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 // Timer Display
                 timerDisplaySection
                 
@@ -435,10 +444,10 @@ struct TimerView: View {
             return
         }
         
-        let session = TimerSession(planDayId: planDay?.id)
+        let session = TimerSession(planDayId: planDay?.id, exerciseName: exerciseName)
         context.insert(session)
         try? context.save()
-        
+
         timerManager.start(with: config, session: session)
     }
     
@@ -520,7 +529,8 @@ struct TimerView: View {
         let session = TimerSession(
             templateId: template?.id,
             templateName: template?.name,
-            planDayId: planDay?.id
+            planDayId: planDay?.id,
+            exerciseName: exerciseName
         )
         
         context.insert(session)
@@ -538,7 +548,7 @@ struct TimerView: View {
     
     private func resumeTimer() {
         guard let config = timerManager.configuration else { return }
-        let session = TimerSession(planDayId: planDay?.id)
+        let session = TimerSession(planDayId: planDay?.id, exerciseName: exerciseName)
         context.insert(session)
         timerManager.start(with: config, session: session)
     }

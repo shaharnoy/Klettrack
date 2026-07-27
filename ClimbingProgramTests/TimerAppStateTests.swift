@@ -19,4 +19,14 @@ final class TimerAppStateTests: XCTestCase {
         state.switchToTimer()
         XCTAssertEqual(state.selectedTab, 5)
     }
+
+    func testSwitchToTimerCarriesAndClearsExerciseName() {
+        let state = TimerAppState()
+        state.switchToTimer(exerciseName: "Hangboard Repeaters")
+        XCTAssertEqual(state.currentExerciseName, "Hangboard Repeaters")
+
+        // A day-level launch must not leave the previous exercise label behind.
+        state.switchToTimer()
+        XCTAssertNil(state.currentExerciseName)
+    }
 }

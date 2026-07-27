@@ -293,24 +293,28 @@ final class TimerSession {
     var templateId: UUID?
     var templateName: String?
     var planDayId: UUID?
+    /// Set when the timer was started from a specific exercise in a plan day.
+    var exerciseName: String?
     var totalElapsedSeconds: Int
     var completedIntervals: Int
     var laps: [TimerLap] = []
     var wasCompleted: Bool
     var dailynotes: String?
-        
-    
+
+
     init(
         id: UUID = UUID(),
         templateId: UUID? = nil,
         templateName: String? = nil,
-        planDayId: UUID? = nil
+        planDayId: UUID? = nil,
+        exerciseName: String? = nil
     ) {
         self.id = id
         self.startDate = Date()
         self.templateId = templateId
         self.templateName = templateName
         self.planDayId = planDayId
+        self.exerciseName = exerciseName
         self.totalElapsedSeconds = 0
         self.completedIntervals = 0
         self.wasCompleted = false

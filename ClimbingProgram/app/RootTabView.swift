@@ -13,7 +13,8 @@ import SwiftData
 class TimerAppState {
     var selectedTab: Int = 1
     var currentPlanDay: PlanDay? = nil
-    
+    var currentExerciseName: String? = nil
+
     // Navigation path storage for each tab to preserve navigation state
     var catalogNavigationPath = NavigationPath()
     var plansNavigationPath = NavigationPath()
@@ -25,8 +26,11 @@ class TimerAppState {
     // Reference to shared timer manager
     private let sharedTimerManager = SharedTimerManager.shared
     
-    func switchToTimer(with planDay: PlanDay? = nil) {
+    // exerciseName defaults to nil so day-level launches also clear any stale
+    // exercise context left over from a previous per-exercise launch.
+    func switchToTimer(with planDay: PlanDay? = nil, exerciseName: String? = nil) {
         currentPlanDay = planDay
+        currentExerciseName = exerciseName
         selectedTab = 5 // Timer tab index
     }
     
@@ -96,7 +100,10 @@ struct RootTabView: View {
                         ProgressViewScreen()
                     }
                 case 5:
-                    TimerView(planDay: timerAppState.currentPlanDay)
+                    TimerView(
+                        planDay: timerAppState.currentPlanDay,
+                        exerciseName: timerAppState.currentExerciseName
+                    )
                 default:
                     NavigationStack(path: $timerAppState.catalogNavigationPath) {
                         ClimbView()
