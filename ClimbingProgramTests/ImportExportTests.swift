@@ -200,6 +200,91 @@ class ImportExportTests: ClimbingProgramTestSuite {
     }
     
     
+    // MARK: - Catalog reconciliation on plan import
+
+    /// Plan views resolve grouping/guidance/logging affordances by exercise name
+    /// against the catalog, so importing a plan must create the missing entries.
+    private func importPlanCSV(
+        named fileName: String,
+        rows: [String]
+    ) async throws -> Int {
+        let csvContent = ([testCSVHeader] + rows).joined(separator: "\n")
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        try csvContent.write(to: tempURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        return try await LogCSV.importCSVAsync(from: tempURL, into: context, tag: "catalog", dedupe: false)
+    }
+
+    private func catalogExercises() -> [(activity: String, type: String, exercise: Exercise)] {
+        let activities = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
+        return activities.flatMap { activity in
+            activity.types.flatMap { type in
+                type.exercises.map { (activity.name, type.name, $0) }
+            }
+        }
+    }
+
+    func testPlanImportCreatesCatalogEntries() async throws {
+        let planId = UUID()
+        let planName = "Imported Plan"
+        let imported = try await importPlanCSV(named: "catalog_create.csv", rows: [
+            "2025-08-23 11:30:00,exercise,Boulder Project,,,,,,,,,,,,5,3,45.000,,\(planId.uuidString),\(planName),,Stay tense,,,",
+            "2025-08-23 11:31:00,exercise,Hangboard Repeaters,,,,,,,,,,,,7,4,0.000,,\(planId.uuidString),\(planName),,,,,"
+        ])
+        XCTAssertEqual(imported, 2)
+
+        let entries = catalogExercises()
+        let byName = Dictionary(uniqueKeysWithValues: entries.map { ($0.exercise.name, $0) })
+
+        let boulder = try XCTUnwrap(byName["Boulder Project"], "Boulder-named exercise should be in the catalog")
+        XCTAssertEqual(boulder.activity, "Imported Bouldering",
+                       "Boulder-named exercises route to the activity that trips the bouldering heuristic")
+        XCTAssertEqual(boulder.type, planName, "TrainingType should be named after the source plan")
+        XCTAssertEqual(boulder.exercise.repsText, "5")
+        XCTAssertEqual(boulder.exercise.setsText, "3")
+        XCTAssertEqual(boulder.exercise.durationText, "45 min")
+        XCTAssertEqual(boulder.exercise.notes, "Stay tense")
+
+        let hangboard = try XCTUnwrap(byName["Hangboard Repeaters"])
+        XCTAssertEqual(hangboard.activity, "Imported")
+        XCTAssertEqual(hangboard.type, planName)
+        XCTAssertEqual(hangboard.exercise.repsText, "7")
+        XCTAssertEqual(hangboard.exercise.setsText, "4")
+        XCTAssertNil(hangboard.exercise.durationText, "A 0.000 duration means unset, not \"0 min\"")
+    }
+
+    func testPlanImportDoesNotDuplicateCatalogEntries() async throws {
+        let planId = UUID()
+        let rows = [
+            "2025-08-24 09:00:00,exercise,Campus Ladders,,,,,,,,,,,,6,3,0.000,,\(planId.uuidString),Dup Plan,,,,,"
+        ]
+
+        // Pre-existing user catalog entry with the same name must win.
+        let activity = createTestActivity(name: "Strength")
+        let type = createTestTrainingType(activity: activity, name: "Power")
+        createTestExercise(trainingType: type, name: "Campus Ladders", repsText: "original")
+        try context.save()
+
+        _ = try await importPlanCSV(named: "catalog_dup_1.csv", rows: rows)
+        let afterFirst = catalogExercises()
+        XCTAssertEqual(afterFirst.filter { $0.exercise.name == "Campus Ladders" }.count, 1,
+                       "Existing catalog name should not be duplicated by import")
+        XCTAssertEqual(afterFirst.first { $0.exercise.name == "Campus Ladders" }?.exercise.repsText, "original",
+                       "Existing catalog entry should be left untouched")
+
+        _ = try await importPlanCSV(named: "catalog_dup_2.csv", rows: rows)
+        XCTAssertEqual(catalogExercises().count, afterFirst.count,
+                       "Re-importing the same plan should not add catalog entries")
+    }
+
+    func testLogOnlyImportDoesNotTouchCatalog() async throws {
+        let imported = try await importPlanCSV(named: "catalog_logonly.csv", rows: [
+            "2025-08-25 08:00:00,exercise,Boulder Freeplay,,,,,,,,,,,,10,2,0.000,,,,,No plan here,,,"
+        ])
+        XCTAssertEqual(imported, 1)
+        XCTAssertTrue(catalogExercises().isEmpty, "Rows without a plan_id must not pollute the catalog")
+    }
+
     // MARK: - Round-trip Tests
     
     func testExportImportRoundTrip() async throws {

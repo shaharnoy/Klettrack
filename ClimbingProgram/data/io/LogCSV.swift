@@ -572,7 +572,11 @@ extension LogCSV {
         
         // Track day types by date for each plan to preserve day type information
         var planDayTypesByDate: [UUID: [Date: String]] = [:]
-        
+
+        // Collect imported plan exercises (first occurrence wins) so we can
+        // make sure they exist in the catalog after import
+        var catalogCandidates: [String: (reps: Double?, sets: Double?, duration: Double?, notes: String?, planName: String?)] = [:]
+
         for (idx, e) in entries.enumerated() {
             // Progress from 0.5 → 1.0 during application
             if idx % 50 == 0 {
@@ -628,6 +632,11 @@ extension LogCSV {
                     if let dayTypeKey = e.dayTypeKey {
                         if planDayTypesByDate[planId] == nil { planDayTypesByDate[planId] = [:] }
                         planDayTypesByDate[planId]![startOfDay] = dayTypeKey
+                    }
+
+                    // Remember plan exercises for catalog reconciliation
+                    if catalogCandidates[e.name] == nil {
+                        catalogCandidates[e.name] = (e.reps, e.sets, e.duration, e.notes, e.planName)
                     }
                 }
                 
@@ -885,8 +894,69 @@ extension LogCSV {
             }
         }
         
+        // Make sure imported plan exercises exist in the catalog. Plan views
+        // resolve activity grouping, guidance text, and logging affordances by
+        // exercise name against the catalog, so without this step imported
+        // plans render under "Unknown" with no per-exercise guidance.
+        ensureCatalogEntries(for: catalogCandidates, in: context)
+
         try context.save()
         return inserted
+    }
+
+    /// Create catalog entries for imported plan exercises that don't exist yet.
+    /// Exercises are grouped under an "Imported" activity (or "Imported Bouldering"
+    /// for names containing "boulder", so the plan view offers the climb-log
+    /// button via the existing activity-name heuristic), with one TrainingType
+    /// per source plan. Metrics from the CSV become the exercise guidance texts.
+    @MainActor
+    private static func ensureCatalogEntries(
+        for candidates: [String: (reps: Double?, sets: Double?, duration: Double?, notes: String?, planName: String?)],
+        in context: ModelContext
+    ) {
+        guard !candidates.isEmpty else { return }
+
+        // Names already present anywhere in the catalog: guidance lookup is
+        // global and first-wins, so never create duplicates.
+        let existingNames: Set<String> = Set(
+            ((try? context.fetch(FetchDescriptor<Exercise>())) ?? []).map {
+                $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        )
+
+        // CSV writes unset metrics as 0.000, so zero means "no guidance", not "zero reps".
+        func metricText(_ value: Double?) -> String? {
+            guard let value, value != 0 else { return nil }
+            return value == value.rounded()
+                ? String(Int(value))
+                : value.formatted(.number.precision(.fractionLength(1)))
+        }
+
+        for (name, meta) in candidates.sorted(by: { $0.key < $1.key }) {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !existingNames.contains(trimmed) else { continue }
+
+            let isBoulder = trimmed.localizedLowercase.contains("boulder")
+            let activity = CatalogSeeder.ensureActivity(
+                isBoulder ? "Imported Bouldering" : "Imported",
+                in: context
+            )
+            let planName = meta.planName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let type = CatalogSeeder.ensureType(
+                (planName?.isEmpty == false) ? planName! : "Imported plan",
+                in: activity
+            )
+
+            CatalogSeeder.ensureExercise(
+                trimmed,
+                in: type,
+                reps: metricText(meta.reps),
+                duration: metricText(meta.duration).map { "\($0) min" },
+                sets: metricText(meta.sets),
+                rest: nil,
+                notes: meta.notes
+            )
+        }
     }
 }
 
