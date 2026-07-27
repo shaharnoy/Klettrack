@@ -58,8 +58,22 @@ enum LogCSV {
         // Fetch all plans to look up day types
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
         
-        // Header extended with climb_id and tb2_uuid at the end (backward compatible)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs"]
+        // Header extended with climb_id, tb2_uuid and the timer columns at the end
+        // (backward compatible: the importer resolves columns by name)
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,timer_name,timer_spec"]
+
+        // Attached timers, by exercise name. Built once — export walks SessionItems,
+        // not catalog exercises, so a per-row fetch would be O(rows).
+        let allTemplates: [TimerTemplate] = (try? context.fetch(FetchDescriptor<TimerTemplate>())) ?? []
+        let templatesById = Dictionary(allTemplates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var timerByExerciseName: [String: TimerTemplate] = [:]
+        for exercise in (try? context.fetch(FetchDescriptor<Exercise>())) ?? [] {
+            guard let templateId = exercise.timerTemplateId,
+                  let template = templatesById[templateId],
+                  timerByExerciseName[exercise.name] == nil
+            else { continue }
+            timerByExerciseName[exercise.name] = template
+        }
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -92,6 +106,8 @@ enum LogCSV {
                     }
                 }
                 
+                let attachedTimer = timerByExerciseName[i.exerciseName]
+
                 rows.append([
                     d,
                     "exercise", // type
@@ -117,7 +133,9 @@ enum LogCSV {
                     csvEscape(i.notes ?? ""),
                     "", // climb_id (exercises don't use this)
                     "",  // tb2_uuid (exercises don't use this)
-                    ""  // media_ref (exercises don't use this)
+                    "",  // media_ref (exercises don't use this)
+                    csvEscape(attachedTimer?.name ?? ""),
+                    csvEscape(attachedTimer.map { TimerSpec.encode($0) } ?? "")
                 ].joined(separator: ","))
             }
         }
@@ -158,10 +176,12 @@ enum LogCSV {
                 csvEscape(climb.notes ?? ""),
                 climb.id.uuidString,                   // climb_id
                 csvEscape(climb.tb2ClimbUUID ?? ""),   // tb2_uuid
-                csvEscape(mediaRefs)                   // media_refs
+                csvEscape(mediaRefs),                  // media_refs
+                "",                                    // timer_name (climbs don't use this)
+                ""                                     // timer_spec (climbs don't use this)
             ].joined(separator: ","))
         }
-        
+
         return LogCSVDocument(csv: rows.joined(separator: "\n"))
     }
 }
@@ -313,6 +333,8 @@ extension LogCSV {
         let climbId: UUID?
         let tb2UUID: String?
         let mediaRefs: String?
+        let timerName: String?
+        let timerSpec: String?
     }
     
     @MainActor
@@ -385,6 +407,8 @@ extension LogCSV {
                 static let climbId    = ["climb_id", "climbid"]
                 static let tb2UUID    = ["tb2_uuid", "tb2"]
                 static let mediaRefs  = ["media_refs", "media"]
+                static let timerName  = ["timer_name", "timer"]
+                static let timerSpec  = ["timer_spec", "timer_config"]
             }
             
             let hasHeader = (idx(Cols.date) != nil && idx(Cols.type) != nil)
@@ -416,7 +440,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, timerNameStr, timerSpecStr: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -444,6 +468,9 @@ extension LogCSV {
                     climbIdStr   = val(parts, Cols.climbId)
                     tb2UUIDStr   = val(parts, Cols.tb2UUID)
                     mediaRefsStr = val(parts, Cols.mediaRefs)
+                    // Absent in older exports — `val` returns "" and the row is unaffected.
+                    timerNameStr = val(parts, Cols.timerName)
+                    timerSpecStr = val(parts, Cols.timerSpec)
                 } else {
                     // Legacy positional fallback (will be removed in future)
                     func p(_ i: Int) -> String { parts.indices.contains(i) ? parts[i] : "" }
@@ -472,6 +499,8 @@ extension LogCSV {
                     tb2UUIDStr   = p(22)
                     mediaRefsStr = ""   // no media column in legacy CSV
                     feelsLikeGradeStr = "" //no alternative grade in legacy CSV
+                    timerNameStr = ""   // no timer columns in legacy CSV
+                    timerSpecStr = ""
 
                 }
                 
@@ -538,7 +567,9 @@ extension LogCSV {
                     notes: notesOpt,
                     climbId: climbId,
                     tb2UUID: tb2uuidOpt,
-                    mediaRefs: mediaRefsOpt
+                    mediaRefs: mediaRefsOpt,
+                    timerName: timerNameStr.isEmpty ? nil : timerNameStr,
+                    timerSpec: timerSpecStr.isEmpty ? nil : timerSpecStr
                 ))
             }
             
@@ -575,7 +606,7 @@ extension LogCSV {
 
         // Collect imported plan exercises (first occurrence wins) so we can
         // make sure they exist in the catalog after import
-        var catalogCandidates: [String: (reps: Double?, sets: Double?, duration: Double?, notes: String?, planName: String?)] = [:]
+        var catalogCandidates: [String: CatalogCandidate] = [:]
 
         for (idx, e) in entries.enumerated() {
             // Progress from 0.5 → 1.0 during application
@@ -636,7 +667,15 @@ extension LogCSV {
 
                     // Remember plan exercises for catalog reconciliation
                     if catalogCandidates[e.name] == nil {
-                        catalogCandidates[e.name] = (e.reps, e.sets, e.duration, e.notes, e.planName)
+                        catalogCandidates[e.name] = CatalogCandidate(
+                            reps: e.reps,
+                            sets: e.sets,
+                            duration: e.duration,
+                            notes: e.notes,
+                            planName: e.planName,
+                            timerName: e.timerName,
+                            timerSpec: e.timerSpec
+                        )
                     }
                 }
                 
@@ -909,20 +948,39 @@ extension LogCSV {
     /// for names containing "boulder", so the plan view offers the climb-log
     /// button via the existing activity-name heuristic), with one TrainingType
     /// per source plan. Metrics from the CSV become the exercise guidance texts.
+    /// A plan exercise row's catalog-relevant fields, first occurrence wins.
+    struct CatalogCandidate {
+        let reps: Double?
+        let sets: Double?
+        let duration: Double?
+        let notes: String?
+        let planName: String?
+        let timerName: String?
+        let timerSpec: String?
+    }
+
     @MainActor
     private static func ensureCatalogEntries(
-        for candidates: [String: (reps: Double?, sets: Double?, duration: Double?, notes: String?, planName: String?)],
+        for candidates: [String: CatalogCandidate],
         in context: ModelContext
     ) {
         guard !candidates.isEmpty else { return }
 
-        // Names already present anywhere in the catalog: guidance lookup is
-        // global and first-wins, so never create duplicates.
-        let existingNames: Set<String> = Set(
-            ((try? context.fetch(FetchDescriptor<Exercise>())) ?? []).map {
-                $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-        )
+        // Exercises already in the catalog, by trimmed name. Guidance lookup is
+        // global and first-wins, so never create duplicates — but an existing
+        // exercise may still be missing a timer, which we can fill in below.
+        var existingByName: [String: Exercise] = [:]
+        for exercise in (try? context.fetch(FetchDescriptor<Exercise>())) ?? [] {
+            let key = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if existingByName[key] == nil { existingByName[key] = exercise }
+        }
+
+        // Templates by name, so a CSV can reuse one instead of creating a duplicate.
+        var templatesByName: [String: TimerTemplate] = [:]
+        for template in (try? context.fetch(FetchDescriptor<TimerTemplate>())) ?? [] {
+            let key = template.name.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+            if templatesByName[key] == nil { templatesByName[key] = template }
+        }
 
         // CSV writes unset metrics as 0.000, so zero means "no guidance", not "zero reps".
         func metricText(_ value: Double?) -> String? {
@@ -932,9 +990,32 @@ extension LogCSV {
                 : value.formatted(.number.precision(.fractionLength(1)))
         }
 
+        /// Reuse a template by name, else create one from the spec. nil when the row carries neither.
+        func resolveTimer(for exerciseName: String, _ meta: CatalogCandidate) -> TimerTemplate? {
+            let name = meta.timerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !name.isEmpty, let existing = templatesByName[name.localizedLowercase] {
+                return existing
+            }
+            guard let draft = TimerSpec.decode(meta.timerSpec) else { return nil }
+
+            let templateName = name.isEmpty ? "\(exerciseName) Timer" : name
+            let created = TimerSpec.makeTemplate(named: templateName, from: draft)
+            context.insert(created)
+            templatesByName[templateName.localizedLowercase] = created
+            return created
+        }
+
         for (name, meta) in candidates.sorted(by: { $0.key < $1.key }) {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, !existingNames.contains(trimmed) else { continue }
+            guard !trimmed.isEmpty else { continue }
+
+            // Already in the catalog: leave it alone, but let it adopt a timer if it has none.
+            if let existing = existingByName[trimmed] {
+                if existing.timerTemplateId == nil, let template = resolveTimer(for: trimmed, meta) {
+                    existing.timerTemplateId = template.id
+                }
+                continue
+            }
 
             let isBoulder = trimmed.localizedLowercase.contains("boulder")
             let activity = CatalogSeeder.ensureActivity(
@@ -956,6 +1037,13 @@ extension LogCSV {
                 rest: nil,
                 notes: meta.notes
             )
+
+            if let created = type.exercises.first(where: { $0.name == trimmed }) {
+                existingByName[trimmed] = created
+                if let template = resolveTimer(for: trimmed, meta) {
+                    created.timerTemplateId = template.id
+                }
+            }
         }
     }
 }

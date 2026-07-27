@@ -78,7 +78,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         // Verify header
         let header = lines.first!
         let expectedFields = [
-            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs"
+            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","timer_name","timer_spec"
         ]
         let headerFields = header.components(separatedBy: ",")
         XCTAssertEqual(headerFields.count, expectedFields.count, "Header should have correct number of fields")
@@ -206,9 +206,10 @@ class ImportExportTests: ClimbingProgramTestSuite {
     /// against the catalog, so importing a plan must create the missing entries.
     private func importPlanCSV(
         named fileName: String,
-        rows: [String]
+        rows: [String],
+        header: String? = nil
     ) async throws -> Int {
-        let csvContent = ([testCSVHeader] + rows).joined(separator: "\n")
+        let csvContent = ([header ?? testCSVHeader] + rows).joined(separator: "\n")
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         try csvContent.write(to: tempURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tempURL) }
@@ -283,6 +284,165 @@ class ImportExportTests: ClimbingProgramTestSuite {
         ])
         XCTAssertEqual(imported, 1)
         XCTAssertTrue(catalogExercises().isEmpty, "Rows without a plan_id must not pollute the catalog")
+    }
+
+    // MARK: - Timers in the plan CSV
+
+    /// Header including the timer columns. The plain `testCSVHeader` above deliberately
+    /// stays without them, so the older-file path keeps being exercised.
+    private var testCSVHeaderWithTimers: String { testCSVHeader + ",timer_name,timer_spec" }
+
+    private func timerRow(
+        date: String = "2025-09-10 09:00:00",
+        exercise: String,
+        planId: UUID,
+        planName: String = "Timer Plan",
+        timerName: String = "",
+        timerSpec: String = ""
+    ) -> String {
+        "\(date),exercise,\(exercise),,,,,,,,,,,,5,3,0.000,,\(planId.uuidString),\(planName),,,,,,\(timerName),\(timerSpec)"
+    }
+
+    private func catalogTemplates() -> [TimerTemplate] {
+        (try? context.fetch(FetchDescriptor<TimerTemplate>())) ?? []
+    }
+
+    private func exercise(named name: String) -> Exercise? {
+        catalogExercises().first { $0.exercise.name == name }?.exercise
+    }
+
+    func testImportCreatesTimerTemplateFromSpec() async throws {
+        let planId = UUID()
+        _ = try await importPlanCSV(named: "timer_create.csv", rows: [
+            timerRow(exercise: "Weighted Pull-Ups", planId: planId,
+                     timerName: "Pull Protocol", timerSpec: "reps=5;sets=3;rest=180")
+        ], header: testCSVHeaderWithTimers)
+
+        let template = try XCTUnwrap(catalogTemplates().first { $0.name == "Pull Protocol" })
+        XCTAssertEqual(template.repsPerSet, 5, "reps= marks the template rep-based")
+        XCTAssertEqual(template.repeatCount, 3)
+        XCTAssertEqual(template.restTimeBetweenIntervals, 180)
+
+        let imported = try XCTUnwrap(exercise(named: "Weighted Pull-Ups"))
+        XCTAssertEqual(imported.timerTemplateId, template.id)
+
+        // And it classifies the way the timer expects.
+        guard case .repBased(let reps, let sets, let rest, _)? =
+                ExerciseTimerDefaults.plan(for: imported, in: context) else {
+            return XCTFail("Imported exercise should be rep-based")
+        }
+        XCTAssertEqual(reps, 5)
+        XCTAssertEqual(sets, 3)
+        XCTAssertEqual(rest, 180)
+    }
+
+    func testImportReusesExistingTemplateByName() async throws {
+        let existing = TimerTemplate(name: "Shared Protocol", totalTimeSeconds: 90)
+        context.insert(existing)
+        try context.save()
+        let countBefore = catalogTemplates().count
+
+        let planId = UUID()
+        _ = try await importPlanCSV(named: "timer_reuse.csv", rows: [
+            timerRow(exercise: "Some Hangs", planId: planId,
+                     timerName: "shared protocol", timerSpec: "total=999")
+        ], header: testCSVHeaderWithTimers)
+
+        XCTAssertEqual(catalogTemplates().count, countBefore, "Matching by name must reuse, not create")
+        XCTAssertEqual(exercise(named: "Some Hangs")?.timerTemplateId, existing.id)
+        XCTAssertEqual(existing.totalTimeSeconds, 90, "The existing template is not rewritten by the spec")
+    }
+
+    func testReimportingCreatesNoDuplicateTemplates() async throws {
+        let planId = UUID()
+        let rows = [
+            timerRow(exercise: "Repeat Hangs", planId: planId,
+                     timerName: "Once Only", timerSpec: "total=120")
+        ]
+
+        _ = try await importPlanCSV(named: "timer_dup_1.csv", rows: rows, header: testCSVHeaderWithTimers)
+        let afterFirst = catalogTemplates().count
+
+        _ = try await importPlanCSV(named: "timer_dup_2.csv", rows: rows, header: testCSVHeaderWithTimers)
+        XCTAssertEqual(catalogTemplates().count, afterFirst, "Re-import must not duplicate the template")
+        XCTAssertEqual(catalogTemplates().filter { $0.name == "Once Only" }.count, 1)
+    }
+
+    func testImportNeverOverwritesAnExistingAttachment() async throws {
+        let activity = createTestActivity(name: "Strength")
+        let type = createTestTrainingType(activity: activity, name: "Power")
+        let mine = TimerTemplate(name: "My Choice", totalTimeSeconds: 60)
+        context.insert(mine)
+        let existing = Exercise(name: "Guarded Exercise", timerTemplateId: mine.id)
+        type.exercises.append(existing)
+        try context.save()
+
+        _ = try await importPlanCSV(named: "timer_guard.csv", rows: [
+            timerRow(exercise: "Guarded Exercise", planId: UUID(),
+                     timerName: "Intruder", timerSpec: "total=999")
+        ], header: testCSVHeaderWithTimers)
+
+        XCTAssertEqual(existing.timerTemplateId, mine.id, "An import must not steal an existing attachment")
+    }
+
+    /// An exercise already in the catalog but without a timer may adopt one.
+    func testImportFillsMissingTimerOnExistingExercise() async throws {
+        let activity = createTestActivity(name: "Strength")
+        let type = createTestTrainingType(activity: activity, name: "Power")
+        let existing = Exercise(name: "Adoptable")
+        type.exercises.append(existing)
+        try context.save()
+
+        _ = try await importPlanCSV(named: "timer_adopt.csv", rows: [
+            timerRow(exercise: "Adoptable", planId: UUID(),
+                     timerName: "Adopted", timerSpec: "total=45")
+        ], header: testCSVHeaderWithTimers)
+
+        let template = try XCTUnwrap(catalogTemplates().first { $0.name == "Adopted" })
+        XCTAssertEqual(existing.timerTemplateId, template.id)
+    }
+
+    func testLogOnlyRowsCreateNoTemplates() async throws {
+        _ = try await importPlanCSV(named: "timer_logonly.csv", rows: [
+            "2025-09-11 09:00:00,exercise,No Plan Here,,,,,,,,,,,,5,3,0.000,,,,,,,,,Ghost Timer,total=60"
+        ], header: testCSVHeaderWithTimers)
+
+        XCTAssertTrue(catalogTemplates().isEmpty, "Rows without a plan_id must not create templates")
+    }
+
+    func testCSVWithoutTimerColumnsStillImports() async throws {
+        let planId = UUID()
+        let imported = try await importPlanCSV(named: "timer_absent.csv", rows: [
+            "2025-09-12 09:00:00,exercise,Legacy Exercise,,,,,,,,,,,,5,3,0.000,,\(planId.uuidString),Legacy Plan,,,,,"
+        ])
+        XCTAssertEqual(imported, 1)
+        XCTAssertNotNil(exercise(named: "Legacy Exercise"))
+        XCTAssertTrue(catalogTemplates().isEmpty)
+    }
+
+    func testTimerAttachmentSurvivesExportImportRoundTrip() async throws {
+        let planId = UUID()
+        _ = try await importPlanCSV(named: "timer_rt_seed.csv", rows: [
+            timerRow(exercise: "Round Trip Hangs", planId: planId,
+                     timerName: "RT Protocol", timerSpec: "reps=4;sets=2;rest=120")
+        ], header: testCSVHeaderWithTimers)
+
+        let exported = LogCSV.makeExportCSV(context: context).csv
+        XCTAssertTrue(exported.contains("RT Protocol"), "Export should carry the template name")
+        XCTAssertTrue(exported.contains("reps=4;sets=2;rest=120"), "Export should carry the spec")
+
+        // Wipe the attachment, then re-import the export and confirm it comes back.
+        let target = try XCTUnwrap(exercise(named: "Round Trip Hangs"))
+        target.timerTemplateId = nil
+        try context.save()
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("timer_roundtrip.csv")
+        try exported.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        _ = try await LogCSV.importCSVAsync(from: url, into: context, tag: "rt", dedupe: true)
+
+        let template = try XCTUnwrap(catalogTemplates().first { $0.name == "RT Protocol" })
+        XCTAssertEqual(target.timerTemplateId, template.id, "Attachment restored from the round-tripped CSV")
     }
 
     // MARK: - Round-trip Tests
