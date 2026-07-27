@@ -49,6 +49,27 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         XCTAssertNil(ExerciseTimerDefaults.parseCount(nil))
     }
 
+    // MARK: - Timer blurb
+
+    func testBlurbPrefersDescriptionThenFallsBackToNotes() {
+        let activity = createTestActivity(name: "Strength")
+        let type = createTestTrainingType(activity: activity, name: "Power")
+
+        let both = Exercise(name: "Both", exerciseDescription: "Keep tension", notes: "Ignore me")
+        let notesOnly = Exercise(name: "Notes only", notes: "Use a 20mm edge")
+        // The catalog editor writes "" for a cleared field, so blank must count as absent.
+        let blankDescription = Exercise(name: "Blank", exerciseDescription: "   ", notes: "Real cue")
+        let neither = Exercise(name: "Neither")
+        [both, notesOnly, blankDescription, neither].forEach { type.exercises.append($0) }
+        try? context.save()
+
+        XCTAssertEqual(ExerciseTimerDefaults.blurb(for: both), "Keep tension")
+        XCTAssertEqual(ExerciseTimerDefaults.blurb(for: notesOnly), "Use a 20mm edge")
+        XCTAssertEqual(ExerciseTimerDefaults.blurb(for: blankDescription), "Real cue",
+                       "A whitespace-only description must not win over real notes")
+        XCTAssertNil(ExerciseTimerDefaults.blurb(for: neither))
+    }
+
     // MARK: - Classification
 
     private func makeExercise(

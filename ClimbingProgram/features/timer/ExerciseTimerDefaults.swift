@@ -78,6 +78,19 @@ enum ExerciseTimerDefaults {
         return digits.isEmpty ? nil : Double(digits)
     }
 
+    // MARK: - Description
+
+    /// The cue to show while the timer runs: the exercise's description, falling back to its
+    /// notes. Mirrors the description-else-notes convention used for catalog search subtitles.
+    /// Blank strings count as absent — the catalog editor stores "" for a cleared field.
+    static func blurb(for exercise: Exercise) -> String? {
+        for candidate in [exercise.exerciseDescription, exercise.notes] {
+            let trimmed = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+
     // MARK: - Classification
 
     /// Resolve the timer for an exercise. First match wins:

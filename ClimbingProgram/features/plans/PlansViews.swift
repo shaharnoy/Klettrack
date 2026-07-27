@@ -32,6 +32,9 @@ private final class PlanDayEditorCache {
         let restText: String?
         let notes: String?
         let durationText: String?
+        /// Pre-resolved by `ExerciseTimerDefaults.blurb(for:)`. Not part of `hasGuidance` —
+        /// it feeds the timer, not the plan row's metric line.
+        var timerBlurb: String? = nil
 
         var hasGuidance: Bool {
             [repsText, setsText, restText, notes, durationText]
@@ -1113,6 +1116,8 @@ struct PlanDayEditor: View {
     private func timerContext(for name: String) -> ExerciseTimerContext {
         ExerciseTimerContext(
             exerciseName: name,
+            exerciseDescription: cache.guidanceByName[name]?.timerBlurb,
+            // (resolved at cache-warm time by ExerciseTimerDefaults.blurb)
             planDayDate: day.date,
             planId: cache.parentPlan?.id,
             planName: cache.parentPlan?.name,
@@ -1505,7 +1510,8 @@ struct PlanDayEditor: View {
                     setsText: $0.setsText,
                     restText: $0.restText,
                     notes: $0.notes,
-                    durationText: $0.durationText
+                    durationText: $0.durationText,
+                    timerBlurb: ExerciseTimerDefaults.blurb(for: $0)
                 ))
             },
             uniquingKeysWith: { existing, _ in existing } // first wins; no crash

@@ -60,10 +60,22 @@ struct TimerView: View {
             VStack(spacing: 20) {
                 // Exercise context (when launched from a plan day exercise)
                 if let exerciseName {
-                    Label(exerciseName, systemImage: "figure.climbing")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    VStack(spacing: 4) {
+                        Label(exerciseName, systemImage: "figure.climbing")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+
+                        // Technique cue from the catalog, most useful mid-set.
+                        if let blurb = appliedExercise?.exerciseDescription {
+                            Text(blurb)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
 
                 // Rep-based exercise: prompt for the set instead of counting it down.

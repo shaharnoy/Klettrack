@@ -11,6 +11,8 @@ import SwiftData
 /// Carries the plan identity because `PlanDay` has no back-reference to its `Plan`.
 struct ExerciseTimerContext: Equatable, Identifiable {
     let exerciseName: String
+    /// Catalog description, falling back to notes — shown as a cue while the timer runs.
+    var exerciseDescription: String? = nil
     let planDayDate: Date
     let planId: UUID?
     let planName: String?
