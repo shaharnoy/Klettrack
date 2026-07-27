@@ -52,3 +52,60 @@ enum LogDaySummaryBuilder {
         return grouped
     }
 }
+
+@MainActor
+enum LogDaySummaryFilter {
+    static func filteredSummaries(
+        _ summaries: [Date: LogDaySummary],
+        dateRange: DateRange,
+        selectedTagIDs: Set<UUID>,
+        calendar: Calendar = .current
+    ) -> [Date: LogDaySummary] {
+        summaries.filter { date, summary in
+            matchesDate(date, dateRange: dateRange, calendar: calendar) &&
+            matchesTags(summary, selectedTagIDs: selectedTagIDs)
+        }
+    }
+
+    static func isDateFilterActive(
+        dateRange: DateRange,
+        availableDates: [Date],
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard !availableDates.isEmpty,
+              let customStart = dateRange.customStart,
+              let customEnd = dateRange.customEnd,
+              let minDate = availableDates.min(),
+              let maxDate = availableDates.max()
+        else {
+            return false
+        }
+
+        return !(
+            calendar.isDate(customStart, inSameDayAs: minDate) &&
+            calendar.isDate(customEnd, inSameDayAs: maxDate)
+        )
+    }
+
+    private static func matchesDate(_ date: Date, dateRange: DateRange, calendar: Calendar) -> Bool {
+        let day = calendar.startOfDay(for: date)
+
+        if let customStart = dateRange.customStart {
+            let start = calendar.startOfDay(for: customStart)
+            if day < start { return false }
+        }
+
+        if let customEnd = dateRange.customEnd {
+            let end = calendar.startOfDay(for: customEnd)
+            if day > end { return false }
+        }
+
+        return true
+    }
+
+    private static func matchesTags(_ summary: LogDaySummary, selectedTagIDs: Set<UUID>) -> Bool {
+        guard !selectedTagIDs.isEmpty else { return true }
+        let dayTagIDs = Set(DayLogStore.activeTags(from: summary.dayLog).map(\.id))
+        return !dayTagIDs.isDisjoint(with: selectedTagIDs)
+    }
+}

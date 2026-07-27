@@ -984,9 +984,21 @@ struct SingleCatalogExercisePicker: View {
 
 private struct CombinedLogList: View {
     @Environment(\.modelContext) private var context
+    @Query(
+        filter: #Predicate<DayTag> { $0.isHidden == false },
+        sort: [
+            SortDescriptor<DayTag>(\DayTag.sort, order: .forward),
+            SortDescriptor<DayTag>(\DayTag.name, order: .forward)
+        ]
+    ) private var tags: [DayTag]
+
     let sessions: [Session]
     let climbEntries: [ClimbEntry]
     let dayLogs: [DayLog]
+
+    @State private var showFilters = false
+    @State private var dateRange = DateRange()
+    @State private var selectedTagIDs: Set<UUID> = []
     
     // Group data by date
     private var groupedData: [Date: LogDaySummary] {
@@ -996,15 +1008,38 @@ private struct CombinedLogList: View {
             dayLogs: dayLogs
         )
     }
+
+    private var filteredData: [Date: LogDaySummary] {
+        LogDaySummaryFilter.filteredSummaries(
+            groupedData,
+            dateRange: dateRange,
+            selectedTagIDs: selectedTagIDs
+        )
+    }
     
     private var sortedDates: [Date] {
-        groupedData.keys.sorted(by: >)
+        filteredData.keys.sorted(by: >)
+    }
+
+    private var allDates: [Date] {
+        groupedData.keys.sorted()
+    }
+
+    private var hasActiveFilters: Bool {
+        LogDaySummaryFilter.isDateFilterActive(
+            dateRange: dateRange,
+            availableDates: allDates
+        ) || !selectedTagIDs.isEmpty
     }
     
     var body: some View {
         List {
+            if !groupedData.isEmpty {
+                filterSection
+            }
+
             ForEach(sortedDates, id: \.self) { date in
-                let dayData = groupedData[date]!
+                let dayData = filteredData[date]!
                 NavigationLink {
                     CombinedDayDetailView(
                         date: date,
@@ -1022,8 +1057,83 @@ private struct CombinedLogList: View {
                 }
             }
             .onDelete(perform: delete)
+
+            if !groupedData.isEmpty, sortedDates.isEmpty {
+                Section {
+                    Text("No days match filters")
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
+            }
         }
         .listStyle(.insetGrouped)
+        .onAppear(perform: ensureDateRangeInitialized)
+        .onChange(of: groupedData.count) { _, _ in
+            ensureDateRangeInitialized()
+        }
+    }
+
+    @ViewBuilder
+    private var filterSection: some View {
+        Section {
+            VStack(spacing: 4) {
+                Button(action: toggleFilters) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Text(showFilters ? "Hide filters" : "Show filters")
+                        Spacer()
+                        if hasActiveFilters {
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 10, height: 10)
+                        }
+                    }
+                    .font(.subheadline)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+
+                if showFilters {
+                    LogFilterCard {
+                        VStack(spacing: 10) {
+                            HStack {
+                                HStack {
+                                    Text("Dates")
+                                    DateRangePicker(range: $dateRange)
+                                }
+                                ClearAllButton(
+                                    action: clearAllFilters,
+                                    isEnabled: hasActiveFilters
+                                )
+                            }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Tags")
+                                    .font(.callout)
+
+                                if tags.isEmpty {
+                                    Text("No day tags yet")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    FlowLayout(spacing: 8, rowSpacing: 8) {
+                                        ForEach(tags) { tag in
+                                            LogTagFilterChip(
+                                                tag: tag,
+                                                isSelected: selectedTagIDs.contains(tag.id),
+                                                onToggle: { toggleTag(tag) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
     }
     
     @MainActor
@@ -1036,7 +1146,7 @@ private struct CombinedLogList: View {
             
             for index in offsets {
                 let date = sortedDates[index]
-                guard let dayData = groupedData[date] else { continue }
+                guard let dayData = filteredData[date] else { continue }
 
                 //If there's a Session, remove its items first
                 if let session = dayData.session {
@@ -1057,6 +1167,101 @@ private struct CombinedLogList: View {
             }
             try? context.save()
         }
+    }
+
+    private func toggleFilters() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showFilters.toggle()
+        }
+    }
+
+    private func toggleTag(_ tag: DayTag) {
+        if selectedTagIDs.contains(tag.id) {
+            selectedTagIDs.remove(tag.id)
+        } else {
+            selectedTagIDs.insert(tag.id)
+        }
+    }
+
+    private func clearAllFilters() {
+        dateRange = DateRange()
+        selectedTagIDs.removeAll()
+        ensureDateRangeInitialized()
+    }
+
+    private func ensureDateRangeInitialized() {
+        guard let minDate = allDates.min(), let maxDate = allDates.max() else {
+            dateRange = DateRange()
+            return
+        }
+
+        if dateRange.customStart == nil || (dateRange.customStart ?? minDate) > minDate {
+            dateRange.customStart = minDate
+        }
+
+        if dateRange.customEnd == nil || (dateRange.customEnd ?? maxDate) < maxDate {
+            dateRange.customEnd = maxDate
+        }
+    }
+}
+
+private struct LogFilterCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content
+        }
+        .padding(12)
+        .background(
+            .ultraThinMaterial,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+    }
+}
+
+private struct LogTagFilterChip: View {
+    let tag: DayTag
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    private var color: Color {
+        DayTypeModel.color(for: tag.colorKey)
+    }
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 5) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.caption.bold())
+                }
+
+                Circle()
+                    .fill(color)
+                    .frame(width: 8, height: 8)
+
+                Text(tag.name)
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
+        .font(.caption)
+        .foregroundStyle(isSelected ? .primary : .secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(isSelected ? color.opacity(0.22) : Color.clear)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? color : .secondary.opacity(0.35), lineWidth: 1)
+        }
+        .clipShape(.rect(cornerRadius: 8))
+        .contentShape(.rect(cornerRadius: 8))
+        .accessibilityLabel(tag.name)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityHint(isSelected ? "Double tap to remove this tag from the filters." : "Double tap to filter by this tag.")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
 }

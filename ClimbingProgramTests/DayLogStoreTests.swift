@@ -146,4 +146,116 @@ final class DayLogStoreTests: BaseSwiftDataTestCase {
         XCTAssertEqual(grouped[mixedKey]?.exercises, 1)
         XCTAssertEqual(DayLogStore.activeTags(from: grouped[mixedKey]?.dayLog).map(\.name), ["Volume"])
     }
+
+    func testLogFilterDateRangeIncludesStartAndEndDays() throws {
+        let calendar = Calendar.current
+        let first = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 24)))
+        let second = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 25)))
+        let third = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 26)))
+        let grouped = logSummaries(for: [first, second, third], calendar: calendar)
+
+        let filtered = LogDaySummaryFilter.filteredSummaries(
+            grouped,
+            dateRange: DateRange(customStart: first, customEnd: second),
+            selectedTagIDs: [],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(Set(filtered.keys), Set([first, second].map { calendar.startOfDay(for: $0) }))
+    }
+
+    func testLogFilterMatchesAnySelectedTag() throws {
+        let calendar = Calendar.current
+        let volume = try XCTUnwrap(DayLogStore.createTag(name: "Volume", colorKey: "green", in: context))
+        let project = try XCTUnwrap(DayLogStore.createTag(name: "Project", colorKey: "red", in: context))
+        let travel = try XCTUnwrap(DayLogStore.createTag(name: "Travel", colorKey: "blue", in: context))
+        let volumeDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 24)))
+        let projectDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 25)))
+        let travelDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 26)))
+        let grouped = [
+            calendar.startOfDay(for: volumeDay): LogDaySummary(dayLog: dayLog(on: volumeDay, tags: [volume])),
+            calendar.startOfDay(for: projectDay): LogDaySummary(dayLog: dayLog(on: projectDay, tags: [project])),
+            calendar.startOfDay(for: travelDay): LogDaySummary(dayLog: dayLog(on: travelDay, tags: [travel]))
+        ]
+
+        let filtered = LogDaySummaryFilter.filteredSummaries(
+            grouped,
+            dateRange: DateRange(),
+            selectedTagIDs: [volume.id, project.id],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(Set(filtered.keys), Set([volumeDay, projectDay].map { calendar.startOfDay(for: $0) }))
+    }
+
+    func testLogFilterCombinesDateAndTagsWithAndBehavior() throws {
+        let calendar = Calendar.current
+        let volume = try XCTUnwrap(DayLogStore.createTag(name: "Volume", colorKey: "green", in: context))
+        let project = try XCTUnwrap(DayLogStore.createTag(name: "Project", colorKey: "red", in: context))
+        let first = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 24)))
+        let second = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 25)))
+        let third = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 26)))
+        let grouped = [
+            calendar.startOfDay(for: first): LogDaySummary(dayLog: dayLog(on: first, tags: [volume])),
+            calendar.startOfDay(for: second): LogDaySummary(dayLog: dayLog(on: second, tags: [project])),
+            calendar.startOfDay(for: third): LogDaySummary(dayLog: dayLog(on: third, tags: [volume]))
+        ]
+
+        let filtered = LogDaySummaryFilter.filteredSummaries(
+            grouped,
+            dateRange: DateRange(customStart: first, customEnd: second),
+            selectedTagIDs: [volume.id],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(Set(filtered.keys), [calendar.startOfDay(for: first)])
+    }
+
+    func testLogFilterNoSelectedTagsLeavesTagFilteringInactive() throws {
+        let calendar = Calendar.current
+        let volume = try XCTUnwrap(DayLogStore.createTag(name: "Volume", colorKey: "green", in: context))
+        let first = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 24)))
+        let second = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 25)))
+        let grouped = [
+            calendar.startOfDay(for: first): LogDaySummary(dayLog: dayLog(on: first, tags: [volume])),
+            calendar.startOfDay(for: second): LogDaySummary()
+        ]
+
+        let filtered = LogDaySummaryFilter.filteredSummaries(
+            grouped,
+            dateRange: DateRange(),
+            selectedTagIDs: [],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(Set(filtered.keys), Set(grouped.keys))
+    }
+
+    func testLogFilterResetEquivalentReturnsAllGroupedDays() throws {
+        let calendar = Calendar.current
+        let first = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 24)))
+        let second = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 25)))
+        let grouped = logSummaries(for: [first, second], calendar: calendar)
+
+        let filtered = LogDaySummaryFilter.filteredSummaries(
+            grouped,
+            dateRange: DateRange(),
+            selectedTagIDs: [],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(Set(filtered.keys), Set(grouped.keys))
+    }
+
+    private func logSummaries(for dates: [Date], calendar: Calendar) -> [Date: LogDaySummary] {
+        Dictionary(uniqueKeysWithValues: dates.map { date in
+            (calendar.startOfDay(for: date), LogDaySummary())
+        })
+    }
+
+    private func dayLog(on date: Date, tags: [DayTag]) -> DayLog {
+        let log = DayLog(date: date, tags: tags)
+        context.insert(log)
+        return log
+    }
 }
