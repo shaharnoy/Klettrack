@@ -161,6 +161,9 @@ struct RootTabView: View {
             runOnce(per: "climb_attempts_default_backfill_2026-06-02") {
                 backfillClimbEntryAttempts(context)
             }
+            runOnce(per: "day_log_plan_notes_backfill_2026-07-27") {
+                backfillDayLogsFromPlanDayNotes(context)
+            }
             runOnce(per: "daytypedefaultflags_backfill_2025-11-08") {
                 backfillDefaultFlags(context)
             }

@@ -30,6 +30,8 @@ class ClimbingProgramTestSuite: XCTestCase {
             // Sessions (log)
             Session.self,
             SessionItem.self,
+            DayLog.self,
+            DayTag.self,
 
             // Timer
             TimerTemplate.self,

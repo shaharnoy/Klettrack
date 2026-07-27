@@ -809,8 +809,7 @@ struct PlanDayEditor: View {
     @State private var showingClimbLog = false
     @State private var climbLoggingExercise: ExerciseSelection? = nil
     
-    // State for daily notes to handle the optional binding
-    @State private var dailyNotesText: String = ""
+    @State private var localDayLog: DayLog? = nil
     
     // Picker selection by identifier (prevents invalidated object binding)
     @State private var selectedDayTypeId: UUID? = nil
@@ -1261,20 +1260,11 @@ struct PlanDayEditor: View {
     // Break down daily notes section
     @ViewBuilder
     private var dailyNotesSection: some View {
-        Section ("Daily Notes") {
-            TextEditor(text: $dailyNotesText)
-                .frame(minHeight: 100)
-                .onAppear {
-                    // Initialize with the current value from the model
-                    dailyNotesText = day.dailyNotes ?? ""
-                }
-                .onChange(of: dailyNotesText) {
-                    // Save the notes to the model
-                    let trimmed = dailyNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    day.dailyNotes = trimmed.isEmpty ? nil : trimmed
-                    try? context.save()
-                }
-        }
+        DayContextEditorSection(
+            date: day.date,
+            dayLog: localDayLog,
+            onDayLogChanged: updateDayLog
+        )
     }
 
     var body: some View {
@@ -1303,6 +1293,12 @@ struct PlanDayEditor: View {
         }
         .navigationTitle(day.date.formatted(date: .abbreviated, time: .omitted))
         .listStyle(.insetGrouped)
+        .onAppear {
+            refreshDayLog()
+        }
+        .onChange(of: day.date) {
+            refreshDayLog()
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 10) {
@@ -1712,6 +1708,14 @@ struct PlanDayEditor: View {
                     .lineLimit(1...3)
             }
         }
+    }
+
+    private func refreshDayLog() {
+        localDayLog = DayLogStore.fetchDayLog(for: day.date, in: context)
+    }
+
+    private func updateDayLog(_ dayLog: DayLog?) {
+        localDayLog = dayLog
     }
 }
 

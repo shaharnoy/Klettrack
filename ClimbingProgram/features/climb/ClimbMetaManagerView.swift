@@ -11,6 +11,7 @@ struct ClimbMetaManagerView: View {
         case style
         case gym
         case day
+        case dayTag
 
         var id: String { rawValue }
     }
@@ -29,6 +30,13 @@ struct ClimbMetaManagerView: View {
         filter: #Predicate<DayTypeModel> { $0.isHidden == false },
         sort: [SortDescriptor(\DayTypeModel.name, order: .forward)]
     ) private var days: [DayTypeModel]
+    @Query(
+        filter: #Predicate<DayTag> { $0.isHidden == false },
+        sort: [
+            SortDescriptor<DayTag>(\DayTag.sort, order: .forward),
+            SortDescriptor<DayTag>(\DayTag.name, order: .forward)
+        ]
+    ) private var dayTags: [DayTag]
     
     // Add / rename state
     @State private var addRoute: AddRoute? = nil
@@ -36,10 +44,12 @@ struct ClimbMetaManagerView: View {
     @State private var styleDraft = ""
     @State private var gymDraft = ""
     @State private var dayDraft = ""
+    @State private var dayTagDraft = ""
 
     @State private var renamingStyle: ClimbStyle? = nil
     @State private var renamingGym: ClimbGym? = nil
     @State private var renamingDay: DayTypeModel? = nil
+    @State private var renamingDayTag: DayTag? = nil
     @State private var renameDraft = ""
 
     // Restore/Add defaults state
@@ -64,12 +74,18 @@ struct ClimbMetaManagerView: View {
     private var mainList: some View {
         List {
             daysSection
+            dayTagsSection
             stylesSection
             gymsSection
         }
         .navigationTitle("Data Manager")
         .navigationBarTitleDisplayMode(.large)
         .toolbar { trailingMenu }
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                EditButton()
+            }
+        }
         .sheet(item: $addRoute) { route in
             switch route {
             case .style:
@@ -94,6 +110,14 @@ struct ClimbMetaManagerView: View {
                     initialColorKey: "gray"
                 ) { newName, newColorKey in
                     handleAddDay(newName: newName, newColorKey: newColorKey)
+                }
+            case .dayTag:
+                DayTagEditSheet(
+                    title: "New Day Tag",
+                    initialName: "",
+                    initialColorKey: "gray"
+                ) { newName, newColorKey in
+                    handleAddDayTag(newName: newName, newColorKey: newColorKey)
                 }
             }
         }
@@ -126,6 +150,16 @@ struct ClimbMetaManagerView: View {
                 handleRenameDay(day, newName: newName, newColorKey: newColorKey)
             }
         }
+        .sheet(item: $renamingDayTag) { tag in
+            DayTagEditSheet(
+                title: "Edit Day Tag",
+                initialName: tag.name,
+                initialColorKey: tag.colorKey
+            ) { newName, newColorKey in
+                handleRenameDayTag(tag, newName: newName, newColorKey: newColorKey)
+            }
+        }
+        .alert(item: $resultAlert, content: resultAlertView)
     }
     
     private var trailingMenu: some ToolbarContent {
@@ -141,6 +175,19 @@ struct ClimbMetaManagerView: View {
                 Image(systemName: "ellipsis.circle")
             }
         }
+    }
+
+    @MainActor
+    private func handleAddDayTag(newName: String, newColorKey: String) -> Bool {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard DayLogStore.activeTag(named: trimmed, in: context) == nil else {
+            resultAlert = InfoAlert(message: "A day tag with this name already exists.")
+            return false
+        }
+        _ = DayLogStore.createTag(name: trimmed, colorKey: newColorKey, in: context)
+        try? context.save()
+        return true
     }
 
     
@@ -225,6 +272,21 @@ struct ClimbMetaManagerView: View {
         }
         try? context.save()
         return true
+    }
+
+    @MainActor
+    private func handleRenameDayTag(_ tag: DayTag, newName: String, newColorKey: String) -> Bool {
+        guard DayLogStore.renameTag(tag, to: newName, colorKey: newColorKey, in: context) else {
+            resultAlert = InfoAlert(message: "A day tag with this name already exists.")
+            return false
+        }
+        try? context.save()
+        return true
+    }
+
+    private func editDayTag(_ tag: DayTag) {
+        renameDraft = tag.name
+        renamingDayTag = tag
     }
 
     private func resultAlertView(_ info: InfoAlert) -> Alert {
@@ -348,6 +410,67 @@ struct ClimbMetaManagerView: View {
     }
 
     @ViewBuilder
+    private var dayTagsSection: some View {
+        Section {
+            if dayTags.isEmpty {
+                ContentUnavailableView(
+                    "No Day Tags",
+                    systemImage: "tag",
+                    description: Text("Add tags for calendar days")
+                )
+            } else {
+                ForEach(dayTags, id: \.id) { tag in
+                    Button {
+                        editDayTag(tag)
+                    } label: {
+                        DayTagManagerRow(tag: tag)
+                    }
+                    .buttonStyle(.plain)
+                        .contextMenu {
+                            Button {
+                                editDayTag(tag)
+                            } label: {
+                                Label("Edit", systemImage: "square.and.pencil")
+                            }
+                            Button(role: .destructive) {
+                                safeDeleteDayTag(tag)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                editDayTag(tag)
+                            } label: {
+                                Label("Edit", systemImage: "square.and.pencil")
+                            }
+                            .tint(.blue)
+
+                            Button(role: .destructive) {
+                                safeDeleteDayTag(tag)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                }
+                .onMove(perform: moveDayTags)
+                .onDelete { (idx: IndexSet) in
+                    idx.map { dayTags[$0] }.forEach(safeDeleteDayTag(_:))
+                }
+            }
+
+            Button {
+                dayTagDraft = ""
+                addRoute = .dayTag
+            } label: {
+                Label("Add Day Tag", systemImage: "plus")
+            }
+        } header: {
+            Text("Day Tags")
+        }
+    }
+
+    @ViewBuilder
     private var gymsSection: some View {
         Section {
             if gyms.isEmpty {
@@ -435,6 +558,21 @@ struct ClimbMetaManagerView: View {
         }
     }
 
+    private struct DayTagManagerRow: View {
+        @Bindable var tag: DayTag
+
+        var body: some View {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(DayTypeModel.color(for: tag.colorKey).gradient)
+                    .frame(width: 12, height: 12)
+                Text(tag.name)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+    }
+
     // MARK: - Deletes
     private func safeDeleteStyle(_ style: ClimbStyle) {
         style.isHidden = true
@@ -444,6 +582,21 @@ struct ClimbMetaManagerView: View {
     private func safeDeleteDay(_ day: DayTypeModel) {
         // Soft delete: hide instead of removing from the store
         day.isHidden = true
+        try? context.save()
+    }
+
+    @MainActor
+    private func safeDeleteDayTag(_ tag: DayTag) {
+        DayLogStore.hideTag(tag, in: context)
+        try? context.save()
+    }
+
+    private func moveDayTags(from source: IndexSet, to destination: Int) {
+        var working = dayTags
+        working.move(fromOffsets: source, toOffset: destination)
+        for (index, tag) in working.enumerated() {
+            tag.sort = index * 10
+        }
         try? context.save()
     }
 
@@ -506,7 +659,7 @@ struct ClimbMetaManagerView: View {
 
 #Preview {
     ClimbMetaManagerView()
-        .modelContainer(for: [ClimbStyle.self, ClimbGym.self, DayTypeModel.self], inMemory: true)
+        .modelContainer(for: [ClimbStyle.self, ClimbGym.self, DayTypeModel.self, DayLog.self, DayTag.self], inMemory: true)
 }
 
 // MARK: - Inline DayColorPickerSheet (kept in this file to satisfy the sheet reference)
@@ -600,6 +753,69 @@ private struct DayEditSheet: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text("You cannot add a defulat value, use the recover function in the menu")
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+private struct DayTagEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: String
+    let onSave: (String, String) -> Bool
+
+    @State private var name: String
+    @State private var colorKey: String
+    @State private var showingAlert = false
+
+    init(title: String, initialName: String, initialColorKey: String, onSave: @escaping (String, String) -> Bool) {
+        self.title = title
+        self.onSave = onSave
+        _name = State(initialValue: initialName)
+        _colorKey = State(initialValue: initialColorKey)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(DayTypeModel.color(for: colorKey).gradient)
+                            .frame(width: 16, height: 16)
+                        TextField("Tag name", text: $name)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("Tag")
+                }
+
+                Section("Pick a color") {
+                    ColorKeyPicker(selection: $colorKey)
+                }
+            }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let success = onSave(name, colorKey)
+                        if success {
+                            dismiss()
+                        } else {
+                            showingAlert = true
+                        }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .alert("Unable to save tag", isPresented: $showingAlert) {
+                Button("OK", role: .cancel) { }
             }
         }
         .presentationDetents([.medium, .large])
