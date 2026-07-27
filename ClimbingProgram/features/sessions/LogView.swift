@@ -1075,65 +1075,66 @@ private struct CombinedLogList: View {
 
     @ViewBuilder
     private var filterSection: some View {
-        Section {
-            VStack(spacing: 4) {
-                Button(action: toggleFilters) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                        Text(showFilters ? "Hide filters" : "Show filters")
-                        Spacer()
-                        if hasActiveFilters {
-                            Circle()
-                                .fill(Color.accentColor)
-                                .frame(width: 10, height: 10)
-                        }
+        VStack(spacing: 4) {
+            Button(action: toggleFilters) {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                    Text(showFilters ? "Hide filters" : "Show filters")
+                    Spacer()
+                    if hasActiveFilters {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 10, height: 10)
                     }
-                    .font(.subheadline)
-                    .padding(.vertical, 6)
                 }
-                .buttonStyle(.plain)
+                .font(.subheadline)
+                .padding(.vertical, 2)
+            }
+            .buttonStyle(.plain)
 
-                if showFilters {
-                    LogFilterCard {
-                        VStack(spacing: 10) {
+            if showFilters {
+                LogFilterCard {
+                    VStack(spacing: 10) {
+                        HStack {
                             HStack {
-                                HStack {
-                                    Text("Dates")
-                                    DateRangePicker(range: $dateRange)
-                                }
-                                ClearAllButton(
-                                    action: clearAllFilters,
-                                    isEnabled: hasActiveFilters
-                                )
+                                Text("Dates")
+                                DateRangePicker(range: $dateRange)
                             }
+                            ClearAllButton(
+                                action: clearAllFilters,
+                                isEnabled: hasActiveFilters
+                            )
+                        }
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Tags")
-                                    .font(.callout)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Tags")
+                                .font(.callout)
 
-                                if tags.isEmpty {
-                                    Text("No day tags yet")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    FlowLayout(spacing: 8, rowSpacing: 8) {
-                                        ForEach(tags) { tag in
-                                            LogTagFilterChip(
-                                                tag: tag,
-                                                isSelected: selectedTagIDs.contains(tag.id),
-                                                onToggle: { toggleTag(tag) }
-                                            )
-                                        }
+                            if tags.isEmpty {
+                                Text("No day tags yet")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                FlowLayout(spacing: 8, rowSpacing: 8) {
+                                    ForEach(tags) { tag in
+                                        LogTagFilterChip(
+                                            tag: tag,
+                                            isSelected: selectedTagIDs.contains(tag.id),
+                                            onToggle: { toggleTag(tag) }
+                                        )
                                     }
                                 }
                             }
                         }
                     }
-                    .padding(.top, 6)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: showFilters ? 6 : 0, trailing: 16))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
     
     @MainActor

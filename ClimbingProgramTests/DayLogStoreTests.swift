@@ -47,6 +47,23 @@ final class DayLogStoreTests: BaseSwiftDataTestCase {
         XCTAssertTrue(DayLogStore.activeTags(from: dayLog).isEmpty)
     }
 
+    func testSameTagCanBeAssignedToMultipleDayLogs() throws {
+        let calendar = Calendar.current
+        let firstDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 24)))
+        let secondDate = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 25)))
+        let firstDayLog = try XCTUnwrap(DayLogStore.dayLog(for: firstDate, in: context))
+        let secondDayLog = try XCTUnwrap(DayLogStore.dayLog(for: secondDate, in: context))
+        let tag = try XCTUnwrap(DayLogStore.createTag(name: "Volume", colorKey: "green", in: context))
+
+        DayLogStore.setTag(tag, assigned: true, to: firstDayLog)
+        DayLogStore.setTag(tag, assigned: true, to: secondDayLog)
+        try context.save()
+
+        XCTAssertEqual(DayLogStore.activeTags(from: firstDayLog).map(\.id), [tag.id])
+        XCTAssertEqual(DayLogStore.activeTags(from: secondDayLog).map(\.id), [tag.id])
+        XCTAssertEqual(Set(tag.dayLogs?.map(\.id) ?? []), [firstDayLog.id, secondDayLog.id])
+    }
+
     func testFetchWithoutCreateDoesNotInsertEmptyDayLog() throws {
         let day = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: 2026, month: 7, day: 29)))
 

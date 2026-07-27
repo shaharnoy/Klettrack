@@ -153,7 +153,7 @@ final class DayLog {
     var id: UUID = UUID()
     var date: Date = Date()
     var note: String?
-    @Relationship(deleteRule: .nullify)
+    @Relationship(deleteRule: .nullify, inverse: \DayTag.dayLogs)
     var tags: [DayTag]?
 
     init(id: UUID = UUID(), date: Date = Date(), note: String? = nil, tags: [DayTag]? = nil) {
@@ -172,6 +172,7 @@ final class DayTag {
     var sort: Int = 0
     var isHidden: Bool = false
     var createdAt: Date = Date()
+    var dayLogs: [DayLog]?
 
     init(
         id: UUID = UUID(),
@@ -179,7 +180,8 @@ final class DayTag {
         colorKey: String = "gray",
         sort: Int = 0,
         isHidden: Bool = false,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        dayLogs: [DayLog]? = nil
     ) {
         self.id = id
         self.name = name
@@ -187,6 +189,7 @@ final class DayTag {
         self.sort = sort
         self.isHidden = isHidden
         self.createdAt = createdAt
+        self.dayLogs = dayLogs
     }
 }
 
