@@ -148,6 +148,48 @@ final class SessionItem {
     }
 }
 
+@Model
+final class DayLog {
+    var id: UUID = UUID()
+    var date: Date = Date()
+    var note: String?
+    @Relationship(deleteRule: .nullify)
+    var tags: [DayTag]?
+
+    init(id: UUID = UUID(), date: Date = Date(), note: String? = nil, tags: [DayTag]? = nil) {
+        self.id = id
+        self.date = Calendar.current.startOfDay(for: date)
+        self.note = note
+        self.tags = tags
+    }
+}
+
+@Model
+final class DayTag {
+    var id: UUID = UUID()
+    var name: String = ""
+    var colorKey: String = "gray"
+    var sort: Int = 0
+    var isHidden: Bool = false
+    var createdAt: Date = Date()
+
+    init(
+        id: UUID = UUID(),
+        name: String = "",
+        colorKey: String = "gray",
+        sort: Int = 0,
+        isHidden: Bool = false,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.colorKey = DayTypeModel.allowedColorKeys.contains(colorKey) ? colorKey : "gray"
+        self.sort = sort
+        self.isHidden = isHidden
+        self.createdAt = createdAt
+    }
+}
+
 // MARK: - Timer Models
 
 @Model
@@ -293,4 +335,3 @@ final class TimerLap {
         self.notes = notes
     }
 }
-

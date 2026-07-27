@@ -52,6 +52,7 @@ struct LogView: View {
     @Environment(\.isDataReady) private var isDataReady
     @Query(sort: [SortDescriptor(\Session.date, order: .reverse)]) private var sessions: [Session]
     @Query(sort: [SortDescriptor(\ClimbEntry.dateLogged, order: .reverse)]) private var climbEntries: [ClimbEntry]
+    @Query(sort: [SortDescriptor(\DayLog.date, order: .reverse)]) private var dayLogs: [DayLog]
 
     @State private var modalRoute: ModalRoute?
     @State private var navigationPath = NavigationPath()
@@ -73,7 +74,7 @@ struct LogView: View {
 
     var body: some View {
             NavigationStack(path: $navigationPath) {
-                CombinedLogList(sessions: sessions, climbEntries: climbEntries)
+                CombinedLogList(sessions: sessions, climbEntries: climbEntries, dayLogs: dayLogs)
                     .toolbar { trailingToolbar }
                     .sheet(isPresented: newSessionPresentedBinding) {
                         NewSessionSheet { createdDay in
@@ -92,11 +93,15 @@ struct LogView: View {
                         let climbsForDay = climbEntries.filter {
                             Calendar.current.startOfDay(for: $0.dateLogged) == dayKey
                         }
+                        let dayLogForDay = dayLogs.first {
+                            Calendar.current.startOfDay(for: $0.date) == dayKey
+                        }
 
                         CombinedDayDetailView(
                             date: dayKey,
                             session: sessionForDay,
-                            climbEntries: climbsForDay
+                            climbEntries: climbsForDay,
+                            dayLog: dayLogForDay
                         )
                     }
             }
@@ -981,32 +986,15 @@ private struct CombinedLogList: View {
     @Environment(\.modelContext) private var context
     let sessions: [Session]
     let climbEntries: [ClimbEntry]
+    let dayLogs: [DayLog]
     
     // Group data by date
-    private var groupedData: [Date: (exercises: Int, climbs: Int, session: Session?, climbEntries: [ClimbEntry])] {
-        var grouped: [Date: (exercises: Int, climbs: Int, session: Session?, climbEntries: [ClimbEntry])] = [:]
-        
-        // Add sessions (exercises)
-        for session in sessions {
-            let dateKey = Calendar.current.startOfDay(for: session.date)
-            if grouped[dateKey] == nil {
-                grouped[dateKey] = (exercises: 0, climbs: 0, session: nil, climbEntries: [])
-            }
-            grouped[dateKey]?.exercises = Array(session.items).count
-            grouped[dateKey]?.session = session
-        }
-        
-        // Add climb entries
-        for climb in climbEntries {
-            let dateKey = Calendar.current.startOfDay(for: climb.dateLogged)
-            if grouped[dateKey] == nil {
-                grouped[dateKey] = (exercises: 0, climbs: 0, session: nil, climbEntries: [])
-            }
-            grouped[dateKey]?.climbs += 1
-            grouped[dateKey]?.climbEntries.append(climb)
-        }
-        
-        return grouped
+    private var groupedData: [Date: LogDaySummary] {
+        LogDaySummaryBuilder.build(
+            sessions: sessions,
+            climbEntries: climbEntries,
+            dayLogs: dayLogs
+        )
     }
     
     private var sortedDates: [Date] {
@@ -1021,13 +1009,15 @@ private struct CombinedLogList: View {
                     CombinedDayDetailView(
                         date: date,
                         session: dayData.session,
-                        climbEntries: dayData.climbEntries
+                        climbEntries: dayData.climbEntries,
+                        dayLog: dayData.dayLog
                     )
                 } label: {
                     CombinedDayRow(
                         date: date,
                         exerciseCount: dayData.exercises,
-                        climbCount: dayData.climbs
+                        climbCount: dayData.climbs,
+                        dayLog: dayData.dayLog
                     )
                 }
             }
@@ -1060,6 +1050,10 @@ private struct CombinedLogList: View {
                 for climb in dayData.climbEntries {
                     context.delete(climb)
                 }
+
+                if let dayLog = dayData.dayLog {
+                    context.delete(dayLog)
+                }
             }
             try? context.save()
         }
@@ -1071,6 +1065,11 @@ private struct CombinedDayRow: View {
     let date: Date
     let exerciseCount: Int
     let climbCount: Int
+    let dayLog: DayLog?
+
+    private var tags: [DayTag] {
+        DayLogStore.activeTags(from: dayLog)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1117,6 +1116,10 @@ private struct CombinedDayRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            if !tags.isEmpty {
+                DayTagChips(tags: tags)
+            }
         }
         .padding(.vertical, 2)
     }
@@ -1139,11 +1142,13 @@ private struct CombinedDayDetailView: View {
     let date: Date
     let session: Session?
     let climbEntries: [ClimbEntry]
+    let dayLog: DayLog?
     
     @State private var addRoute: AddRoute? = nil
     @State private var didReorder = false
     @State private var editingClimb: ClimbEntry? = nil
     @State private var editingItem: SessionItem? = nil
+    @State private var localDayLog: DayLog? = nil
     // Quick Progress
     @State private var progressExercise: ExerciseSelection? = nil
     //multi-exercise add flow
@@ -1154,9 +1159,19 @@ private struct CombinedDayDetailView: View {
     private var sortedClimbs: [ClimbEntry] {
         climbEntries.sorted(by: { $0.dateLogged > $1.dateLogged })
     }
+
+    private var resolvedDayLog: DayLog? {
+        localDayLog ?? dayLog
+    }
     
     var body: some View {
         List {
+            DayContextEditorSection(
+                date: date,
+                dayLog: resolvedDayLog,
+                onDayLogChanged: updateDayLog
+            )
+
             // Exercises section
             if let session = session, !session.items.isEmpty {
                 Section("Exercises") {
@@ -1311,7 +1326,6 @@ private struct CombinedDayDetailView: View {
         .sheet(item: $progressExercise) { sel in
             QuickExerciseProgress(exerciseName: sel.name)
         }
-
         // Commit once when leaving edit mode, but only if a reorder occurred
         .onChange(of: editMode?.wrappedValue) { _, newValue in
             if newValue == .inactive, didReorder {
@@ -1325,8 +1339,14 @@ private struct CombinedDayDetailView: View {
                 try? context.save()
             }
         }
+        .onAppear {
+            localDayLog = dayLog
+        }
     }
 
+    private func updateDayLog(_ dayLog: DayLog?) {
+        localDayLog = dayLog
+    }
     
     private func addExercise() {
         guard isDataReady else { return }
