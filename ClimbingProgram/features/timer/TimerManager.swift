@@ -197,8 +197,11 @@ class TimerManager {
         // Build engine timeline
         let build: (timeline: Timeline, segIntervalIndex: [Int], segRepWithinInterval: [Int])
         if configuration.hasTotalTime && !configuration.hasIntervals, let total = configuration.totalTimeSeconds {
-            // TOTAL TIMER: getReady + single work segment
-            let tl = TimerEngine.buildTotalTimer(work: TimeInterval(total), getReady: 5)
+            // TOTAL TIMER: optional getReady + single work segment
+            let tl = TimerEngine.buildTotalTimer(
+                work: TimeInterval(total),
+                getReady: configuration.getReady ? 5 : 0
+            )
             let count = tl.segments.count
             build = (tl,
                      Array(repeating: -1, count: count), // interval mapping not used in total mode
@@ -214,14 +217,15 @@ class TimerManager {
         lastSnapshot = nil
         lastBeepSecondForSegment = [:]
 
-        // Initial state → get ready
-        state = .getReady
+        // Initial state → get ready, unless the timeline skips it (e.g. rests in a set sequence)
+        let startsWithGetReady = build.timeline.segments.first?.kind == .getReady
+        state = startsWithGetReady ? .getReady : .running
         currentTime = 0
         totalElapsedTime = 0
         currentInterval = 0
         currentRepetition = 0
         currentSequenceRepeat = 0
-        currentPhase = .getReady
+        currentPhase = startsWithGetReady ? .getReady : .work
         pausedAtDuringGetReady = false
         refreshDerivedFlags()
         laps = []
@@ -271,8 +275,12 @@ class TimerManager {
         }
 
         // Rest before the next set, reusing the sequence's single session.
+        // No get-ready: you tapped Done because the set is over, so the rest starts now.
         // `start` leaves `setSequence` alone, so our bookkeeping survives it.
-        start(with: TimerConfiguration(totalTimeSeconds: sequence.restSeconds), session: session)
+        start(
+            with: TimerConfiguration(totalTimeSeconds: sequence.restSeconds, getReady: false),
+            session: session
+        )
     }
 
     /// Called when a rest countdown finishes and more sets remain.
@@ -542,8 +550,10 @@ class TimerManager {
             segToRepWithin.append(repWithinInterval)
         }
 
-        // get-ready 5s (not counted)
-        push(Segment(kind: .getReady, duration: 5, countsTowardTotal: false), set: -1, rep: -1, intervalIdx: -1, repWithinInterval: -1)
+        // get-ready 5s (not counted), unless the configuration opts out
+        if config.getReady {
+            push(Segment(kind: .getReady, duration: 5, countsTowardTotal: false), set: -1, rep: -1, intervalIdx: -1, repWithinInterval: -1)
+        }
 
         // Determine sets
         let sets = config.isRepeating ? max(1, (config.repeatCount ?? 1)) : 1

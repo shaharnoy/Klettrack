@@ -52,6 +52,32 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         manager.stop() // don't leave a ticker running
     }
 
+    /// You tapped Done because the set is over — the rest starts immediately,
+    /// with no 5-second get-ready in front of it.
+    func testRestStartsImmediatelyWithoutGetReady() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: makeSession())
+
+        manager.confirmSet()
+
+        XCTAssertEqual(manager.configuration?.getReady, false)
+        XCTAssertEqual(manager.state, .running, "Not .getReady")
+        XCTAssertFalse(manager.isGetReady)
+        XCTAssertEqual(manager.currentPhase, .work)
+
+        manager.stop()
+    }
+
+    /// The get-ready flag was previously ignored for total timers; a normal
+    /// configuration must still get its 5 seconds.
+    func testOrdinaryTotalTimerKeepsItsGetReady() {
+        let manager = makeManager()
+        manager.start(with: TimerConfiguration(totalTimeSeconds: 60))
+
+        XCTAssertEqual(manager.state, .getReady)
+        manager.stop()
+    }
+
     /// The rest finishing advances to the next set rather than ending the exercise.
     func testRestCompletionAdvancesToTheNextSet() {
         let manager = makeManager()

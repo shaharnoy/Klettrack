@@ -60,14 +60,20 @@ enum LogCSV {
         
         // Header extended with climb_id, tb2_uuid and the timer columns at the end
         // (backward compatible: the importer resolves columns by name)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,timer_name,timer_spec"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,rest,timer_name,timer_spec"]
 
-        // Attached timers, by exercise name. Built once — export walks SessionItems,
+        // Catalog lookups by exercise name, built once — export walks SessionItems,
         // not catalog exercises, so a per-row fetch would be O(rows).
+        // Rest lives only on the catalog Exercise (SessionItem has no rest field),
+        // which is why it is sourced here rather than from the logged item.
         let allTemplates: [TimerTemplate] = (try? context.fetch(FetchDescriptor<TimerTemplate>())) ?? []
         let templatesById = Dictionary(allTemplates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var timerByExerciseName: [String: TimerTemplate] = [:]
+        var restByExerciseName: [String: String] = [:]
         for exercise in (try? context.fetch(FetchDescriptor<Exercise>())) ?? [] {
+            if let rest = exercise.restText, !rest.isEmpty, restByExerciseName[exercise.name] == nil {
+                restByExerciseName[exercise.name] = rest
+            }
             guard let templateId = exercise.timerTemplateId,
                   let template = templatesById[templateId],
                   timerByExerciseName[exercise.name] == nil
@@ -134,6 +140,7 @@ enum LogCSV {
                     "", // climb_id (exercises don't use this)
                     "",  // tb2_uuid (exercises don't use this)
                     "",  // media_ref (exercises don't use this)
+                    csvEscape(restByExerciseName[i.exerciseName] ?? ""),
                     csvEscape(attachedTimer?.name ?? ""),
                     csvEscape(attachedTimer.map { TimerSpec.encode($0) } ?? "")
                 ].joined(separator: ","))
@@ -177,6 +184,7 @@ enum LogCSV {
                 climb.id.uuidString,                   // climb_id
                 csvEscape(climb.tb2ClimbUUID ?? ""),   // tb2_uuid
                 csvEscape(mediaRefs),                  // media_refs
+                "",                                    // rest (climbs don't use this)
                 "",                                    // timer_name (climbs don't use this)
                 ""                                     // timer_spec (climbs don't use this)
             ].joined(separator: ","))
@@ -333,6 +341,7 @@ extension LogCSV {
         let climbId: UUID?
         let tb2UUID: String?
         let mediaRefs: String?
+        let restText: String?
         let timerName: String?
         let timerSpec: String?
     }
@@ -407,6 +416,7 @@ extension LogCSV {
                 static let climbId    = ["climb_id", "climbid"]
                 static let tb2UUID    = ["tb2_uuid", "tb2"]
                 static let mediaRefs  = ["media_refs", "media"]
+                static let rest       = ["rest", "rest_text"]
                 static let timerName  = ["timer_name", "timer"]
                 static let timerSpec  = ["timer_spec", "timer_config"]
             }
@@ -440,7 +450,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, timerNameStr, timerSpecStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, restTextStr, timerNameStr, timerSpecStr: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -469,6 +479,7 @@ extension LogCSV {
                     tb2UUIDStr   = val(parts, Cols.tb2UUID)
                     mediaRefsStr = val(parts, Cols.mediaRefs)
                     // Absent in older exports — `val` returns "" and the row is unaffected.
+                    restTextStr  = val(parts, Cols.rest)
                     timerNameStr = val(parts, Cols.timerName)
                     timerSpecStr = val(parts, Cols.timerSpec)
                 } else {
@@ -499,6 +510,7 @@ extension LogCSV {
                     tb2UUIDStr   = p(22)
                     mediaRefsStr = ""   // no media column in legacy CSV
                     feelsLikeGradeStr = "" //no alternative grade in legacy CSV
+                    restTextStr  = ""   // no rest column in legacy CSV
                     timerNameStr = ""   // no timer columns in legacy CSV
                     timerSpecStr = ""
 
@@ -568,6 +580,7 @@ extension LogCSV {
                     climbId: climbId,
                     tb2UUID: tb2uuidOpt,
                     mediaRefs: mediaRefsOpt,
+                    restText: restTextStr.isEmpty ? nil : restTextStr,
                     timerName: timerNameStr.isEmpty ? nil : timerNameStr,
                     timerSpec: timerSpecStr.isEmpty ? nil : timerSpecStr
                 ))
@@ -671,6 +684,7 @@ extension LogCSV {
                             reps: e.reps,
                             sets: e.sets,
                             duration: e.duration,
+                            restText: e.restText,
                             notes: e.notes,
                             planName: e.planName,
                             timerName: e.timerName,
@@ -953,6 +967,7 @@ extension LogCSV {
         let reps: Double?
         let sets: Double?
         let duration: Double?
+        let restText: String?
         let notes: String?
         let planName: String?
         let timerName: String?
@@ -990,6 +1005,11 @@ extension LogCSV {
                 : value.formatted(.number.precision(.fractionLength(1)))
         }
 
+        func trimmedOrNil(_ text: String?) -> String? {
+            let value = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        }
+
         /// Reuse a template by name, else create one from the spec. nil when the row carries neither.
         func resolveTimer(for exerciseName: String, _ meta: CatalogCandidate) -> TimerTemplate? {
             let name = meta.timerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1009,8 +1029,16 @@ extension LogCSV {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
-            // Already in the catalog: leave it alone, but let it adopt a timer if it has none.
+            // Already in the catalog: never overwrite, but fill anything still missing so
+            // re-importing an improved CSV heals entries created by an earlier import.
             if let existing = existingByName[trimmed] {
+                if existing.repsText == nil { existing.repsText = metricText(meta.reps) }
+                if existing.setsText == nil { existing.setsText = metricText(meta.sets) }
+                if existing.durationText == nil {
+                    existing.durationText = metricText(meta.duration).map { "\($0) min" }
+                }
+                if existing.restText == nil { existing.restText = trimmedOrNil(meta.restText) }
+                if existing.notes == nil { existing.notes = meta.notes }
                 if existing.timerTemplateId == nil, let template = resolveTimer(for: trimmed, meta) {
                     existing.timerTemplateId = template.id
                 }
@@ -1034,7 +1062,7 @@ extension LogCSV {
                 reps: metricText(meta.reps),
                 duration: metricText(meta.duration).map { "\($0) min" },
                 sets: metricText(meta.sets),
-                rest: nil,
+                rest: trimmedOrNil(meta.restText),
                 notes: meta.notes
             )
 

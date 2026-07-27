@@ -78,7 +78,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         // Verify header
         let header = lines.first!
         let expectedFields = [
-            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","timer_name","timer_spec"
+            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","rest","timer_name","timer_spec"
         ]
         let headerFields = header.components(separatedBy: ",")
         XCTAssertEqual(headerFields.count, expectedFields.count, "Header should have correct number of fields")
@@ -290,17 +290,18 @@ class ImportExportTests: ClimbingProgramTestSuite {
 
     /// Header including the timer columns. The plain `testCSVHeader` above deliberately
     /// stays without them, so the older-file path keeps being exercised.
-    private var testCSVHeaderWithTimers: String { testCSVHeader + ",timer_name,timer_spec" }
+    private var testCSVHeaderWithTimers: String { testCSVHeader + ",rest,timer_name,timer_spec" }
 
     private func timerRow(
         date: String = "2025-09-10 09:00:00",
         exercise: String,
         planId: UUID,
         planName: String = "Timer Plan",
+        rest: String = "",
         timerName: String = "",
         timerSpec: String = ""
     ) -> String {
-        "\(date),exercise,\(exercise),,,,,,,,,,,,5,3,0.000,,\(planId.uuidString),\(planName),,,,,,\(timerName),\(timerSpec)"
+        "\(date),exercise,\(exercise),,,,,,,,,,,,5,3,0.000,,\(planId.uuidString),\(planName),,,,,,\(rest),\(timerName),\(timerSpec)"
     }
 
     private func catalogTemplates() -> [TimerTemplate] {
@@ -400,6 +401,60 @@ class ImportExportTests: ClimbingProgramTestSuite {
 
         let template = try XCTUnwrap(catalogTemplates().first { $0.name == "Adopted" })
         XCTAssertEqual(existing.timerTemplateId, template.id)
+    }
+
+    /// Without a rest column an imported exercise has nothing to derive a timer from,
+    /// which is exactly why the column exists.
+    func testImportedRestMakesAnExerciseRepBased() async throws {
+        _ = try await importPlanCSV(named: "timer_rest.csv", rows: [
+            timerRow(exercise: "Pull-ups Weighted", planId: UUID(), rest: "3 min")
+        ], header: testCSVHeaderWithTimers)
+
+        let imported = try XCTUnwrap(exercise(named: "Pull-ups Weighted"))
+        XCTAssertEqual(imported.restText, "3 min")
+
+        guard case .repBased(let reps, let sets, let restSeconds, _)? =
+                ExerciseTimerDefaults.plan(for: imported, in: context) else {
+            return XCTFail("An imported exercise with rest should be rep-based")
+        }
+        XCTAssertEqual(reps, 5)
+        XCTAssertEqual(sets, 3)
+        XCTAssertEqual(restSeconds, 180)
+    }
+
+    func testImportWithoutRestLeavesExerciseWithoutATimer() async throws {
+        _ = try await importPlanCSV(named: "timer_norest.csv", rows: [
+            timerRow(exercise: "No Rest Info", planId: UUID())
+        ], header: testCSVHeaderWithTimers)
+
+        let imported = try XCTUnwrap(exercise(named: "No Rest Info"))
+        XCTAssertNil(imported.restText)
+        XCTAssertNil(ExerciseTimerDefaults.plan(for: imported, in: context),
+                     "Nothing to time and no rest to count — the user picks a template")
+    }
+
+    /// Re-importing an improved CSV should heal entries an earlier import created,
+    /// filling only the gaps.
+    func testReimportFillsMissingGuidanceWithoutOverwriting() async throws {
+        let planId = UUID()
+
+        // First import: no rest column value at all.
+        _ = try await importPlanCSV(named: "heal_1.csv", rows: [
+            timerRow(exercise: "Healable", planId: planId)
+        ], header: testCSVHeaderWithTimers)
+        let imported = try XCTUnwrap(exercise(named: "Healable"))
+        XCTAssertNil(imported.restText)
+        XCTAssertEqual(imported.repsText, "5")
+
+        // Second import of the same exercise, now carrying rest.
+        _ = try await importPlanCSV(named: "heal_2.csv", rows: [
+            timerRow(exercise: "Healable", planId: planId, rest: "2 min")
+        ], header: testCSVHeaderWithTimers)
+
+        XCTAssertEqual(imported.restText, "2 min", "The missing field gets filled in")
+        XCTAssertEqual(imported.repsText, "5", "Existing values are not rewritten")
+        XCTAssertEqual(catalogExercises().filter { $0.exercise.name == "Healable" }.count, 1,
+                       "Still exactly one catalog entry")
     }
 
     func testLogOnlyRowsCreateNoTemplates() async throws {
