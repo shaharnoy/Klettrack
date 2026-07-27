@@ -29,6 +29,25 @@ class TimerManager {
     var configuration: TimerConfiguration?
     var session: TimerSession?
 
+    /// Active rep-based set sequence, if any. See `startSetSequence`.
+    private(set) var setSequence: SetSequence?
+
+    /// A rep-based exercise: do N reps, confirm, rest, repeat.
+    ///
+    /// This lives above the engine rather than inside the timeline. Each rest is an
+    /// ordinary total-time timer, so `TimerEngine`'s time math is untouched — a
+    /// "wait for the user" segment would have no duration, which breaks its
+    /// invariant that position is a pure function of elapsed seconds.
+    struct SetSequence: Equatable {
+        let repsPerSet: Int?
+        let totalSets: Int
+        let restSeconds: Int
+        var currentSet: Int = 1          // 1-based
+        var accumulatedSeconds: Int = 0  // summed across completed rests
+
+        var isFinalSet: Bool { currentSet >= totalSets }
+    }
+
     // MARK: Internals
     private var lastLapTime: Int = 0
 
@@ -62,6 +81,10 @@ class TimerManager {
     var isCompleted: Bool { state == .completed }
     var isReset: Bool     { state == .reseted }
     var isGetReady: Bool  { state == .getReady }
+    var isAwaitingUser: Bool { state == .awaitingUser }
+
+    /// True while a rep-based sequence is in flight — used to avoid clobbering it.
+    var hasActiveSetSequence: Bool { setSequence != nil }
 
     private func refreshDerivedFlags() { isInBetweenIntervalRest = (currentPhase == .betweenSets) }
 
@@ -216,6 +239,81 @@ class TimerManager {
         }
     }
 
+    // MARK: Rep-based set sequence
+
+    /// Begin a rep-based exercise. Lands on the Set 1 prompt with nothing counting;
+    /// the caller supplies one session that spans the whole sequence.
+    func startSetSequence(reps: Int?, sets: Int, restSeconds: Int, session: TimerSession? = nil) {
+        ticker?.stop()
+        engine = nil
+        lastSnapshot = nil
+        self.session = session
+        self.configuration = TimerConfiguration(totalTimeSeconds: restSeconds)
+        setSequence = SetSequence(repsPerSet: reps, totalSets: max(1, sets), restSeconds: restSeconds)
+
+        currentTime = 0
+        totalElapsedTime = 0
+        laps = []
+        lastLapTime = 0
+        state = .awaitingUser
+        UIApplication.shared.isIdleTimerDisabled = true
+        print("TimerManager.startSetSequence: sets=\(max(1, sets)), reps=\(reps.map(String.init) ?? "-"), rest=\(restSeconds)s")
+    }
+
+    /// The user finished the current set. Starts the rest, or finishes the sequence
+    /// after the final set (no trailing rest).
+    func confirmSet() {
+        guard let sequence = setSequence, state == .awaitingUser else { return }
+
+        if sequence.isFinalSet {
+            finishSetSequence()
+            return
+        }
+
+        // Rest before the next set, reusing the sequence's single session.
+        // `start` leaves `setSequence` alone, so our bookkeeping survives it.
+        start(with: TimerConfiguration(totalTimeSeconds: sequence.restSeconds), session: session)
+    }
+
+    /// Called when a rest countdown finishes and more sets remain.
+    /// Internal rather than private so tests can drive it without waiting out a real rest.
+    func advanceSetSequence() {
+        guard var sequence = setSequence else { return }
+        sequence.accumulatedSeconds += totalElapsedTime
+        sequence.currentSet += 1
+        setSequence = sequence
+
+        ticker?.stop()
+        engine = nil
+        lastSnapshot = nil
+        currentTime = 0
+        totalElapsedTime = 0
+        state = .awaitingUser
+        print("TimerManager.advanceSetSequence → set \(sequence.currentSet) of \(sequence.totalSets)")
+        playSound(.restToWork)
+    }
+
+    /// Final set confirmed: write the summed elapsed time and land in the completed state.
+    private func finishSetSequence() {
+        guard let sequence = setSequence else { return }
+        ticker?.stop()
+        engine = nil
+        state = .completed
+        currentPhase = .completed
+        refreshDerivedFlags()
+        UIApplication.shared.isIdleTimerDisabled = false
+
+        if let session {
+            session.endDate = Date()
+            session.totalElapsedSeconds = sequence.accumulatedSeconds
+            session.completedIntervals = sequence.totalSets
+            session.wasCompleted = true
+        }
+        setSequence = nil
+        print("TimerManager.finishSetSequence: \(sequence.totalSets) sets, \(sequence.accumulatedSeconds)s resting")
+        playSound(.complete)
+    }
+
     func pause() {
         guard state == .running || state == .getReady else { return }
         pausedAtDuringGetReady = (state == .getReady)
@@ -237,13 +335,17 @@ class TimerManager {
     }
 
     func stop() {
+        // Abort any set sequence first, or a later completion would resurrect it.
+        let sequenceElapsed = setSequence?.accumulatedSeconds ?? 0
+        setSequence = nil
+
         state = .stopped
         ticker?.stop()
         engine?.reset()
         UIApplication.shared.isIdleTimerDisabled = false
         if let session = session {
             session.endDate = Date()
-            session.totalElapsedSeconds = totalElapsedTime
+            session.totalElapsedSeconds = totalElapsedTime + sequenceElapsed
             session.completedIntervals = currentInterval
             session.wasCompleted = false
         }
@@ -282,6 +384,7 @@ class TimerManager {
     // Restart but keep configuration
     func restart() {
         guard configuration != nil else { return }
+        setSequence = nil
         ticker?.stop()
         engine?.reset()
         currentTime = 0
@@ -301,6 +404,7 @@ class TimerManager {
     }
 
     func reset() {
+        setSequence = nil
         ticker?.stop()
         engine?.reset()
         configuration = nil
@@ -337,6 +441,11 @@ class TimerManager {
 
         // State & phase
         if snap.isCompleted {
+            // A rest inside a set sequence finishes the rest, not the exercise.
+            if setSequence != nil {
+                advanceSetSequence()
+                return
+            }
             if state != .completed { complete() }
             lastSnapshot = snap
             return

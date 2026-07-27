@@ -8,13 +8,16 @@ import Foundation
 import SwiftData
 
 // MARK: - Timer State Enums
-enum TimerState {
+enum TimerState: Equatable {
     case stopped
     case getReady
     case running
     case paused
     case completed
     case reseted
+    /// Rep-based set sequence: waiting for the user to confirm the current set is done.
+    /// Nothing is counting in this state.
+    case awaitingUser
 }
 
 enum IntervalPhase {
@@ -26,7 +29,7 @@ enum IntervalPhase {
 }
 
 // MARK: - Timer Configuration Structs
-struct TimerConfiguration {
+struct TimerConfiguration: Equatable {
     let totalTimeSeconds: Int?
     let intervals: [IntervalConfiguration]
     let isRepeating: Bool
@@ -57,18 +60,40 @@ struct TimerConfiguration {
     }
 }
 
-struct IntervalConfiguration {
+struct IntervalConfiguration: Equatable {
     let name: String
     let workTimeSeconds: Int
     let restTimeSeconds: Int
     let repetitions: Int
-    
+
     var totalTimeSeconds: Int {
         // Work periods: repetitions
         // Rest periods: repetitions - 1 (no rest after the last work period)
         let totalWorkTime = workTimeSeconds * repetitions
         let totalRestTime = restTimeSeconds * max(0, repetitions - 1)
         return totalWorkTime + totalRestTime
+    }
+}
+
+extension TimerTemplate {
+    /// The single template → configuration mapping, shared by every place that starts a template.
+    func makeConfiguration() -> TimerConfiguration {
+        TimerConfiguration(
+            totalTimeSeconds: totalTimeSeconds,
+            intervals: intervals
+                .sorted { $0.order < $1.order }
+                .map {
+                    IntervalConfiguration(
+                        name: $0.name,
+                        workTimeSeconds: $0.workTimeSeconds,
+                        restTimeSeconds: $0.restTimeSeconds,
+                        repetitions: $0.repetitions
+                    )
+                },
+            isRepeating: isRepeating,
+            repeatCount: repeatCount,
+            restTimeBetweenIntervals: restTimeBetweenIntervals
+        )
     }
 }
 

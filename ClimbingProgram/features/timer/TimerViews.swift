@@ -25,9 +25,15 @@ struct TimerView: View {
     @State private var sharedTimerManager = SharedTimerManager.shared
     
     @State private var sheetRoute: SheetRoute?
-    
+
+    /// Exercise context we have already applied, so re-entering the tab doesn't reload it.
+    @State private var appliedExercise: ExerciseTimerContext?
+    @State private var loggingExercise: ExerciseTimerContext?
+
     let planDay: PlanDay?
-    var exerciseName: String? = nil
+    var exercise: ExerciseTimerContext? = nil
+
+    private var exerciseName: String? { exercise?.exerciseName }
 
     // Computed property to access the timer manager
     private var timerManager: TimerManager {
@@ -45,17 +51,22 @@ struct TimerView: View {
                         .lineLimit(1)
                 }
 
-                // Timer Display
-                timerDisplaySection
-                
+                // Rep-based exercise: prompt for the set instead of counting it down.
+                if let sequence = timerManager.setSequence, timerManager.isAwaitingUser {
+                    setPromptSection(sequence)
+                } else {
+                    // Timer Display
+                    timerDisplaySection
+                }
+
                 // Progress Indicators
-                if timerManager.configuration != nil {
+                if timerManager.configuration != nil && !timerManager.isAwaitingUser {
                     progressSection
                 }
-                
+
                 // Control Buttons (without Stop & Reset)
                 controlButtonsSection
-                
+
                 // Laps Section - only show for total time timers, not interval timers
                 if !timerManager.laps.isEmpty && timerManager.configuration?.hasIntervals == false {
                     lapsSection
@@ -121,6 +132,25 @@ struct TimerView: View {
         .onAppear {
             // Keep screen on when timer view appears
             updateScreenIdleTimer()
+            applyExerciseIfNeeded()
+        }
+        .onChange(of: exercise) { _, _ in
+            applyExerciseIfNeeded()
+        }
+        .onChange(of: timerManager.isCompleted) { _, completed in
+            // Offer the log form when an exercise-launched timer finishes.
+            guard completed, let exercise, exercise == appliedExercise else { return }
+            loggingExercise = exercise
+        }
+        .sheet(item: $loggingExercise) { context in
+            ExerciseLogSheet(
+                exerciseName: context.exerciseName,
+                date: context.planDayDate,
+                planId: context.planId,
+                planName: context.planName,
+                prefill: logPrefill(for: context),
+                onSaved: {}
+            )
         }
         .onDisappear {
             // Allow screen to sleep when timer view disappears
@@ -136,6 +166,86 @@ struct TimerView: View {
         }
     }
     
+    // MARK: - Set Prompt (rep-based exercises)
+    private func setPromptSection(_ sequence: TimerManager.SetSequence) -> some View {
+        VStack(spacing: 12) {
+            Text("Set \(sequence.currentSet) of \(sequence.totalSets)")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if let reps = sequence.repsPerSet {
+                Text("\(reps) reps")
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+            }
+
+            Button {
+                timerManager.confirmSet()
+            } label: {
+                Label(sequence.isFinalSet ? "Finish" : "Done", systemImage: "checkmark")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(FullWidthTimerButtonStyle(color: .green))
+            .accessibilityLabel(
+                sequence.isFinalSet
+                    ? "Finish exercise"
+                    : "Set \(sequence.currentSet) done, start \(sequence.restSeconds / 60) minute rest"
+            )
+        }
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGray6))
+        .clipShape(.rect(cornerRadius: 16))
+    }
+
+    // MARK: - Exercise plan application
+    /// Load the exercise's timer once. Never interrupts a timer already in flight.
+    private func applyExerciseIfNeeded() {
+        guard let exercise, exercise != appliedExercise else { return }
+        guard !timerManager.isRunning,
+              !timerManager.isAwaitingUser,
+              !timerManager.hasActiveSetSequence else { return }
+
+        appliedExercise = exercise
+
+        switch exercise.plan {
+        case .repBased(let reps, let sets, let restSeconds, let templateId):
+            let session = TimerSession(
+                templateId: templateId,
+                planDayId: planDay?.id,
+                exerciseName: exercise.exerciseName
+            )
+            context.insert(session)
+            try? context.save()
+            timerManager.startSetSequence(reps: reps, sets: sets, restSeconds: restSeconds, session: session)
+
+        case .durationBased(let config, _):
+            timerManager.loadConfiguration(config)
+
+        case nil:
+            break
+        }
+    }
+
+    /// What the timer knows that the plan row doesn't: how long it actually ran,
+    /// and how many sets were planned. Weight/grade/notes stay blank on purpose.
+    private func logPrefill(for exercise: ExerciseTimerContext) -> ExerciseLogSheet.Prefill {
+        let elapsed = timerManager.session?.totalElapsedSeconds
+        switch exercise.plan {
+        case .repBased(let reps, let sets, _, _):
+            return .init(reps: reps, sets: sets, durationSeconds: elapsed)
+        case .durationBased(let config, _):
+            return .init(
+                reps: config.intervals.first?.repetitions,
+                sets: config.repeatCount,
+                durationSeconds: elapsed
+            )
+        case nil:
+            return .init(reps: nil, sets: nil, durationSeconds: elapsed)
+        }
+    }
+
     // MARK: - Screen Management
     private func updateScreenIdleTimer() {
         // Keep screen on when timer is running or paused (but not stopped)

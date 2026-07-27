@@ -228,6 +228,51 @@ struct SeedTimerTemplates {
         try? context.save()
     }
     
+    // MARK: - Linking templates to their exercises
+
+    /// The seeded templates were authored as per-exercise protocols but were never
+    /// linked to the catalog. Exercise name → template name, exact strings from
+    /// SeedData.swift and the templates above (note the double space in the 7-53 one).
+    ///
+    /// "Bouldering 4x4" and "One-Arm, One-Leg" are deliberately absent: no 4x4 exercise
+    /// is seeded, and "One-Arm, One-Leg" matches three candidates ambiguously. Those
+    /// stay a manual choice in the catalog editor.
+    private static let exerciseTemplatePairs: [(exercise: String, template: String)] = [
+        ("FB \"Minimum Edge\" Hangs",            "Minimum Edge FB"),
+        ("FB Max-Weight Hangs (10s, 14–20mm)",   "Max-Weight 10 seconds protocal"),
+        ("FB Max-Weight Hangs (7/53, 14–20mm)",  "Max-Weight 7-53  protocal"),
+        ("Short-Duration Fingerboard Repeaters", "Short duration repeaters (Level 2)"),
+        ("Long-Duration Fingerboard Repeaters",  "Long duration repeaters (Level 1)"),
+        ("Pull-Up Intervals",                    "Pull-Up Interval"),
+        ("Wide Pinch Wrist Extention",           "Wide Pinch Wrist"),
+    ]
+
+    /// Attach seeded templates to their exercises. Only ever fills a nil link, so it is
+    /// idempotent and never overwrites a choice the user made.
+    @discardableResult
+    static func linkTemplatesToExercises(_ context: ModelContext) -> Int {
+        let templates = (try? context.fetch(FetchDescriptor<TimerTemplate>())) ?? []
+        guard !templates.isEmpty else { return 0 }
+        let templatesByName = Dictionary(templates.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+
+        var exercisesByName: [String: [Exercise]] = [:]
+        for exercise in (try? context.fetch(FetchDescriptor<Exercise>())) ?? [] {
+            exercisesByName[exercise.name, default: []].append(exercise)
+        }
+
+        var linked = 0
+        for pair in exerciseTemplatePairs {
+            guard let template = templatesByName[pair.template] else { continue }
+            for exercise in exercisesByName[pair.exercise] ?? [] where exercise.timerTemplateId == nil {
+                exercise.timerTemplateId = template.id
+                linked += 1
+            }
+        }
+
+        if linked > 0 { try? context.save() }
+        return linked
+    }
+
     static func nukeAndReseed(_ context: ModelContext) {
         // Delete all timer templates and intervals
         try? context.delete(model: TimerTemplate.self)

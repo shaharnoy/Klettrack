@@ -40,6 +40,7 @@ private final class PlanDayEditorCache {
     }
 
     var guidanceByName: [String: ExerciseGuidance] = [:]
+    var timerPlanByName: [String: ExerciseTimerPlan] = [:]
     var boulderingExerciseNames: Set<String> = []
     var catalogInfoByExerciseName: [String: ExerciseCatalogInfo] = [:]
     var parentPlan: Plan? = nil
@@ -792,14 +793,8 @@ struct PlanDayEditor: View {
 
     @State private var sheetRoute: SheetRoute? = nil
 
-    // Quick Log
+    // Quick Log — the form itself lives in ExerciseLogSheet, shared with the timer.
     @State private var loggingExercise: ExerciseSelection? = nil
-    @State private var inputReps: String = ""
-    @State private var inputSets: String = ""
-    @State private var inputDuration: String = ""
-    @State private var inputWeight: String = ""
-    @State private var inputGrade: String = ""
-    @State private var inputNotes: String = ""
     @State private var saveTick = false
     
     // Quick Progress
@@ -1021,7 +1016,7 @@ struct PlanDayEditor: View {
 
                 // Start a timer for this exercise
                 Button {
-                    timerAppState.switchToTimer(with: day, exerciseName: name)
+                    timerAppState.switchToTimer(with: day, exercise: timerContext(for: name))
                 } label: {
                     Image(systemName: "timer")
                 }
@@ -1035,8 +1030,6 @@ struct PlanDayEditor: View {
                 if isBouldering == true {
                     Button {
                         climbLoggingExercise = ExerciseSelection(name: name)
-                        inputGrade = ""
-                        inputReps = ""
                     } label: {
                         Image(systemName: "mountain.2")
                     }
@@ -1048,12 +1041,6 @@ struct PlanDayEditor: View {
                 } else if isBouldering == false {
                     Button {
                         loggingExercise = ExerciseSelection(name: name)
-                        inputReps = ""
-                        inputSets = ""
-                        inputDuration = ""
-                        inputWeight = ""
-                        inputGrade = ""
-                        inputNotes = ""
                     } label: {
                         Image(systemName: "square.and.pencil")
                     }
@@ -1121,6 +1108,18 @@ struct PlanDayEditor: View {
 
     
     // Helper to get exercise information from catalog
+    /// Everything the Timer tab needs for this exercise. The parent plan comes from the
+    /// cache because PlanDay has no back-reference to Plan.
+    private func timerContext(for name: String) -> ExerciseTimerContext {
+        ExerciseTimerContext(
+            exerciseName: name,
+            planDayDate: day.date,
+            planId: cache.parentPlan?.id,
+            planName: cache.parentPlan?.name,
+            plan: cache.timerPlanByName[name]
+        )
+    }
+
     private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?, notes: String?, durationText: String?, hasGuidance: Bool) {
         let g = cache.guidanceByName[name] ?? PlanDayEditorCache.ExerciseGuidance(
             repsText: nil, setsText: nil, restText: nil, notes: nil, durationText: nil
@@ -1384,19 +1383,14 @@ struct PlanDayEditor: View {
                 }
         // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in
-            NavigationStack {
-                logForm(exerciseName: sel.name)
-                    .listStyle(.insetGrouped)
-                    .navigationTitle("Quick Log")
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") {
-                                saveLogEntry(exerciseName: sel.name)
-                            }
-                        }
-                    }
-                    .sensoryFeedback(.success, trigger: saveTick)
-            }
+            ExerciseLogSheet(
+                exerciseName: sel.name,
+                date: day.date,
+                planId: cache.parentPlan?.id,
+                planName: cache.parentPlan?.name,
+                onSaved: { saveTick.toggle() }
+            )
+            .sensoryFeedback(.success, trigger: saveTick)
         }
         .task(id: day.id) {
             if !cache.isWarm {
@@ -1517,6 +1511,14 @@ struct PlanDayEditor: View {
             uniquingKeysWith: { existing, _ in existing } // first wins; no crash
         )
 
+        // 1b) Timer plan per exercise — reuses the fetch above, no extra round trip.
+        cache.timerPlanByName = Dictionary(
+            exercises.compactMap { ex in
+                ExerciseTimerDefaults.plan(for: ex, in: context).map { (ex.name, $0) }
+            },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
         // 2) Bouldering set (Activities)
         let actDesc = FetchDescriptor<Activity>()
         let activities = (try? context.fetch(actDesc)) ?? []
@@ -1600,38 +1602,6 @@ struct PlanDayEditor: View {
 
 
     
-    private func saveLogEntry(exerciseName: String) {
-        let reps = Double(inputReps.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-        let sets = Double(inputSets.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-        let duration = Double(inputDuration.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-        let weight = Double(inputWeight.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-        let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
-
-        let session = findOrCreateSession(for: day.date, in: context)
-        
-        // Using a date range predicate instead of relationship query
-        let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: day.date)
-        let _ = calendar.date(byAdding: .day, value: 1, to: dayStart)!
-        
-        let p = cache.parentPlan
-        
-        session.items.append(SessionItem(
-            exerciseName: exerciseName,
-            planSourceId: p?.id,
-            planName: p?.name,
-            reps: reps,
-            sets: sets,
-            weightKg: weight,
-            grade: grade,
-            notes: inputNotes.isEmpty ? nil : inputNotes,
-            duration: duration
-        ))
-        try? context.save()
-        saveTick.toggle()
-        loggingExercise = nil
-    }
-    
     // Quick log function for tick button - logs exercise without details
     private func quickLogExercise(name: String) {
         let session = findOrCreateSession(for: day.date, in: context)
@@ -1654,74 +1624,6 @@ struct PlanDayEditor: View {
         saveTick.toggle()
     }
     
-    // Break down log form into its own view builder
-    @ViewBuilder
-    private func logForm(exerciseName: String) -> some View {
-        Form {
-            Section { Text(exerciseName).font(.headline) }
-
-            Section {
-                LabeledContent {
-                    TextField("e.g. 10", text: $inputReps)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Reps", systemImage: "repeat")
-                }
-
-                LabeledContent {
-                    TextField("e.g. 3", text: $inputSets)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Sets", systemImage: "square.grid.3x3")
-                }
-                
-                LabeledContent {
-                        TextField("e.g. 20", text: $inputDuration)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                    } label: { Label("Duration (min)", systemImage: "clock") }
-                
-                LabeledContent {
-                    TextField("e.g. 12.5", text: $inputWeight)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Weight (kg)", systemImage: "scalemass")
-                }
-
-                LabeledContent {
-                    TextField("e.g. 6a+", text: $inputGrade)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Grade", systemImage: "star")
-                }
-            } header: {
-                Text("LOG FIELDS").textCase(nil)
-            } footer: {
-                Text("Leave a field empty if it doesn't apply.")
-            }
-
-            Section("Preview") {
-                LogMetricRow(
-                    reps: inputReps.isEmpty ? nil : inputReps,
-                    sets: inputSets.isEmpty ? nil : inputSets,
-                    weight: inputWeight.isEmpty ? nil : inputWeight,
-                    grade: inputGrade.isEmpty ? nil : inputGrade, //tak out, not very useful
-                    duration: inputDuration.isEmpty ? nil : inputDuration
-                )
-            }
-
-            Section("Notes") {
-                TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
-                    .lineLimit(1...3)
-            }
-        }
-    }
-
     private func refreshDayLog() {
         localDayLog = DayLogStore.fetchDayLog(for: day.date, in: context)
     }
@@ -2689,7 +2591,8 @@ private struct MetricRow: View {
 }
 
 
-private struct LogMetricRow: View {
+// Internal (not private): shared with ExerciseLogSheet.
+struct LogMetricRow: View {
     let reps: String?
     let sets: String?
     let weight: String?
@@ -2720,7 +2623,8 @@ private struct LogMetricRow: View {
 
 
 // Helper function to find or create a session for a given date
-private func findOrCreateSession(for date: Date, in context: ModelContext) -> Session {
+// Internal (not private): shared with ExerciseLogSheet.
+func findOrCreateSession(for date: Date, in context: ModelContext) -> Session {
     let calendar = Calendar.current
     let startOfDay = calendar.startOfDay(for: date)
     let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!

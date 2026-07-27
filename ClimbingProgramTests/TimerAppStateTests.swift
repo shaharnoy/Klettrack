@@ -20,13 +20,23 @@ final class TimerAppStateTests: XCTestCase {
         XCTAssertEqual(state.selectedTab, 5)
     }
 
-    func testSwitchToTimerCarriesAndClearsExerciseName() {
+    func testSwitchToTimerCarriesAndClearsExerciseContext() {
         let state = TimerAppState()
-        state.switchToTimer(exerciseName: "Hangboard Repeaters")
-        XCTAssertEqual(state.currentExerciseName, "Hangboard Repeaters")
+        let context = ExerciseTimerContext(
+            exerciseName: "Hangboard Repeaters",
+            planDayDate: Date(),
+            planId: UUID(),
+            planName: "Strength Block",
+            plan: .repBased(reps: 7, sets: 4, restSeconds: 180, templateId: nil)
+        )
 
-        // A day-level launch must not leave the previous exercise label behind.
+        state.switchToTimer(exercise: context)
+        XCTAssertEqual(state.currentExerciseName, "Hangboard Repeaters")
+        XCTAssertEqual(state.exerciseContext?.planName, "Strength Block")
+
+        // A day-level launch must not leave the previous exercise context behind.
         state.switchToTimer()
         XCTAssertNil(state.currentExerciseName)
+        XCTAssertNil(state.exerciseContext)
     }
 }

@@ -7,13 +7,27 @@
 import SwiftUI
 import SwiftData
 
+/// Everything the Timer tab needs to run — and later log — one exercise from a plan day.
+/// Carries the plan identity because `PlanDay` has no back-reference to its `Plan`.
+struct ExerciseTimerContext: Equatable, Identifiable {
+    let exerciseName: String
+    let planDayDate: Date
+    let planId: UUID?
+    let planName: String?
+    let plan: ExerciseTimerPlan?
+
+    var id: String { "\(exerciseName)|\(planDayDate.timeIntervalSince1970)" }
+}
+
 // Shared timer state to ensure only one timer instance
 @MainActor
 @Observable
 class TimerAppState {
     var selectedTab: Int = 1
     var currentPlanDay: PlanDay? = nil
-    var currentExerciseName: String? = nil
+    var exerciseContext: ExerciseTimerContext? = nil
+
+    var currentExerciseName: String? { exerciseContext?.exerciseName }
 
     // Navigation path storage for each tab to preserve navigation state
     var catalogNavigationPath = NavigationPath()
@@ -26,11 +40,11 @@ class TimerAppState {
     // Reference to shared timer manager
     private let sharedTimerManager = SharedTimerManager.shared
     
-    // exerciseName defaults to nil so day-level launches also clear any stale
+    // exercise defaults to nil so day-level launches also clear any stale
     // exercise context left over from a previous per-exercise launch.
-    func switchToTimer(with planDay: PlanDay? = nil, exerciseName: String? = nil) {
+    func switchToTimer(with planDay: PlanDay? = nil, exercise: ExerciseTimerContext? = nil) {
         currentPlanDay = planDay
-        currentExerciseName = exerciseName
+        exerciseContext = exercise
         selectedTab = 5 // Timer tab index
     }
     
@@ -102,7 +116,7 @@ struct RootTabView: View {
                 case 5:
                     TimerView(
                         planDay: timerAppState.currentPlanDay,
-                        exerciseName: timerAppState.currentExerciseName
+                        exercise: timerAppState.exerciseContext
                     )
                 default:
                     NavigationStack(path: $timerAppState.catalogNavigationPath) {
@@ -150,6 +164,9 @@ struct RootTabView: View {
         
             runOnce(per: "session_item_sort_backfill_2025-10-20") {
                 backfillSessionItemSort(context)
+            }
+            runOnce(per: "exercise_timer_template_link_2026-07-27") {
+                SeedTimerTemplates.linkTemplatesToExercises(context)
             }
             runOnce(per: "plan_day_exercise_order_backfill_2025-10-20") {
                 let days = (try? context.fetch(FetchDescriptor<PlanDay>())) ?? []

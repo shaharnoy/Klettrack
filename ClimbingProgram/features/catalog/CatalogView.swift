@@ -266,6 +266,7 @@ struct TrainingTypeDetailView: View {
     @State private var draftNotes = ""
     @State private var draftDescription = ""
     @State private var draftAbout = ""
+    @State private var draftTimerTemplateId: UUID? = nil
 
     private var exercisesByArea: [(String, [Exercise])] {
         let grouped = Dictionary(grouping: trainingType.exercises) { $0.area ?? "" }
@@ -442,6 +443,7 @@ struct TrainingTypeDetailView: View {
                     rest: $draftRest,
                     notes: $draftNotes,
                     description: $draftDescription,
+                    timerTemplateId: $draftTimerTemplateId,
                     availableAreas: availableAreas
                 ) {
                     let nextOrder = (trainingType.exercises.map { $0.order }.max() ?? 0) + 1
@@ -454,7 +456,8 @@ struct TrainingTypeDetailView: View {
                         durationText: draftDuration.isEmpty ? nil : draftDuration,
                         setsText: draftSets.isEmpty ? nil : draftSets,
                         restText: draftRest.isEmpty ? nil : draftRest,
-                        notes: draftNotes.isEmpty ? nil : draftNotes
+                        notes: draftNotes.isEmpty ? nil : draftNotes,
+                        timerTemplateId: draftTimerTemplateId
                     )
                     trainingType.exercises.append(ex)
                     try? context.save()
@@ -474,6 +477,7 @@ struct TrainingTypeDetailView: View {
                 rest: $draftRest,
                 notes: $draftNotes,
                 description: $draftDescription,
+                timerTemplateId: $draftTimerTemplateId,
                 availableAreas: availableAreas
             ) {
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
@@ -481,9 +485,12 @@ struct TrainingTypeDetailView: View {
                 ex.exerciseDescription = draftDescription.isEmpty ? nil : draftDescription
                 ex.repsText = draftReps.isEmpty ? nil : draftReps
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
-                ex.durationText = draftSets.isEmpty ? nil : draftDuration
+                // Guarded on draftDuration, not draftSets — the old check wiped the
+                // duration whenever sets happened to be empty.
+                ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
+                ex.timerTemplateId = draftTimerTemplateId
                 try? context.save()
             }
         }
@@ -491,6 +498,7 @@ struct TrainingTypeDetailView: View {
 
     private func startNewExercise() {
         draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDuration = "";
+        draftTimerTemplateId = nil
         modalRoute = .newExercise
     }
     private func openEditor(for ex: Exercise) {
@@ -502,6 +510,7 @@ struct TrainingTypeDetailView: View {
         draftDuration = ex.durationText ?? ""
         draftRest = ex.restText ?? ""
         draftNotes = ex.notes ?? ""
+        draftTimerTemplateId = ex.timerTemplateId
         editingExercise = ex
     }
 }
@@ -532,6 +541,7 @@ struct CombinationDetailView: View {
     @State private var draftNotes = ""
     @State private var draftDesc = ""
     @State private var draftAbout = ""
+    @State private var draftTimerTemplateId: UUID? = nil
 
 
     var body: some View {
@@ -617,6 +627,7 @@ struct CombinationDetailView: View {
                     rest: $draftRest,
                     notes: $draftNotes,
                     description: $draftDesc,
+                    timerTemplateId: $draftTimerTemplateId,
                     availableAreas: []
                 ) {
                     let nextOrder = (combo.exercises.map { $0.order }.max() ?? 0) + 1
@@ -629,7 +640,8 @@ struct CombinationDetailView: View {
                         durationText: draftDuration.isEmpty ? nil : draftDuration,
                         setsText: draftSets.isEmpty ? nil : draftSets,
                         restText: draftRest.isEmpty ? nil : draftRest,
-                        notes: draftNotes.isEmpty ? nil : draftNotes
+                        notes: draftNotes.isEmpty ? nil : draftNotes,
+                        timerTemplateId: draftTimerTemplateId
                     )
                     combo.exercises.append(ex)
                     try? context.save()
@@ -649,6 +661,7 @@ struct CombinationDetailView: View {
                 rest: $draftRest,
                 notes: $draftNotes,
                 description: $draftDesc,
+                timerTemplateId: $draftTimerTemplateId,
                 availableAreas: []
             ) {
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
@@ -659,6 +672,7 @@ struct CombinationDetailView: View {
                 ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
+                ex.timerTemplateId = draftTimerTemplateId
                 try? context.save()
             }
         }
@@ -666,6 +680,7 @@ struct CombinationDetailView: View {
 
     private func startNewExercise() {
         draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDesc = ""; draftDuration = "";
+        draftTimerTemplateId = nil
         modalRoute = .newExercise
     }
     private func openEditor(for ex: Exercise) {
@@ -677,6 +692,7 @@ struct CombinationDetailView: View {
         draftDuration = ex.durationText ?? ""
         draftRest = ex.restText ?? ""
         draftNotes = ex.notes ?? ""
+        draftTimerTemplateId = ex.timerTemplateId
         editingExercise = ex
     }
 }
@@ -803,11 +819,36 @@ struct ExerciseEditSheet: View {
     @Binding var rest: String
     @Binding var notes: String
     @Binding var description: String
-    
+    @Binding var timerTemplateId: UUID?
+
     let availableAreas: [String]
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
-    
+
+    @Query(sort: [SortDescriptor(\TimerTemplate.name)]) private var timerTemplates: [TimerTemplate]
+
+    /// What the timer button will do if no template is attached.
+    private var derivedTimerSummary: String {
+        let restSeconds = ExerciseTimerDefaults.parseSeconds(rest)
+
+        if let work = ExerciseTimerDefaults.parseSeconds(duration), work > 0 {
+            let restPart: String = restSeconds.map { ", \(readable($0)) rest" } ?? ""
+            return "Duration-based: \(readable(work)) work\(restPart)."
+        }
+
+        if let restSeconds, restSeconds > 0 {
+            let setCount: Int = ExerciseTimerDefaults.parseCount(sets) ?? 1
+            let repPart: String = ExerciseTimerDefaults.parseCount(reps).map { "\($0) reps" } ?? "each set"
+            return "Rep-based: \(repPart) × \(setCount) sets, \(readable(restSeconds)) rest between sets."
+        }
+
+        return "No timer — add a duration or rest above, or attach a template."
+    }
+
+    private func readable(_ seconds: Int) -> String {
+        seconds >= 60 && seconds % 60 == 0 ? "\(seconds / 60) min" : "\(seconds)s"
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -878,7 +919,23 @@ struct ExerciseEditSheet: View {
                               duration: duration.isEmpty ? nil : duration,
                               rest: rest.isEmpty ? nil : rest)
                 }
-                
+
+                Section {
+                    Picker("Timer", selection: $timerTemplateId) {
+                        Text("None — use reps/sets/rest").tag(UUID?.none)
+                        ForEach(timerTemplates) { template in
+                            Text(template.name).tag(UUID?.some(template.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                } header: {
+                    Text("TIMER")
+                } footer: {
+                    Text(timerTemplateId == nil
+                         ? derivedTimerSummary
+                         : "The timer button on a plan day loads this template.")
+                }
+
                 Section("Notes") {
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(1...3)

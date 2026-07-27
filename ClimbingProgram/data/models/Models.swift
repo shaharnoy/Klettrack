@@ -67,6 +67,8 @@ final class Exercise {
     var setsText: String?
     var restText: String?
     var notes: String?
+    /// Optional explicit timer template; nil falls back to guidance-derived timing.
+    var timerTemplateId: UUID?
 
     init(
         id: UUID = UUID(),
@@ -78,7 +80,8 @@ final class Exercise {
         durationText: String? = nil,
         setsText: String? = nil,
         restText: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        timerTemplateId: UUID? = nil
     ) {
         self.id = id
         self.name = name
@@ -90,6 +93,7 @@ final class Exercise {
         self.setsText = setsText
         self.restText = restText
         self.notes = notes
+        self.timerTemplateId = timerTemplateId
     }
 }
 
@@ -207,12 +211,16 @@ final class TimerTemplate {
     var isRepeating: Bool
     var repeatCount: Int?
     var restTimeBetweenIntervals: Int?
-    
+
+    /// Non-nil ⇒ rep-based: each set waits for the user to confirm instead of timing the work.
+    /// Pairs with repeatCount (set count) and restTimeBetweenIntervals (rest between sets).
+    var repsPerSet: Int?
+
     // Metadata
     var createdDate: Date
     var lastUsedDate: Date?
     var useCount: Int
-    
+
     init(
         id: UUID = UUID(),
         name: String,
@@ -220,7 +228,8 @@ final class TimerTemplate {
         totalTimeSeconds: Int? = nil,
         isRepeating: Bool = false,
         repeatCount: Int? = nil,
-        restTimeBetweenIntervals: Int? = nil
+        restTimeBetweenIntervals: Int? = nil,
+        repsPerSet: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -229,9 +238,13 @@ final class TimerTemplate {
         self.isRepeating = isRepeating
         self.repeatCount = repeatCount
         self.restTimeBetweenIntervals = restTimeBetweenIntervals
+        self.repsPerSet = repsPerSet
         self.createdDate = Date()
         self.useCount = 0
     }
+
+    /// A rep-based template counts reps and waits for confirmation; a duration-based one times the work.
+    var isRepBased: Bool { repsPerSet != nil }
     
     // Computed property to get the effective total time
     var effectiveTotalTimeSeconds: Int? {
