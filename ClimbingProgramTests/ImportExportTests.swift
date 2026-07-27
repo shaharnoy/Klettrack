@@ -457,6 +457,53 @@ class ImportExportTests: ClimbingProgramTestSuite {
                        "Still exactly one catalog entry")
     }
 
+    /// Pins the debug fixture (docs/debug-timers.csv): four short-rest exercises covering
+    /// every branch of the classifier, so the file stays importable as the format evolves.
+    func testDebugTimersFixtureClassifiesEveryBranch() async throws {
+        let planId = UUID().uuidString
+        let imported = try await importPlanCSV(named: "debug_fixture.csv", rows: [
+            "2026-07-30 09:00:00,exercise,DEBUG Rep 5s,,,,,,,,,,,,3,3,0.000,,\(planId),DEBUG Timers,,Rep-based derived from rest text,,,,5 sec,,",
+            "2026-07-30 09:05:00,exercise,DEBUG Rep Spec 8s,,,,,,,,,,,,3,4,0.000,,\(planId),DEBUG Timers,,Rep-based from timer_spec,,,,,DEBUG Fast Protocol,reps=3;sets=4;rest=8",
+            "2026-07-30 09:10:00,exercise,DEBUG Interval 10s,,,,,,,,,,,,,,0.000,,\(planId),DEBUG Timers,,Duration-based - auto advances,,,,,DEBUG Fast Interval,interval=Work|10|5|3",
+            "2026-07-30 09:15:00,exercise,DEBUG Single Set,,,,,,,,,,,,5,1,0.000,,\(planId),DEBUG Timers,,Finishes on the first Done,,,,5 sec,,"
+        ], header: testCSVHeaderWithTimers)
+        XCTAssertEqual(imported, 4)
+
+        func plan(_ name: String) throws -> ExerciseTimerPlan {
+            let exercise = try XCTUnwrap(self.exercise(named: name), "\(name) should be in the catalog")
+            return try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context), "\(name) should have a timer")
+        }
+
+        // Derived from "5 sec" — the seconds unit must not be read as minutes.
+        guard case .repBased(let reps, let sets, let rest, _) = try plan("DEBUG Rep 5s") else {
+            return XCTFail("DEBUG Rep 5s should be rep-based")
+        }
+        XCTAssertEqual((reps, sets, rest).0, 3)
+        XCTAssertEqual(sets, 3)
+        XCTAssertEqual(rest, 5, "5 sec is five seconds, not five minutes")
+
+        guard case .repBased(let specReps, let specSets, let specRest, let specTemplate) = try plan("DEBUG Rep Spec 8s") else {
+            return XCTFail("DEBUG Rep Spec 8s should be rep-based")
+        }
+        XCTAssertEqual(specReps, 3)
+        XCTAssertEqual(specSets, 4)
+        XCTAssertEqual(specRest, 8)
+        XCTAssertNotNil(specTemplate, "Comes from an explicit template")
+
+        guard case .durationBased(let config, _) = try plan("DEBUG Interval 10s") else {
+            return XCTFail("DEBUG Interval 10s should be duration-based")
+        }
+        let interval = try XCTUnwrap(config.intervals.first)
+        XCTAssertEqual(interval.workTimeSeconds, 10)
+        XCTAssertEqual(interval.restTimeSeconds, 5)
+        XCTAssertEqual(interval.repetitions, 3)
+
+        guard case .repBased(_, let singleSets, _, _) = try plan("DEBUG Single Set") else {
+            return XCTFail("DEBUG Single Set should be rep-based")
+        }
+        XCTAssertEqual(singleSets, 1, "Finishes on the first confirmation, no rest ever runs")
+    }
+
     func testLogOnlyRowsCreateNoTemplates() async throws {
         _ = try await importPlanCSV(named: "timer_logonly.csv", rows: [
             "2025-09-11 09:00:00,exercise,No Plan Here,,,,,,,,,,,,5,3,0.000,,,,,,,,,Ghost Timer,total=60"
