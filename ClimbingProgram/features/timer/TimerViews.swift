@@ -20,20 +20,35 @@ struct TimerView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    
+    @Environment(TimerAppState.self) private var timerAppState
+
     // Keep shared timer manager alive in view state and observe via @Observable tracking
     @State private var sharedTimerManager = SharedTimerManager.shared
-    
+
     @State private var sheetRoute: SheetRoute?
 
     /// Exercise context we have already applied, so re-entering the tab doesn't reload it.
     @State private var appliedExercise: ExerciseTimerContext?
     @State private var loggingExercise: ExerciseTimerContext?
+    /// A different exercise arrived while a timer was in flight — ask before replacing it.
+    @State private var pendingExercise: ExerciseTimerContext?
 
     let planDay: PlanDay?
     var exercise: ExerciseTimerContext? = nil
 
-    private var exerciseName: String? { exercise?.exerciseName }
+    /// The exercise actually loaded, not the one most recently tapped. While a switch is
+    /// pending these differ, and showing the incoming name would misrepresent what's running.
+    private var exerciseName: String? { appliedExercise?.exerciseName }
+
+    /// A timer that is mid-flight and would be lost by loading something else.
+    /// A merely loaded-but-stopped configuration is not busy and can be replaced silently.
+    private var timerIsBusy: Bool {
+        timerManager.isRunning
+            || timerManager.isPaused
+            || timerManager.isGetReady
+            || timerManager.isAwaitingUser
+            || timerManager.hasActiveSetSequence
+    }
 
     // Computed property to access the timer manager
     private var timerManager: TimerManager {
@@ -57,6 +72,11 @@ struct TimerView: View {
                 } else {
                     // Timer Display
                     timerDisplaySection
+
+                    // Mid-rest in a set sequence: say what's next and allow cutting it short.
+                    if let sequence = timerManager.setSequence {
+                        restSkipSection(sequence)
+                    }
                 }
 
                 // Progress Indicators
@@ -142,6 +162,27 @@ struct TimerView: View {
             guard completed, let exercise, exercise == appliedExercise else { return }
             loggingExercise = exercise
         }
+        .confirmationDialog(
+            "Timer in progress",
+            isPresented: Binding(
+                get: { pendingExercise != nil },
+                set: { if !$0 { pendingExercise = nil } }
+            ),
+            presenting: pendingExercise
+        ) { next in
+            Button("Start \(next.exerciseName)", role: .destructive) {
+                timerManager.stop()
+                apply(next)
+                pendingExercise = nil
+            }
+            Button("Keep \(exerciseName ?? "current timer")", role: .cancel) {
+                // Put the running exercise back so the label matches what's actually timing.
+                timerAppState.exerciseContext = appliedExercise
+                pendingExercise = nil
+            }
+        } message: { next in
+            Text("\(exerciseName ?? "A timer") is still going. Starting \(next.exerciseName) will discard it.")
+        }
         .sheet(item: $loggingExercise) { context in
             ExerciseLogSheet(
                 exerciseName: context.exerciseName,
@@ -199,14 +240,51 @@ struct TimerView: View {
         .clipShape(.rect(cornerRadius: 16))
     }
 
+    // MARK: - Rest between sets
+    private func restSkipSection(_ sequence: TimerManager.SetSequence) -> some View {
+        let nextSet = min(sequence.currentSet + 1, sequence.totalSets)
+
+        return VStack(spacing: 10) {
+            // The total-timer display has no phase label of its own, so say it here.
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle().fill(.orange.opacity(0.2)).frame(width: 16, height: 16)
+                    Circle().fill(.orange).frame(width: 10, height: 10)
+                }
+                Text("Rest")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.orange)
+            }
+
+            Text("Next up: set \(nextSet) of \(sequence.totalSets)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Button {
+                timerManager.skipRest()
+            } label: {
+                Label("Skip rest", systemImage: "forward.end.fill")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityLabel("Skip the remaining rest and start set \(nextSet)")
+        }
+    }
+
     // MARK: - Exercise plan application
-    /// Load the exercise's timer once. Never interrupts a timer already in flight.
+
+    /// Load the exercise's timer once. If one is already in flight, ask first
+    /// rather than silently discarding it.
     private func applyExerciseIfNeeded() {
         guard let exercise, exercise != appliedExercise else { return }
-        guard !timerManager.isRunning,
-              !timerManager.isAwaitingUser,
-              !timerManager.hasActiveSetSequence else { return }
+        guard !timerIsBusy else {
+            pendingExercise = exercise
+            return
+        }
+        apply(exercise)
+    }
 
+    private func apply(_ exercise: ExerciseTimerContext) {
         appliedExercise = exercise
 
         switch exercise.plan {

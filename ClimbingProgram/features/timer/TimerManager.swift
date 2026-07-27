@@ -97,8 +97,12 @@ class TimerManager {
     var displayTime: Int {
         guard let config = configuration else { return 0 }
         if state == .getReady { return max(0, 5 - currentTime) }
+        // A rest between sets is a countdown, not a stopwatch.
+        if setSequence != nil, let total = config.totalTimeSeconds {
+            return max(0, total - totalElapsedTime)
+        }
         if config.hasTotalTime && !config.hasIntervals {
-            return totalElapsedTime - lastLapTime
+            return max(0, totalElapsedTime - lastLapTime)
         } else {
             return currentPhaseTimeRemaining
         }
@@ -225,10 +229,14 @@ class TimerManager {
         currentInterval = 0
         currentRepetition = 0
         currentSequenceRepeat = 0
-        currentPhase = startsWithGetReady ? .getReady : .work
+        currentPhase = startsWithGetReady ? .getReady : (setSequence != nil ? .rest : .work)
         pausedAtDuringGetReady = false
         refreshDerivedFlags()
         laps = []
+        // Must be cleared alongside `laps`: displayTime for a total timer is
+        // totalElapsedTime - lastLapTime, so a stale lap from a previous run
+        // makes the next one start negative.
+        lastLapTime = 0
 
         engine?.start()
         startTicker()
@@ -281,6 +289,13 @@ class TimerManager {
             with: TimerConfiguration(totalTimeSeconds: sequence.restSeconds, getReady: false),
             session: session
         )
+    }
+
+    /// End the current rest early and move straight to the next set.
+    /// The time actually rested still counts, so cutting a 3 min rest at 2 min logs 2 min.
+    func skipRest() {
+        guard setSequence != nil, !isAwaitingUser, state != .completed else { return }
+        advanceSetSequence()
     }
 
     /// Called when a rest countdown finishes and more sets remain.
@@ -466,6 +481,9 @@ class TimerManager {
         // Map to IntervalPhase
         let newPhase: IntervalPhase = {
             guard let seg = snap.segment else { return .completed }
+            // A set-sequence rest runs on a plain total timer, so its segment is a
+            // work block. It is a rest to the user, and must read as one.
+            if setSequence != nil, seg.kind == .work { return .rest }
             switch seg.kind {
             case .getReady: return .getReady
             case .work: return .work

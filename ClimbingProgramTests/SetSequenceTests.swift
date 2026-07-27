@@ -63,7 +63,7 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         XCTAssertEqual(manager.configuration?.getReady, false)
         XCTAssertEqual(manager.state, .running, "Not .getReady")
         XCTAssertFalse(manager.isGetReady)
-        XCTAssertEqual(manager.currentPhase, .work)
+        XCTAssertEqual(manager.currentPhase, .rest, "Straight into the rest")
 
         manager.stop()
     }
@@ -160,6 +160,87 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
 
         XCTAssertEqual(session.totalElapsedSeconds, 180, "Time already rested still counts")
         XCTAssertFalse(session.wasCompleted)
+    }
+
+    // MARK: - Skipping a rest
+
+    func testSkipRestAdvancesAndCountsOnlyTheTimeActuallyRested() {
+        let manager = makeManager()
+        let session = makeSession()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: session)
+
+        manager.confirmSet()
+        manager.totalElapsedTime = 120   // cut a 3 min rest short at 2 min
+        manager.skipRest()
+
+        XCTAssertEqual(manager.state, .awaitingUser)
+        XCTAssertEqual(manager.setSequence?.currentSet, 2)
+        XCTAssertEqual(manager.setSequence?.accumulatedSeconds, 120,
+                       "Logs what was actually rested, not the planned 180")
+    }
+
+    func testSkipRestDoesNothingWhileAwaitingTheUser() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: makeSession())
+
+        manager.skipRest()
+
+        XCTAssertEqual(manager.setSequence?.currentSet, 1, "There is no rest to skip yet")
+        XCTAssertEqual(manager.state, .awaitingUser)
+    }
+
+    func testSkipRestDoesNothingWithoutASequence() {
+        let manager = makeManager()
+        manager.skipRest()
+        XCTAssertNil(manager.setSequence)
+    }
+
+    // MARK: - Display
+
+    /// A lap taken during one rest must not carry into the next one — displayTime for a
+    /// total timer is (elapsed - lastLapTime), so a stale lap made it start negative.
+    func testDisplayTimeNeverGoesNegativeAfterALapInAPreviousRest() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: makeSession())
+
+        manager.confirmSet()
+        manager.totalElapsedTime = 13
+        manager.addLap()
+        XCTAssertGreaterThanOrEqual(manager.displayTime, 0)
+
+        manager.advanceSetSequence()   // rest finishes, set 2 prompt
+        manager.confirmSet()           // rest 2 starts, totalElapsedTime back to 0
+
+        XCTAssertGreaterThanOrEqual(manager.displayTime, 0, "Rest 2 must not start negative")
+        XCTAssertTrue(manager.laps.isEmpty, "Laps are cleared with each rest")
+
+        manager.stop()
+    }
+
+    /// The rest runs on a plain total timer whose segment is a work block, so the
+    /// phase has to be corrected or the UI reads "Work" during a rest.
+    func testRestReportsTheRestPhase() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: makeSession())
+        manager.confirmSet()
+
+        XCTAssertEqual(manager.currentPhase, .rest, "A rest must not read as Work")
+
+        manager.stop()
+    }
+
+    func testRestDisplayCountsDown() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: makeSession())
+        manager.confirmSet()
+
+        manager.totalElapsedTime = 0
+        XCTAssertEqual(manager.displayTime, 180, "A rest starts at its full length")
+
+        manager.totalElapsedTime = 20
+        XCTAssertEqual(manager.displayTime, 160, "and counts down, not up")
+
+        manager.stop()
     }
 
     func testConfirmIsIgnoredWhenNotAwaitingUser() {
