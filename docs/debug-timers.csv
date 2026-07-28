@@ -1,5 +1,5 @@
 date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,rest,timer_name,timer_spec
-2026-07-30 09:00:00,exercise,DEBUG Rep 5s,,,,,,,,,,,,3,3,0.000,,B9B5A2DF-A2F8-4B6A-9D10-EC4DE925C914,DEBUG Timers,,Rep-based derived from rest text,,,,5 sec,,
-2026-07-30 09:05:00,exercise,DEBUG Rep Spec 8s,,,,,,,,,,,,3,4,0.000,,B9B5A2DF-A2F8-4B6A-9D10-EC4DE925C914,DEBUG Timers,,Rep-based from timer_spec,,,,,DEBUG Fast Protocol,reps=3;sets=4;rest=8
-2026-07-30 09:10:00,exercise,DEBUG Interval 10s,,,,,,,,,,,,,,0.000,,B9B5A2DF-A2F8-4B6A-9D10-EC4DE925C914,DEBUG Timers,,Duration-based - auto advances,,,,,DEBUG Fast Interval,interval=Work|10|5|3
-2026-07-30 09:15:00,exercise,DEBUG Single Set,,,,,,,,,,,,5,1,0.000,,B9B5A2DF-A2F8-4B6A-9D10-EC4DE925C914,DEBUG Timers,,Finishes on the first Done,,,,5 sec,,
+2026-07-30 09:00:00,plan,DEBUG Rep 5s,,,,,,,,,,,,3,3,0.000,,B9B5A2DF-A2F8-4B6A-9D10-EC4DE925C914,DEBUG Timers,,Rep-based derived from rest text,,,,5 sec,,
+2026-07-30 09:05:00,plan,DEBUG Rep Spec 8s,,,,,,,,,,,,3,4,0.000,,B9B5A2DF-A2F8-4B6A-9D10-EC4DE925C914,DEBUG Timers,,Rep-based from timer_spec,,,,,DEBUG Fast Protocol,reps=3;sets=4;rest=8
+2026-07-30 09:10:00,plan,DEBUG Interval 10s,,,,,,,,,,,,,,0.000,,B9B5A2DF-A2F8-4B6A-9D10-EC4DE925C914,DEBUG Timers,,Duration-based - auto advances,,,,,DEBUG Fast Interval,interval=Work|10|5|3
+2026-07-30 09:15:00,plan,DEBUG Single Set,,,,,,,,,,,,5,1,0.000,,B9B5A2DF-A2F8-4B6A-9D10-EC4DE925C914,DEBUG Timers,,Finishes on the first Done,,,,5 sec,,

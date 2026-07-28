@@ -48,7 +48,9 @@ final class LogCSVTests: BaseSwiftDataTestCase {
         let freshCtx = ModelContext(fresh)
         
         let inserted = try await LogCSV.importCSVAsync(from: tmpURL, into: freshCtx, tag: "test", dedupe: true)
-        XCTAssertEqual(inserted, 1, "Should import exactly one exercise item")
+        // Two things travel in the CSV: the plan day's exercise as a `type=plan` template
+        // row, and the performed set as a `type=exercise` log row. The count covers both.
+        XCTAssertEqual(inserted, 2, "One plan-day exercise plus one logged item")
         
         // Verify plan reconstructed with day and chosen exercise + day type
         let plans: [Plan] = (try? freshCtx.fetch(FetchDescriptor<Plan>())) ?? []

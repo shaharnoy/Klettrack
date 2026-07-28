@@ -459,15 +459,18 @@ class ImportExportTests: ClimbingProgramTestSuite {
 
     /// Pins the debug fixture (docs/debug-timers.csv): four short-rest exercises covering
     /// every branch of the classifier, so the file stays importable as the format evolves.
+    /// It is a plan fixture, hence `type=plan` — importing it must not log anything.
     func testDebugTimersFixtureClassifiesEveryBranch() async throws {
         let planId = UUID().uuidString
         let imported = try await importPlanCSV(named: "debug_fixture.csv", rows: [
-            "2026-07-30 09:00:00,exercise,DEBUG Rep 5s,,,,,,,,,,,,3,3,0.000,,\(planId),DEBUG Timers,,Rep-based derived from rest text,,,,5 sec,,",
-            "2026-07-30 09:05:00,exercise,DEBUG Rep Spec 8s,,,,,,,,,,,,3,4,0.000,,\(planId),DEBUG Timers,,Rep-based from timer_spec,,,,,DEBUG Fast Protocol,reps=3;sets=4;rest=8",
-            "2026-07-30 09:10:00,exercise,DEBUG Interval 10s,,,,,,,,,,,,,,0.000,,\(planId),DEBUG Timers,,Duration-based - auto advances,,,,,DEBUG Fast Interval,interval=Work|10|5|3",
-            "2026-07-30 09:15:00,exercise,DEBUG Single Set,,,,,,,,,,,,5,1,0.000,,\(planId),DEBUG Timers,,Finishes on the first Done,,,,5 sec,,"
+            "2026-07-30 09:00:00,plan,DEBUG Rep 5s,,,,,,,,,,,,3,3,0.000,,\(planId),DEBUG Timers,,Rep-based derived from rest text,,,,5 sec,,",
+            "2026-07-30 09:05:00,plan,DEBUG Rep Spec 8s,,,,,,,,,,,,3,4,0.000,,\(planId),DEBUG Timers,,Rep-based from timer_spec,,,,,DEBUG Fast Protocol,reps=3;sets=4;rest=8",
+            "2026-07-30 09:10:00,plan,DEBUG Interval 10s,,,,,,,,,,,,,,0.000,,\(planId),DEBUG Timers,,Duration-based - auto advances,,,,,DEBUG Fast Interval,interval=Work|10|5|3",
+            "2026-07-30 09:15:00,plan,DEBUG Single Set,,,,,,,,,,,,5,1,0.000,,\(planId),DEBUG Timers,,Finishes on the first Done,,,,5 sec,,"
         ], header: testCSVHeaderWithTimers)
         XCTAssertEqual(imported, 4)
+        XCTAssertTrue(((try? context.fetch(FetchDescriptor<SessionItem>())) ?? []).isEmpty,
+                      "The fixture describes a plan, so nothing may land in the log")
 
         func plan(_ name: String) throws -> ExerciseTimerPlan {
             let exercise = try XCTUnwrap(self.exercise(named: name), "\(name) should be in the catalog")
@@ -502,6 +505,231 @@ class ImportExportTests: ClimbingProgramTestSuite {
             return XCTFail("DEBUG Single Set should be rep-based")
         }
         XCTAssertEqual(singleSets, 1, "Finishes on the first confirmation, no rest ever runs")
+    }
+
+    // MARK: - `type=plan` rows are templates, not logs
+
+    /// A row describing a planned exercise. `plan_id` blank means "fork a new plan".
+    private func planRow(
+        date: String = "2026-03-02 09:00:00",
+        exercise: String,
+        planId: UUID? = nil,
+        planName: String = "Template Plan",
+        reps: String = "5",
+        sets: String = "3",
+        duration: String = "0.000",
+        dayType: String = "",
+        type: String = "plan",
+        notes: String = ""
+    ) -> String {
+        let id = planId?.uuidString ?? ""
+        return "\(date),\(type),\(exercise),,,,,,,,,,,,\(reps),\(sets),\(duration),,\(id),\(planName),\(dayType),\(notes),,,"
+    }
+
+    private func allPlans() -> [Plan] {
+        (try? context.fetch(FetchDescriptor<Plan>())) ?? []
+    }
+
+    private func loggedItems() -> [SessionItem] {
+        (try? context.fetch(FetchDescriptor<SessionItem>())) ?? []
+    }
+
+    /// The reported bug: importing a plan made every exercise show up as already logged.
+    func testPlanRowsCreateNoLoggedItems() async throws {
+        let planId = UUID()
+        let imported = try await importPlanCSV(named: "plan_no_logs.csv", rows: [
+            planRow(exercise: "Hangboard Repeaters", planId: planId),
+            planRow(exercise: "Pull-ups Weighted", planId: planId)
+        ])
+        XCTAssertEqual(imported, 2, "Two plan-day exercises landed")
+
+        XCTAssertTrue(loggedItems().isEmpty, "A planned exercise is not a performed one")
+        XCTAssertTrue(((try? context.fetch(FetchDescriptor<Session>())) ?? []).isEmpty,
+                      "No plan row may open a Session")
+
+        let plan = try XCTUnwrap(allPlans().first { $0.id == planId })
+        let day = try XCTUnwrap(plan.days.first, "The plan day is still built")
+        XCTAssertEqual(Set(day.chosenExercises), ["Hangboard Repeaters", "Pull-ups Weighted"])
+    }
+
+    /// Plan views resolve grouping and guidance by name against the catalog, so the
+    /// catalog side must keep working now that plan rows skip the log.
+    func testPlanRowsStillPopulateCatalog() async throws {
+        _ = try await importPlanCSV(named: "plan_catalog.csv", rows: [
+            planRow(exercise: "Boulder Project", planId: UUID(), planName: "Catalog Plan",
+                    duration: "45.000", notes: "Stay tense")
+        ])
+
+        let entry = try XCTUnwrap(catalogExercises().first { $0.exercise.name == "Boulder Project" })
+        XCTAssertEqual(entry.activity, "Imported Bouldering")
+        XCTAssertEqual(entry.type, "Catalog Plan")
+        XCTAssertEqual(entry.exercise.repsText, "5")
+        XCTAssertEqual(entry.exercise.setsText, "3")
+        XCTAssertEqual(entry.exercise.durationText, "45 min")
+        XCTAssertEqual(entry.exercise.notes, "Stay tense")
+    }
+
+    /// The day editor sorts by `exerciseOrder`, falling back to catalog then alphabetical
+    /// order, so the file's row order only survives if import writes that dictionary.
+    func testPlanRowOrderIsPreserved() async throws {
+        let planId = UUID()
+        _ = try await importPlanCSV(named: "plan_order.csv", rows: [
+            planRow(exercise: "Zercher Squat", planId: planId),
+            planRow(exercise: "Ape Index Reach", planId: planId),
+            planRow(exercise: "Muscle-up", planId: planId)
+        ])
+
+        let plan = try XCTUnwrap(allPlans().first { $0.id == planId })
+        let day = try XCTUnwrap(plan.days.first)
+        let expected = ["Zercher Squat", "Ape Index Reach", "Muscle-up"]
+        XCTAssertEqual(day.chosenExercises, expected, "Row order, not alphabetical")
+        XCTAssertEqual(expected.map { day.exerciseOrder[$0] }, [0, 1, 2],
+                       "exerciseOrder pins the row order for the UI")
+    }
+
+    /// Blanking `plan_id` forks a fresh plan, so an edited export can be loaded alongside
+    /// the original and the old one deleted by hand. One mint per plan_name, not per row.
+    func testBlankPlanIdForksNewPlan() async throws {
+        let planId = UUID()
+        _ = try await importPlanCSV(named: "fork_original.csv", rows: [
+            planRow(exercise: "Front Lever Pulls", planId: planId, planName: "Week 1"),
+            planRow(exercise: "Hangboard Repeaters", planId: planId, planName: "Week 1")
+        ])
+        XCTAssertEqual(allPlans().count, 1)
+
+        // Same file with the plan_id column cleared.
+        let forked = try await importPlanCSV(named: "fork_copy.csv", rows: [
+            planRow(exercise: "Front Lever Pulls", planName: "Week 1"),
+            planRow(exercise: "Hangboard Repeaters", planName: "Week 1")
+        ])
+        XCTAssertEqual(forked, 2)
+
+        let plans = allPlans()
+        XCTAssertEqual(plans.count, 2, "The fork is a second plan, the original is untouched")
+        let fresh = try XCTUnwrap(plans.first { $0.id != planId })
+        XCTAssertEqual(fresh.name, "Week 1")
+        XCTAssertEqual(fresh.days.count, 1, "Both blank-id rows joined the same new plan")
+        XCTAssertEqual(fresh.days.first?.chosenExercises.count, 2)
+    }
+
+    /// A known plan_id edits that plan in place, additively: the file adds, never removes.
+    func testKnownPlanIdMergesAdditively() async throws {
+        let planId = UUID()
+        _ = try await importPlanCSV(named: "merge_first.csv", rows: [
+            planRow(exercise: "Hangboard Repeaters", planId: planId),
+            planRow(exercise: "Core Rollouts", planId: planId)
+        ])
+
+        // Second file drops Core Rollouts and adds Campus Ladders.
+        let added = try await importPlanCSV(named: "merge_second.csv", rows: [
+            planRow(exercise: "Hangboard Repeaters", planId: planId),
+            planRow(exercise: "Campus Ladders", planId: planId)
+        ])
+        XCTAssertEqual(added, 1, "Only the genuinely new exercise counts")
+
+        let plan = try XCTUnwrap(allPlans().first { $0.id == planId })
+        XCTAssertEqual(plan.days.count, 1, "Same date heals the existing day, no duplicate")
+        let day = try XCTUnwrap(plan.days.first)
+        XCTAssertEqual(day.chosenExercises,
+                       ["Hangboard Repeaters", "Core Rollouts", "Campus Ladders"],
+                       "Union: a line removed from the CSV is not removed from the plan")
+    }
+
+    /// One file may carry both a template and real history for the same day.
+    func testExercisePlanRowsCoexist() async throws {
+        let planId = UUID()
+        let imported = try await importPlanCSV(named: "plan_and_log.csv", rows: [
+            planRow(exercise: "Hangboard Repeaters", planId: planId),
+            planRow(exercise: "Pull-ups Weighted", planId: planId),
+            planRow(exercise: "Hangboard Repeaters", planId: planId, type: "exercise",
+                    notes: "Felt strong")
+        ])
+        XCTAssertEqual(imported, 3, "Two plan-day exercises plus one logged item")
+
+        let plan = try XCTUnwrap(allPlans().first { $0.id == planId })
+        XCTAssertEqual(plan.days.first?.chosenExercises,
+                       ["Hangboard Repeaters", "Pull-ups Weighted"])
+
+        let logged = loggedItems()
+        XCTAssertEqual(logged.count, 1, "Only the exercise row is history")
+        XCTAssertEqual(logged.first?.exerciseName, "Hangboard Repeaters")
+        XCTAssertEqual(logged.first?.notes, "Felt strong")
+    }
+
+    /// Export used to walk only Session.items, so a plan day nobody had logged against
+    /// round-tripped to nothing. It must now survive the trip as `type=plan` rows.
+    func testPlanRoundTrip() async throws {
+        let kind = try ensurePlanKind(context, key: "weekly", name: "Weekly")
+        let plan = Plan(name: "Round Trip Plan", kind: kind, startDate: Date())
+        context.insert(plan)
+
+        let dayDate = Calendar.current.startOfDay(for: Date())
+        let dayType = DayTypeModel(key: "strength", name: "Strength", colorKey: "gray")
+        context.insert(dayType)
+        let day = PlanDay(date: dayDate, type: dayType)
+        day.chosenExercises = ["Zercher Squat", "Ape Index Reach"]
+        day.exerciseOrder = ["Zercher Squat": 0, "Ape Index Reach": 1]
+        plan.days.append(day)
+
+        // Guidance lives on the catalog, which is where plan rows source their metrics.
+        let activity = createTestActivity(name: "Strength")
+        let trainingType = createTestTrainingType(activity: activity, name: "Power")
+        let seeded = createTestExercise(trainingType: trainingType, name: "Zercher Squat", repsText: "5")
+        seeded.setsText = "4"
+        seeded.durationText = "45 min"
+        seeded.notes = "Brace hard"
+        try context.save()
+
+        let exported = LogCSV.makeExportCSV(context: context).csv
+        let planRows = exported.split(separator: "\n").filter { $0.contains(",plan,") }
+        XCTAssertEqual(planRows.count, 2, "One row per plan-day exercise")
+        XCTAssertTrue(planRows[0].contains("Zercher Squat"), "Export follows exerciseOrder")
+        XCTAssertTrue(planRows[0].contains("strength"), "day_type carries the key")
+        XCTAssertTrue(planRows[0].contains("Brace hard"), "notes come from the catalog")
+        XCTAssertTrue(planRows[0].contains(",5,4,45.000,"),
+                      "reps/sets/duration parsed out of the guidance text: \(planRows[0])")
+        XCTAssertTrue(planRows[1].contains("Ape Index Reach"))
+
+        // Drop the plan subtree, then rebuild it from the CSV alone.
+        plan.days.forEach { context.delete($0) }
+        context.delete(plan)
+        try context.save()
+        XCTAssertTrue(allPlans().isEmpty)
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("plan_rt.csv")
+        try exported.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        _ = try await LogCSV.importCSVAsync(from: url, into: context, tag: "plan-rt", dedupe: true)
+
+        let restored = try XCTUnwrap(allPlans().first { $0.name == "Round Trip Plan" })
+        let restoredDay = try XCTUnwrap(restored.days.first)
+        XCTAssertEqual(restoredDay.chosenExercises, ["Zercher Squat", "Ape Index Reach"],
+                       "Names and order both survive")
+        XCTAssertEqual(restoredDay.type?.key, "strength")
+        XCTAssertTrue(loggedItems().isEmpty, "A round-tripped plan is still not a log")
+    }
+
+    /// Clearing the whole plan_id column to fork also blanks it on the log rows. Those
+    /// rows can no longer dedupe against the history they came from, so importing them
+    /// would duplicate every logged item. They are dropped instead.
+    func testForkSkipsOrphanLogRows() async throws {
+        let planId = UUID()
+        _ = try await importPlanCSV(named: "orphan_seed.csv", rows: [
+            planRow(exercise: "Hangboard Repeaters", planId: planId, planName: "Week 1"),
+            planRow(exercise: "Hangboard Repeaters", planId: planId, planName: "Week 1",
+                    type: "exercise", notes: "Felt strong")
+        ])
+        XCTAssertEqual(loggedItems().count, 1)
+
+        // The same file with plan_id cleared everywhere.
+        _ = try await importPlanCSV(named: "orphan_fork.csv", rows: [
+            planRow(exercise: "Hangboard Repeaters", planName: "Week 1"),
+            planRow(exercise: "Hangboard Repeaters", planName: "Week 1",
+                    type: "exercise", notes: "Felt strong")
+        ])
+
+        XCTAssertEqual(loggedItems().count, 1, "The orphaned log row was dropped, not duplicated")
+        XCTAssertEqual(allPlans().count, 2, "The template still forked")
     }
 
     func testLogOnlyRowsCreateNoTemplates() async throws {

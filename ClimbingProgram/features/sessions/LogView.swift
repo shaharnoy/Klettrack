@@ -250,7 +250,7 @@ struct LogView: View {
                     )
                     await MainActor.run {
                         importing = false
-                        resultMessage = "Imported \(count) log item(s)."
+                        resultMessage = "Imported \(count) item(s)."
                     }
                 } catch {
                     await MainActor.run {

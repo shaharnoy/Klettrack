@@ -70,7 +70,11 @@ enum LogCSV {
         let templatesById = Dictionary(allTemplates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var timerByExerciseName: [String: TimerTemplate] = [:]
         var restByExerciseName: [String: String] = [:]
+        // Plan rows have no logged item to read metrics from, so they source reps/sets/
+        // duration/notes from the catalog guidance instead.
+        var exerciseByName: [String: Exercise] = [:]
         for exercise in (try? context.fetch(FetchDescriptor<Exercise>())) ?? [] {
+            if exerciseByName[exercise.name] == nil { exerciseByName[exercise.name] = exercise }
             if let rest = exercise.restText, !rest.isEmpty, restByExerciseName[exercise.name] == nil {
                 restByExerciseName[exercise.name] = rest
             }
@@ -188,6 +192,70 @@ enum LogCSV {
                 "",                                    // timer_name (climbs don't use this)
                 ""                                     // timer_spec (climbs don't use this)
             ].joined(separator: ","))
+        }
+
+        // Export plan days as `type=plan` rows. Without these a plan only appears in the
+        // CSV to the extent it was logged against, so a plan day nobody performed yet
+        // round-trips to nothing. The importer never turns these into logged items.
+        for plan in plans.sorted(by: { $0.startDate < $1.startDate }) {
+            for day in plan.days.sorted(by: { $0.date < $1.date }) {
+                let d = df.string(from: day.date)
+
+                let key = day.type?.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = day.type?.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let dayType = (key?.isEmpty == false) ? key! : ((name?.isEmpty == false) ? name! : "")
+
+                // Same order the plan day editor shows: manual order first, then by name.
+                let ordered = day.chosenExercises.sorted { first, second in
+                    let firstOrder = day.exerciseOrder[first] ?? .max
+                    let secondOrder = day.exerciseOrder[second] ?? .max
+                    if firstOrder != secondOrder { return firstOrder < secondOrder }
+                    return first.localizedStandardCompare(second) == .orderedAscending
+                }
+
+                for exerciseName in ordered {
+                    let catalogEntry = exerciseByName[exerciseName]
+                    let attachedTimer = timerByExerciseName[exerciseName]
+                    // Guidance text is hand-written ("3-5 mins", "45 sec"), so reuse the
+                    // parsers the timer already relies on rather than inventing another.
+                    let reps = ExerciseTimerDefaults.parseCount(catalogEntry?.repsText)
+                    let sets = ExerciseTimerDefaults.parseCount(catalogEntry?.setsText)
+                    let durationMinutes = ExerciseTimerDefaults
+                        .parseSeconds(catalogEntry?.durationText)
+                        .map { Double($0) / 60 }
+
+                    rows.append([
+                        d,
+                        "plan", // type
+                        csvEscape(exerciseName),
+                        "", // climb_type
+                        "", // grade
+                        "", // feels like grade
+                        "", // angle
+                        "", // holdColor
+                        "", // rope_type
+                        "", // style
+                        "", // attempts
+                        "", // wip
+                        "", // ispreviouslyClimbed
+                        "", // gym
+                        reps.map { String($0) } ?? "",
+                        sets.map { String($0) } ?? "",
+                        csvDecimal(durationMinutes),
+                        "", // weight_kg (a plan carries no load)
+                        plan.id.uuidString,
+                        csvEscape(plan.name),
+                        csvEscape(dayType),
+                        csvEscape(catalogEntry?.notes ?? ""),
+                        "", // climb_id
+                        "", // tb2_uuid
+                        "", // media_refs
+                        csvEscape(restByExerciseName[exerciseName] ?? ""),
+                        csvEscape(attachedTimer?.name ?? ""),
+                        csvEscape(attachedTimer.map { TimerSpec.encode($0) } ?? "")
+                    ].joined(separator: ","))
+                }
+            }
         }
 
         return LogCSVDocument(csv: rows.joined(separator: "\n"))
@@ -611,11 +679,23 @@ extension LogCSV {
         // Cache signature sets per session for dedupe
         var sigCache: [ObjectIdentifier: Set<String>] = [:]
         
-        // Track exercises by date for each plan to reconstruct plan structure
-        var planExercisesByDate: [UUID: [Date: Set<String>]] = [:]
-        
+        // Track exercises by date for each plan to reconstruct plan structure.
+        // Ordered, not a Set: row order in the file is the plan author's intent.
+        var planExercisesByDate: [UUID: [Date: [String]]] = [:]
+
         // Track day types by date for each plan to preserve day type information
         var planDayTypesByDate: [UUID: [Date: String]] = [:]
+
+        // Names contributed by `type=plan` rows, per plan and day. Two jobs: a plan with
+        // an entry here is a template import, which may heal a plan that already has days
+        // (log rows keep the old behaviour of only rebuilding a plan with no days at all);
+        // and only these names count toward the returned total, because a log row's
+        // contribution is already counted as its SessionItem.
+        var planRowNames: [UUID: [Date: Set<String>]] = [:]
+
+        // A plan row with a blank plan_id forks a fresh plan. Minted once per
+        // plan_name so every such row in the file joins the same new plan.
+        var mintedPlanIdsByName: [String: UUID] = [:]
 
         // Collect imported plan exercises (first occurrence wins) so we can
         // make sure they exist in the catalog after import
@@ -630,9 +710,82 @@ extension LogCSV {
             
             let startOfDay = cal.startOfDay(for: e.date)
             
-            if e.type == "exercise" {
+            if e.type == "exercise" || e.type == "plan" {
                 guard !e.name.isEmpty else { continue }
+
+                let isPlanRow = e.type == "plan"
+                let rowPlanName = e.planName?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                // ponytail: a log row naming a plan it cannot identify is history against
+                // a plan that was forked by blanking plan_id. Importing it would duplicate
+                // logs already in the store, because itemSignature keys on the plan id and
+                // nil never matches the original. Drop it; the template rows still land.
+                if !isPlanRow, e.planId == nil, rowPlanName?.isEmpty == false { continue }
+
+                // Plan identity. A plan row with a blank (or unreadable) plan_id forks a
+                // fresh plan; a known id updates that plan in place. Log rows never mint,
+                // so their dedupe signature stays stable across re-imports.
+                let rowPlanId: UUID?
+                if let given = e.planId {
+                    rowPlanId = given
+                } else if isPlanRow, let name = rowPlanName, !name.isEmpty {
+                    if let minted = mintedPlanIdsByName[name] {
+                        rowPlanId = minted
+                    } else {
+                        let fresh = UUID()
+                        mintedPlanIdsByName[name] = fresh
+                        rowPlanId = fresh
+                    }
+                } else {
+                    rowPlanId = nil
+                }
+
+                // Handle plan reference if present
+                if let planId = rowPlanId, !knownPlans.keys.contains(planId), let planName = e.planName {
+                    let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == planId })
+                    if let existing = try? context.fetch(planDescriptor).first {
+                        knownPlans[planId] = existing
+                    } else {
+                        let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
+                        let weeklyKind = (try? context.fetch(kindFetch))?.first
+                        let plan = Plan(id: planId, name: planName, kind: weeklyKind, startDate: startOfDay)
+                        context.insert(plan)
+                        knownPlans[planId] = plan
+                    }
+                }
                 
+                // Track exercises for plan reconstruction
+                if let planId = rowPlanId {
+                    if isPlanRow { planRowNames[planId, default: [:]][startOfDay, default: []].insert(e.name) }
+
+                    // Append-if-absent keeps the file's row order for the day.
+                    var names = planExercisesByDate[planId]?[startOfDay] ?? []
+                    if !names.contains(e.name) { names.append(e.name) }
+                    planExercisesByDate[planId, default: [:]][startOfDay] = names
+
+                    if let dayTypeKey = e.dayTypeKey {
+                        planDayTypesByDate[planId, default: [:]][startOfDay] = dayTypeKey
+                    }
+
+                    // Remember plan exercises for catalog reconciliation
+                    if catalogCandidates[e.name] == nil {
+                        catalogCandidates[e.name] = CatalogCandidate(
+                            reps: e.reps,
+                            sets: e.sets,
+                            duration: e.duration,
+                            restText: e.restText,
+                            notes: e.notes,
+                            planName: e.planName,
+                            timerName: e.timerName,
+                            timerSpec: e.timerSpec
+                        )
+                    }
+                }
+
+                // ponytail: a planned exercise is not a performed one. Plan rows describe
+                // the template only, so they stop here — no Session, no SessionItem.
+                if isPlanRow { continue }
+
                 // Find or create session for this day
                 let session: Session
                 if let cached = sessionCache[startOfDay] {
@@ -652,47 +805,7 @@ extension LogCSV {
                     }
                     sessionCache[startOfDay] = session
                 }
-                
-                // Handle plan reference if present
-                if let planId = e.planId, !knownPlans.keys.contains(planId), let planName = e.planName {
-                    let planDescriptor = FetchDescriptor<Plan>(predicate: #Predicate<Plan> { $0.id == planId })
-                    if let existing = try? context.fetch(planDescriptor).first {
-                        knownPlans[planId] = existing
-                    } else {
-                        let kindFetch = FetchDescriptor<PlanKindModel>(predicate: #Predicate { $0.key == "weekly" })
-                        let weeklyKind = (try? context.fetch(kindFetch))?.first
-                        let plan = Plan(id: planId, name: planName, kind: weeklyKind, startDate: startOfDay)
-                        context.insert(plan)
-                        knownPlans[planId] = plan
-                    }
-                }
-                
-                // Track exercises for plan reconstruction
-                if let planId = e.planId {
-                    if planExercisesByDate[planId] == nil { planExercisesByDate[planId] = [:] }
-                    if planExercisesByDate[planId]![startOfDay] == nil { planExercisesByDate[planId]![startOfDay] = Set() }
-                    planExercisesByDate[planId]![startOfDay]!.insert(e.name)
-                    
-                    if let dayTypeKey = e.dayTypeKey {
-                        if planDayTypesByDate[planId] == nil { planDayTypesByDate[planId] = [:] }
-                        planDayTypesByDate[planId]![startOfDay] = dayTypeKey
-                    }
 
-                    // Remember plan exercises for catalog reconciliation
-                    if catalogCandidates[e.name] == nil {
-                        catalogCandidates[e.name] = CatalogCandidate(
-                            reps: e.reps,
-                            sets: e.sets,
-                            duration: e.duration,
-                            restText: e.restText,
-                            notes: e.notes,
-                            planName: e.planName,
-                            timerName: e.timerName,
-                            timerSpec: e.timerSpec
-                        )
-                    }
-                }
-                
                 // Build/get signature set for dedupe
                 let sid = ObjectIdentifier(session)
                 var existing = sigCache[sid]
@@ -915,35 +1028,58 @@ extension LogCSV {
         // After processing all rows, populate the plans with their days and exercises
         for (planId, exercisesByDate) in planExercisesByDate {
             guard let plan = knownPlans[planId] else { continue }
-            
-            if plan.days.isEmpty {
-                let sortedDates = Array(exercisesByDate.keys).sorted()
-                for date in sortedDates {
-                    let exercises = Array(exercisesByDate[date] ?? [])
-                    if !exercises.isEmpty {
-                        let dayTypeKey = planDayTypesByDate[planId]?[date]
-                        var resolvedType: DayTypeModel? = nil
-                        if let raw = dayTypeKey {
-                            let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !key.isEmpty {
-                                let byKey = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == key })
-                                resolvedType = (try? context.fetch(byKey))?.first
-                                if resolvedType == nil {
-                                    let byName = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.name == key })
-                                    resolvedType = (try? context.fetch(byName))?.first
-                                }
-                                if resolvedType == nil {
-                                    let model = DayTypeModel(key: key, name: key, colorKey: "gray")
-                                    context.insert(model)
-                                    resolvedType = model
-                                }
-                            }
+
+            // A template import (`type=plan` rows) may heal a plan that already has days.
+            // Log rows keep the original behaviour of only rebuilding an empty plan, so
+            // re-importing a log backup never adds ad-hoc logged exercises to a template.
+            guard planRowNames[planId] != nil || plan.days.isEmpty else { continue }
+
+            for date in exercisesByDate.keys.sorted() {
+                let exercises = exercisesByDate[date] ?? []
+                guard !exercises.isEmpty else { continue }
+
+                let dayTypeKey = planDayTypesByDate[planId]?[date]
+                var resolvedType: DayTypeModel? = nil
+                if let raw = dayTypeKey {
+                    let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !key.isEmpty {
+                        let byKey = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.key == key })
+                        resolvedType = (try? context.fetch(byKey))?.first
+                        if resolvedType == nil {
+                            let byName = FetchDescriptor<DayTypeModel>(predicate: #Predicate { $0.name == key })
+                            resolvedType = (try? context.fetch(byName))?.first
                         }
-                        let planDay = PlanDay(date: date, type: resolvedType)
-                        planDay.chosenExercises = exercises
-                        plan.days.append(planDay)
+                        if resolvedType == nil {
+                            let model = DayTypeModel(key: key, name: key, colorKey: "gray")
+                            context.insert(model)
+                            resolvedType = model
+                        }
                     }
                 }
+
+                // Additive: fill in what the file adds, never remove what the app holds.
+                let planDay: PlanDay
+                if let found = plan.days.first(where: { cal.startOfDay(for: $0.date) == date }) {
+                    planDay = found
+                    if planDay.type == nil { planDay.type = resolvedType }
+                } else {
+                    planDay = PlanDay(date: date, type: resolvedType)
+                    plan.days.append(planDay)
+                }
+
+                let fromPlanRows = planRowNames[planId]?[date] ?? []
+                for name in exercises where !planDay.chosenExercises.contains(name) {
+                    planDay.chosenExercises.append(name)
+                    // Only a template row's contribution is new work to report; a log row
+                    // was already counted when its SessionItem was inserted.
+                    if fromPlanRows.contains(name) { inserted += 1 }
+                }
+
+                // PlanDayExerciseOrdering sorts by exerciseOrder and falls back to catalog
+                // order then alphabetically, so row order only survives if it is written.
+                planDay.exerciseOrder = Dictionary(
+                    uniqueKeysWithValues: planDay.chosenExercises.enumerated().map { ($1, $0) }
+                )
             }
         }
         
