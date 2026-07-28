@@ -709,6 +709,50 @@ class ImportExportTests: ClimbingProgramTestSuite {
         XCTAssertTrue(loggedItems().isEmpty, "A round-tripped plan is still not a log")
     }
 
+    /// Imports the real docs/debug-timers.csv off disk — not a copy of its rows — and then
+    /// runs the two computations the plan day editor renders from. This is the on-screen
+    /// bug expressed as a test: "Logged exercises" must read empty for a freshly
+    /// imported plan. Reading the shipped file also stops it drifting from the inline
+    /// rows in testDebugTimersFixtureClassifiesEveryBranch above.
+    func testShippedFixtureImportsAsAPlanWithAnEmptyLog() async throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)      // …/ClimbingProgramTests/ImportExportTests.swift
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixture = repoRoot.appendingPathComponent("docs/debug-timers.csv")
+        guard FileManager.default.fileExists(atPath: fixture.path) else {
+            return XCTFail("Fixture missing at \(fixture.path)")
+        }
+
+        let imported = try await LogCSV.importCSVAsync(from: fixture, into: context,
+                                                      tag: "fixture", dedupe: true)
+        XCTAssertEqual(imported, 4, "Four planned exercises")
+
+        let plan = try XCTUnwrap(allPlans().first { $0.name == "DEBUG Timers" })
+
+        // 1) What "Logged exercises" renders — the same fetch as
+        //    PlanDayEditor.refreshLoggedItemsIntoCache(): sessions on the day, then the
+        //    items belonging to this plan. This is the reported bug.
+        for day in plan.days {
+            let start = Calendar.current.startOfDay(for: day.date)
+            let end = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 1, to: start))
+            let sessions = (try? context.fetch(FetchDescriptor<Session>(
+                predicate: #Predicate<Session> { $0.date >= start && $0.date < end }
+            ))) ?? []
+            let shown = sessions.flatMap(\.items).filter { $0.planSourceId == plan.id }
+            XCTAssertTrue(shown.isEmpty,
+                          "\(day.date) should read \"No logs yet for this day\", got \(shown.map(\.exerciseName))")
+        }
+
+        // 2) What "Chosen activities" renders, in the file's own row order.
+        let names = plan.days
+            .sorted { $0.date < $1.date }
+            .flatMap { day in
+                day.chosenExercises.sorted { (day.exerciseOrder[$0] ?? .max) < (day.exerciseOrder[$1] ?? .max) }
+            }
+        XCTAssertEqual(names, ["DEBUG Rep 5s", "DEBUG Rep Spec 8s",
+                               "DEBUG Interval 10s", "DEBUG Single Set"])
+    }
+
     /// Clearing the whole plan_id column to fork also blanks it on the log rows. Those
     /// rows can no longer dedupe against the history they came from, so importing them
     /// would duplicate every logged item. They are dropped instead.
