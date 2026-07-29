@@ -57,58 +57,75 @@ struct TimerView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                // Exercise context (when launched from a plan day exercise)
-                if let exerciseName {
-                    VStack(spacing: 4) {
-                        Label(exerciseName, systemImage: "figure.climbing")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+            // Scrolls because the content genuinely doesn't fit: with the set log panel
+            // open, a fixed VStack pushed the Pause/Reset row off the bottom of the
+            // screen, so a running rest couldn't be paused at all. Also what keeps the
+            // controls reachable at larger Dynamic Type sizes.
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Exercise context (when launched from a plan day exercise)
+                    if let exerciseName {
+                        VStack(spacing: 4) {
+                            Label(exerciseName, systemImage: "figure.climbing")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
 
-                        // Technique cue from the catalog, most useful mid-set.
-                        if let blurb = appliedExercise?.exerciseDescription {
-                            Text(blurb)
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(3)
-                                .fixedSize(horizontal: false, vertical: true)
+                            // Technique cue from the catalog, most useful mid-set.
+                            if let blurb = appliedExercise?.exerciseDescription {
+                                Text(blurb)
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
-                }
 
-                // Rep-based exercise: prompt for the set instead of counting it down.
-                if let sequence = timerManager.setSequence, timerManager.isAwaitingUser {
-                    setPromptSection(sequence)
-                } else {
-                    // Timer Display
-                    timerDisplaySection
-
-                    // Mid-rest in a set sequence: say what's next and allow cutting it short.
                     if let sequence = timerManager.setSequence {
-                        restSkipSection(sequence)
+                        // Rep-based exercise. Waiting on a set shows no clock — nothing is
+                        // being counted. Resting shows the countdown above the same panel,
+                        // so a weight can still be corrected mid-rest.
+                        if timerManager.isAwaitingUser {
+                            SetNavigationRow(
+                                timerManager: timerManager,
+                                sequence: sequence,
+                                label: "\(sequence.shape.unitLabel) \(sequence.currentSet) OF \(sequence.totalSets)",
+                                labelColor: .secondary
+                            )
+                        } else {
+                            timerDisplaySection
+                            restSkipSection(sequence)
+                        }
+
+                        SetLogPanel(timerManager: timerManager, sequence: sequence)
+                    } else {
+                        timerDisplaySection
+                    }
+
+                    // Progress Indicators
+                    if timerManager.configuration != nil && !timerManager.isAwaitingUser {
+                        progressSection
+                    }
+
+                    // Control Buttons (without Stop & Reset)
+                    controlButtonsSection
+
+                    // Laps Section - only show for total time timers, not interval timers
+                    if !timerManager.laps.isEmpty && timerManager.configuration?.hasIntervals == false {
+                        lapsSection
                     }
                 }
-
-                // Progress Indicators
-                if timerManager.configuration != nil && !timerManager.isAwaitingUser {
-                    progressSection
-                }
-
-                // Control Buttons (without Stop & Reset)
-                controlButtonsSection
-
-                // Laps Section - only show for total time timers, not interval timers
-                if !timerManager.laps.isEmpty && timerManager.configuration?.hasIntervals == false {
-                    lapsSection
-                }
-                
-                Spacer()
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+                .frame(maxWidth: .infinity)
             }
+            // Only scroll when there is something to scroll to, so a short timer screen
+            // still feels fixed rather than rubber-banding.
+            .scrollBounceBehavior(.basedOnSize)
             //.navigationTitle("TIMER")
             .navigationBarTitleDisplayMode(.large)
-            .padding(.horizontal, 20)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                    
@@ -196,14 +213,26 @@ struct TimerView: View {
             Text("\(exerciseName ?? "A timer") is still going. Starting \(next.exerciseName) will discard it.")
         }
         .sheet(item: $loggingExercise) { context in
-            ExerciseLogSheet(
-                exerciseName: context.exerciseName,
-                date: context.planDayDate,
-                planId: context.planId,
-                planName: context.planName,
-                prefill: logPrefill(for: context),
-                onSaved: {}
-            )
+            // Wall work logs as a climb — grade, angle, style — which is what the plan
+            // row already opens for it. Anything else logs as a session item.
+            if context.shape == .attempts {
+                // Presented bare: ClimbLogForm brings its own NavigationStack, as every
+                // other call site relies on. The title matches the plan row's wording.
+                ClimbLogForm(
+                    title: "Climb Log for \(context.exerciseName)",
+                    initialDate: context.planDayDate,
+                    initialAttempts: timerManager.setLogs.count
+                )
+            } else {
+                ExerciseLogSheet(
+                    exerciseName: context.exerciseName,
+                    date: context.planDayDate,
+                    planId: context.planId,
+                    planName: context.planName,
+                    prefill: logPrefill(for: context),
+                    onSaved: {}
+                )
+            }
         }
         .onDisappear {
             // Allow screen to sleep when timer view disappears
@@ -219,67 +248,23 @@ struct TimerView: View {
         }
     }
     
-    // MARK: - Set Prompt (rep-based exercises)
-    private func setPromptSection(_ sequence: TimerManager.SetSequence) -> some View {
-        VStack(spacing: 12) {
-            Text("Set \(sequence.currentSet) of \(sequence.totalSets)")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            if let reps = sequence.repsPerSet {
-                Text("\(reps) reps")
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-            }
-
-            Button {
-                timerManager.confirmSet()
-            } label: {
-                Label(sequence.isFinalSet ? "Finish" : "Done", systemImage: "checkmark")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(FullWidthTimerButtonStyle(color: .green))
-            .accessibilityLabel(
-                sequence.isFinalSet
-                    ? "Finish exercise"
-                    : "Set \(sequence.currentSet) done, start \(sequence.restSeconds / 60) minute rest"
-            )
-        }
-        .padding(.vertical, 24)
-        .frame(maxWidth: .infinity)
-        .background(Color(.systemGray6))
-        .clipShape(.rect(cornerRadius: 16))
-    }
-
     // MARK: - Rest between sets
     private func restSkipSection(_ sequence: TimerManager.SetSequence) -> some View {
         let nextSet = min(sequence.currentSet + 1, sequence.totalSets)
 
-        return VStack(spacing: 10) {
-            // The total-timer display has no phase label of its own, so say it here.
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle().fill(.orange.opacity(0.2)).frame(width: 16, height: 16)
-                    Circle().fill(.orange).frame(width: 10, height: 10)
-                }
-                Text("Rest")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.orange)
-            }
+        // The total-timer display has no phase label of its own, so the nav row
+        // carries it. Forward here ends the rest early, which is what Skip rest did.
+        return VStack(spacing: 6) {
+            SetNavigationRow(
+                timerManager: timerManager,
+                sequence: sequence,
+                label: "REST",
+                labelColor: .orange
+            )
 
             Text("Next up: set \(nextSet) of \(sequence.totalSets)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-
-            Button {
-                timerManager.skipRest()
-            } label: {
-                Label("Skip rest", systemImage: "forward.end.fill")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .accessibilityLabel("Skip the remaining rest and start set \(nextSet)")
         }
     }
 
@@ -308,7 +293,18 @@ struct TimerView: View {
             )
             context.insert(session)
             try? context.save()
-            timerManager.startSetSequence(reps: reps, sets: sets, restSeconds: restSeconds, session: session)
+            timerManager.startSetSequence(
+                reps: reps,
+                sets: sets,
+                restSeconds: restSeconds,
+                // Start every set where you left off last time rather than at zero —
+                // but only where load is part of the exercise at all.
+                seedWeightKg: exercise.shape.takesLoad
+                    ? lastLoggedWeight(for: exercise.exerciseName, in: context)
+                    : nil,
+                shape: exercise.shape,
+                session: session
+            )
 
         case .durationBased(let config, _):
             timerManager.loadConfiguration(config)
@@ -320,8 +316,14 @@ struct TimerView: View {
 
     /// What the timer knows that the plan row doesn't: how long it actually ran,
     /// and how many sets were planned. Weight/grade/notes stay blank on purpose.
+    ///
+    /// A rep-based sequence knows more than that — it has a record of each set — so
+    /// it prefills from actuals rather than from the plan's counts.
     private func logPrefill(for exercise: ExerciseTimerContext) -> ExerciseLogSheet.Prefill {
         let elapsed = timerManager.session?.totalElapsedSeconds
+        if !timerManager.setLogs.isEmpty {
+            return .init(loggedSets: timerManager.setLogs, durationSeconds: elapsed)
+        }
         switch exercise.plan {
         case .repBased(let reps, let sets, _, _):
             return .init(reps: reps, sets: sets, durationSeconds: elapsed)
@@ -428,37 +430,42 @@ struct TimerView: View {
                     .contentTransition(.numericText())
             }
             
-            // Secondary information: total elapsed and remaining time (smaller, less prominent)
-            HStack(spacing: 20) {
-                // Total elapsed time
-                VStack(spacing: 2) {
-                    Text("Elapsed")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text(timerManager.formatTime(timerManager.totalElapsedTime))
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .contentTransition(.numericText())
-                }
-                
-                // Separator
-                Rectangle()
-                    .fill(.secondary.opacity(0.3))
-                    .frame(width: 1, height: 30)
-                
-                // Total time remaining
-                let remaining = timerManager.totalTimeRemaining
-                if remaining > 0 {
+            // Secondary information: total elapsed and remaining time (smaller, less
+            // prominent). Omitted during a rest between sets: there the big countdown
+            // already *is* the remaining time, so "Remaining" just repeats it and
+            // "Elapsed" counts up through a rest nobody is trying to fill.
+            if timerManager.setSequence == nil {
+                HStack(spacing: 20) {
+                    // Total elapsed time
                     VStack(spacing: 2) {
-                        Text("Remaining")
+                        Text("Elapsed")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
-                        Text(timerManager.formatTime(remaining))
+                        Text(timerManager.formatTime(timerManager.totalElapsedTime))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
                             .contentTransition(.numericText())
                     }
-                    .transition(.opacity.combined(with: .scale))
+
+                    // Separator
+                    Rectangle()
+                        .fill(.secondary.opacity(0.3))
+                        .frame(width: 1, height: 30)
+
+                    // Total time remaining
+                    let remaining = timerManager.totalTimeRemaining
+                    if remaining > 0 {
+                        VStack(spacing: 2) {
+                            Text("Remaining")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Text(timerManager.formatTime(remaining))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .contentTransition(.numericText())
+                        }
+                        .transition(.opacity.combined(with: .scale))
+                    }
                 }
             }
         }

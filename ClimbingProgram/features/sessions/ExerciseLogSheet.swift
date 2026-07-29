@@ -18,6 +18,9 @@ struct ExerciseLogSheet: View {
         var weight: String = ""
         var grade: String = ""
         var notes: String = ""
+        /// Per-set detail from the timer. Saved alongside the fields above, which are
+        /// its rollup.
+        var loggedSets: [LoggedSet] = []
 
         init(reps: String = "", sets: String = "", duration: String = "", weight: String = "", grade: String = "", notes: String = "") {
             self.reps = reps
@@ -32,8 +35,23 @@ struct ExerciseLogSheet: View {
         init(reps: Int?, sets: Int?, durationSeconds: Int?) {
             self.reps = reps.map(String.init) ?? ""
             self.sets = sets.map(String.init) ?? ""
-            // The log form takes minutes.
-            self.duration = durationSeconds.map { String(max(1, Int((Double($0) / 60).rounded()))) } ?? ""
+            self.duration = Self.minutes(from: durationSeconds)
+        }
+
+        /// A rep-based timer's per-set record. The top fields come from the rollup, so
+        /// what the form shows is what was actually done rather than what was planned.
+        init(loggedSets: [LoggedSet], durationSeconds: Int?) {
+            self.loggedSets = loggedSets
+            let rollup = loggedSets.rollup
+            self.reps = decimalText(rollup.reps)
+            self.sets = decimalText(rollup.sets)
+            self.weight = decimalText(rollup.weightKg)
+            self.duration = Self.minutes(from: durationSeconds)
+        }
+
+        /// The log form takes minutes; a short rest must not round down to "0".
+        private static func minutes(from seconds: Int?) -> String {
+            seconds.map { String(max(1, Int((Double($0) / 60).rounded()))) } ?? ""
         }
     }
 
@@ -54,6 +72,15 @@ struct ExerciseLogSheet: View {
     @State private var inputGrade: String = ""
     @State private var inputNotes: String = ""
     @State private var didLoadPrefill = false
+
+    /// Hidden for exercises that take no added load — but never hidden while a weight
+    /// is actually present, or an imported value would become invisible *and*
+    /// uneditable. Reads the catalog by name; unknown names keep the field.
+    private var showsWeight: Bool {
+        !inputWeight.isEmpty
+            || !prefill.weight.isEmpty
+            || exerciseShape(named: exerciseName, in: context).takesLoad
+    }
 
     var body: some View {
         NavigationStack {
@@ -112,12 +139,14 @@ struct ExerciseLogSheet: View {
                     Label("Duration (min)", systemImage: "clock")
                 }
 
-                LabeledContent {
-                    TextField("e.g. 12.5", text: $inputWeight)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Weight (kg)", systemImage: "scalemass")
+                if showsWeight {
+                    LabeledContent {
+                        TextField("e.g. 12.5", text: $inputWeight)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Label("Weight (kg)", systemImage: "scalemass")
+                    }
                 }
 
                 LabeledContent {
@@ -142,6 +171,8 @@ struct ExerciseLogSheet: View {
                     grade: inputGrade.isEmpty ? nil : inputGrade,
                     duration: inputDuration.isEmpty ? nil : inputDuration
                 )
+
+                LoggedSetsRow(sets: prefill.loggedSets)
             }
 
             Section("Notes") {
@@ -163,7 +194,10 @@ struct ExerciseLogSheet: View {
                 weightKg: number(inputWeight),
                 grade: trimmed(inputGrade),
                 notes: trimmed(inputNotes),
-                duration: number(inputDuration)
+                duration: number(inputDuration),
+                // The per-set record stands even if the fields above were hand-edited:
+                // those are the rollup, this is what the timer actually captured.
+                loggedSets: prefill.loggedSets
             )
         )
         try? context.save()

@@ -123,13 +123,17 @@ final class SessionItem {
     var planSourceId: UUID?
     var planName: String?
 
-    // Structured metrics
+    // Structured metrics. These stay the aggregate the whole app reads; when
+    // `loggedSets` is present they are its `rollup`.
     var reps: Double?
     var sets: Double?
     var weightKg: Double?
     var grade: String?
     var notes: String?
     var duration: Double?
+
+    /// Per-set detail, when the timer captured it. Empty for hand-logged items.
+    var loggedSets: [LoggedSet] = []
 
     init(
         id: UUID = UUID(),
@@ -141,7 +145,8 @@ final class SessionItem {
         weightKg: Double? = nil,
         grade: String? = nil,
         notes: String? = nil,
-        duration: Double? = nil
+        duration: Double? = nil,
+        loggedSets: [LoggedSet] = []
     ) {
         self.id = id
         self.exerciseName = exerciseName
@@ -153,6 +158,7 @@ final class SessionItem {
         self.grade = grade
         self.notes = notes
         self.duration = duration
+        self.loggedSets = loggedSets
     }
 }
 

@@ -1172,7 +1172,10 @@ struct PlanDayEditor: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
-                
+
+                LoggedSetsRow(sets: item.loggedSets)
+                    .foregroundStyle(.secondary)
+
                 if let notes = item.notes, !notes.isEmpty {
                     Text(.init(notes))
                         .font(.caption)

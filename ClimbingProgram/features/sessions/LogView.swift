@@ -343,6 +343,7 @@ struct SessionItemRow: View {
                         }
             }
             metricsRow
+            LoggedSetsRow(sets: item.loggedSets)
             if let n = item.notes, !n.isEmpty {
                 Text(n).font(.footnote).foregroundStyle(.secondary)
             }

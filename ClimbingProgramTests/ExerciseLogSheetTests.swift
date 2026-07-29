@@ -89,4 +89,87 @@ final class ExerciseLogSheetTests: ClimbingProgramTestSuite {
         let prefill = ExerciseLogSheet.Prefill(reps: nil, sets: nil, durationSeconds: 20)
         XCTAssertEqual(prefill.duration, "1")
     }
+
+    // MARK: - Prefill from a per-set record
+
+    /// The timer knows what was actually lifted, so the form opens on actuals rather
+    /// than on the plan's counts.
+    func testPerSetPrefillUsesTheRollupNotThePlan() {
+        let prefill = ExerciseLogSheet.Prefill(
+            loggedSets: [
+                LoggedSet(reps: 3, weightKg: 30),
+                LoggedSet(reps: 3, weightKg: 35),
+                LoggedSet(reps: 3, weightKg: 25)
+            ],
+            durationSeconds: 420
+        )
+
+        XCTAssertEqual(prefill.reps, "3")
+        XCTAssertEqual(prefill.sets, "3")
+        XCTAssertEqual(prefill.weight, "30", "The mean of 30/35/25")
+        XCTAssertEqual(prefill.duration, "7")
+        XCTAssertEqual(prefill.loggedSets.count, 3)
+    }
+
+    /// A whole number must not arrive in the text field as "3.0".
+    func testPerSetPrefillDropsTrailingZeroes() {
+        let prefill = ExerciseLogSheet.Prefill(
+            loggedSets: [LoggedSet(reps: 8, weightKg: 20)],
+            durationSeconds: nil
+        )
+        XCTAssertEqual(prefill.reps, "8")
+        XCTAssertEqual(prefill.sets, "1")
+        XCTAssertEqual(prefill.weight, "20")
+        XCTAssertEqual(prefill.duration, "")
+    }
+
+    /// The field is localised, so assert the contract rather than a separator: what
+    /// the form shows must parse back to what was lifted, via the same comma
+    /// normalisation `save()` applies.
+    func testPerSetPrefillKeepsAFractionalWeight() {
+        let prefill = ExerciseLogSheet.Prefill(
+            loggedSets: [LoggedSet(reps: 3, weightKg: 32.5)],
+            durationSeconds: nil
+        )
+        XCTAssertEqual(
+            Double(prefill.weight.replacing(",", with: ".")), 32.5,
+            "32.5 must not be truncated to 32"
+        )
+    }
+
+    /// A bodyweight sequence has no weight at all — the field must open blank, not "0".
+    func testPerSetPrefillLeavesWeightBlankWhenNoneWasLogged() {
+        let prefill = ExerciseLogSheet.Prefill(
+            loggedSets: [LoggedSet(reps: 10), LoggedSet(reps: 8)],
+            durationSeconds: nil
+        )
+        XCTAssertEqual(prefill.weight, "")
+        XCTAssertEqual(prefill.sets, "2")
+    }
+
+    /// The whole point of the round trip: what the timer captured reaches the log.
+    func testSavingPersistsThePerSetRecord() throws {
+        let date = Date()
+        let sets = [
+            LoggedSet(reps: 3, weightKg: 30, rpe: 1),
+            LoggedSet(reps: 3, weightKg: 32.5, rpe: 4, note: "grip slipped")
+        ]
+        let session = findOrCreateSession(for: date, in: context)
+        let prefill = ExerciseLogSheet.Prefill(loggedSets: sets, durationSeconds: 300)
+        session.items.append(
+            SessionItem(
+                exerciseName: "Weighted Pull-up",
+                reps: 3,
+                sets: 2,
+                weightKg: 31.25,
+                loggedSets: prefill.loggedSets
+            )
+        )
+        try context.save()
+
+        let item = try XCTUnwrap(items(on: date).first)
+        XCTAssertEqual(item.loggedSets.count, 2)
+        XCTAssertEqual(item.loggedSets[1].note, "grip slipped")
+        XCTAssertEqual(item.loggedSets[1].effortLabel, "Very Hard")
+    }
 }
