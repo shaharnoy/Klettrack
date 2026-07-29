@@ -78,7 +78,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         // Verify header
         let header = lines.first!
         let expectedFields = [
-            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","rest","timer_name","timer_spec","sets_detail"
+            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","rest","timer_name","timer_spec","sets_detail","activity","training_type","shape"
         ]
         let headerFields = header.components(separatedBy: ",")
         XCTAssertEqual(headerFields.count, expectedFields.count, "Header should have correct number of fields")
@@ -989,8 +989,77 @@ class ImportExportTests: ClimbingProgramTestSuite {
         XCTAssertEqual(target.timerTemplateId, template.id, "Attachment restored from the round-tripped CSV")
     }
 
+    // MARK: - Catalog path round-trip
+
+    /// The reported case: an exercise that already lives somewhere in the catalog must
+    /// come back to that same node, not to "Imported" → its plan's name.
+    func testAnExerciseReturnsToItsOwnCatalogNode() async throws {
+        let activity = createTestActivity(name: "Bouldering")
+        let type = createTestTrainingType(activity: activity, name: "Limit Bouldering")
+        type.exercises.append(
+            Exercise(name: "Limit Boulders", restText: "3 min", shapeKey: ExerciseShape.attempts.rawValue)
+        )
+
+        let planKind = try ensurePlanKind(context, key: "weekly", name: "Weekly")
+        let plan = Plan(name: "Power Block", kind: planKind, startDate: parseDay("2026-04-06"))
+        let day = PlanDay(date: parseDay("2026-04-06"))
+        day.chosenExercises = ["Limit Boulders"]
+        plan.days.append(day)
+        context.insert(plan)
+        try context.save()
+
+        let exported = LogCSV.makeExportCSV(context: context).csv
+        XCTAssertTrue(exported.contains("Bouldering,Limit Bouldering,attempts"),
+                      "The export carries the catalog path and shape")
+
+        // Delete the catalog entry entirely, then re-import.
+        let original = try XCTUnwrap(exercise(named: "Limit Boulders"))
+        type.exercises.removeAll { $0.name == "Limit Boulders" }
+        context.delete(original)
+        try context.save()
+        XCTAssertNil(exercise(named: "Limit Boulders"))
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("catalog_path_rt.csv")
+        try exported.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        _ = try await LogCSV.importCSVAsync(from: url, into: context, tag: "rt", dedupe: true)
+
+        let restored = try XCTUnwrap(exercise(named: "Limit Boulders"))
+        XCTAssertEqual(restored.shape, .attempts, "Shape comes from the column, not a name guess")
+
+        let activities = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
+        let home = activities.first { $0.types.contains { $0.exercises.contains { $0.name == "Limit Boulders" } } }
+        XCTAssertEqual(home?.name, "Bouldering", "Not \"Imported Bouldering\"")
+        XCTAssertEqual(
+            home?.types.first(where: { $0.exercises.contains { $0.name == "Limit Boulders" } })?.name,
+            "Limit Bouldering",
+            "Not the plan's name"
+        )
+        XCTAssertFalse(activities.contains { $0.name.hasPrefix("Imported") },
+                       "Nothing needed the Imported shelf")
+    }
+
+    /// Without the columns — an older export, or a hand-written file — the fallback
+    /// shelf is still there, and the name heuristic still classifies wall work.
+    func testAnUnknownExerciseStillLandsOnTheImportedShelf() async throws {
+        _ = try await importPlanCSV(named: "no_path_columns.csv", rows: [
+            planRow(exercise: "Mystery Boulder Drill", planId: UUID(), planName: "Some Plan")
+        ])
+
+        let restored = try XCTUnwrap(exercise(named: "Mystery Boulder Drill"))
+        XCTAssertEqual(restored.shape, .attempts, "The \"boulder\" heuristic is the fallback")
+
+        let activities = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
+        let home = activities.first { $0.types.contains { $0.exercises.contains { $0.name == "Mystery Boulder Drill" } } }
+        XCTAssertEqual(home?.name, "Imported Bouldering")
+        XCTAssertEqual(
+            home?.types.first(where: { $0.exercises.contains { $0.name == "Mystery Boulder Drill" } })?.name,
+            "Some Plan"
+        )
+    }
+
     // MARK: - Round-trip Tests
-    
+
     func testExportImportRoundTrip() async throws {
         // Create original data
         let planKind = try ensurePlanKind(context, key: "weekly", name: "Weekly")

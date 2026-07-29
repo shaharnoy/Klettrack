@@ -60,7 +60,7 @@ enum LogCSV {
         
         // Header extended with climb_id, tb2_uuid and the timer columns at the end
         // (backward compatible: the importer resolves columns by name)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,rest,timer_name,timer_spec,sets_detail"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,rest,timer_name,timer_spec,sets_detail,activity,training_type,shape"]
 
         // Catalog lookups by exercise name, built once — export walks SessionItems,
         // not catalog exercises, so a per-row fetch would be O(rows).
@@ -83,6 +83,34 @@ enum LogCSV {
                   timerByExerciseName[exercise.name] == nil
             else { continue }
             timerByExerciseName[exercise.name] = template
+        }
+
+        // Where each exercise sits in the catalog. Exercise has no back-reference to its
+        // TrainingType, so this walks down from Activity instead. Without it the path is
+        // lost on export and has to be guessed on import, which is why re-imported
+        // exercises all piled up under "Imported".
+        //
+        // ponytail: exercises filed under a combination export their parent training
+        // type; the combination name isn't carried. Re-import puts them in the type,
+        // which is the right node, one level up.
+        var catalogPathByName: [String: (activity: String, type: String)] = [:]
+        for activity in (try? context.fetch(FetchDescriptor<Activity>())) ?? [] {
+            for type in activity.types {
+                for exercise in type.exercises + type.combinations.flatMap(\.exercises)
+                where catalogPathByName[exercise.name] == nil {
+                    catalogPathByName[exercise.name] = (activity.name, type.name)
+                }
+            }
+        }
+
+        /// The three catalog columns for an exercise, blank when it isn't in the catalog.
+        func catalogColumns(for exerciseName: String) -> [String] {
+            let path = catalogPathByName[exerciseName]
+            return [
+                csvEscape(path?.activity ?? ""),
+                csvEscape(path?.type ?? ""),
+                exerciseByName[exerciseName]?.shapeKey ?? ""
+            ]
         }
 
         let df = DateFormatter()
@@ -150,7 +178,7 @@ enum LogCSV {
                     // The rollup above is lossy; without this a re-import would drop
                     // per-set weight, effort and notes.
                     csvEscape(i.loggedSets.csvEncoded)
-                ].joined(separator: ","))
+                ].appending(catalogColumns(for: i.exerciseName)).joined(separator: ","))
             }
         }
         
@@ -194,7 +222,10 @@ enum LogCSV {
                 "",                                    // rest (climbs don't use this)
                 "",                                    // timer_name (climbs don't use this)
                 "",                                    // timer_spec (climbs don't use this)
-                ""                                     // sets_detail (climbs don't use this)
+                "",                                    // sets_detail (climbs don't use this)
+                "",                                    // activity (a climb has no catalog entry)
+                "",                                    // training_type
+                ""                                     // shape
             ].joined(separator: ","))
         }
 
@@ -258,7 +289,7 @@ enum LogCSV {
                         csvEscape(attachedTimer?.name ?? ""),
                         csvEscape(attachedTimer.map { TimerSpec.encode($0) } ?? ""),
                         "" // sets_detail (a plan has nothing performed yet)
-                    ].joined(separator: ","))
+                    ].appending(catalogColumns(for: exerciseName)).joined(separator: ","))
                 }
             }
         }
@@ -268,6 +299,12 @@ enum LogCSV {
 }
 
 // MARK: - Helpers
+
+private extension Array {
+    /// Append a run of cells to a row under construction, so the three catalog columns
+    /// read as one step at each call site rather than three more literals.
+    func appending(_ other: [Element]) -> [Element] { self + other }
+}
 
 /// Basic CSV escaping (quote if needed; escape inner quotes)
 private func csvEscape(_ s: String) -> String {
@@ -418,6 +455,10 @@ extension LogCSV {
         let timerName: String?
         let timerSpec: String?
         let loggedSets: [LoggedSet]
+        /// Where this exercise belongs in the catalog, when the file says.
+        let activityName: String?
+        let trainingTypeName: String?
+        let shape: ExerciseShape?
     }
 
     @MainActor
@@ -494,6 +535,9 @@ extension LogCSV {
                 static let timerName  = ["timer_name", "timer"]
                 static let timerSpec  = ["timer_spec", "timer_config"]
                 static let setsDetail = ["sets_detail", "setsdetail"]
+                static let activity   = ["activity", "activity_name"]
+                static let trainingType = ["training_type", "trainingtype", "type_name"]
+                static let shape      = ["shape", "measured_in"]
             }
             
             let hasHeader = (idx(Cols.date) != nil && idx(Cols.type) != nil)
@@ -525,7 +569,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, restTextStr, timerNameStr, timerSpecStr, setsDetailStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, restTextStr, timerNameStr, timerSpecStr, setsDetailStr, activityStr, trainingTypeStr, shapeStr: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -558,6 +602,9 @@ extension LogCSV {
                     timerNameStr = val(parts, Cols.timerName)
                     timerSpecStr = val(parts, Cols.timerSpec)
                     setsDetailStr = val(parts, Cols.setsDetail)
+                    activityStr  = val(parts, Cols.activity)
+                    trainingTypeStr = val(parts, Cols.trainingType)
+                    shapeStr     = val(parts, Cols.shape)
                 } else {
                     // Legacy positional fallback (will be removed in future)
                     func p(_ i: Int) -> String { parts.indices.contains(i) ? parts[i] : "" }
@@ -590,6 +637,9 @@ extension LogCSV {
                     timerNameStr = ""   // no timer columns in legacy CSV
                     timerSpecStr = ""
                     setsDetailStr = ""  // no per-set column in legacy CSV
+                    activityStr  = ""   // no catalog-path columns in legacy CSV
+                    trainingTypeStr = ""
+                    shapeStr     = ""
                 }
                 
                 // Minimal validity check
@@ -659,7 +709,10 @@ extension LogCSV {
                     restText: restTextStr.isEmpty ? nil : restTextStr,
                     timerName: timerNameStr.isEmpty ? nil : timerNameStr,
                     timerSpec: timerSpecStr.isEmpty ? nil : timerSpecStr,
-                    loggedSets: [LoggedSet].csvDecoded(setsDetailStr)
+                    loggedSets: [LoggedSet].csvDecoded(setsDetailStr),
+                    activityName: activityStr.isEmpty ? nil : activityStr,
+                    trainingTypeName: trainingTypeStr.isEmpty ? nil : trainingTypeStr,
+                    shape: ExerciseShape(rawValue: shapeStr)
                 ))
             }
             
@@ -786,7 +839,10 @@ extension LogCSV {
                             notes: e.notes,
                             planName: e.planName,
                             timerName: e.timerName,
-                            timerSpec: e.timerSpec
+                            timerSpec: e.timerSpec,
+                            activityName: e.activityName,
+                            trainingTypeName: e.trainingTypeName,
+                            shape: e.shape
                         )
                     }
                 }
@@ -1118,6 +1174,10 @@ extension LogCSV {
         let planName: String?
         let timerName: String?
         let timerSpec: String?
+        /// The exercise's own place in the catalog, when the file carried it.
+        let activityName: String?
+        let trainingTypeName: String?
+        let shape: ExerciseShape?
     }
 
     @MainActor
@@ -1175,16 +1235,18 @@ extension LogCSV {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
-            // Wall work logs as a climb rather than as a weighted session item. Name
-            // matching is all a CSV gives us — the column doesn't exist — but it only
-            // ever *fills* a blank shape, never overrules a real classification.
-            let isBoulder = trimmed.localizedLowercase.contains("boulder")
+            // Wall work logs as a climb rather than as a weighted session item. The file
+            // now says so outright; the "boulder" substring is the fallback for CSVs
+            // written before the column existed. Either way it only ever *fills* a blank
+            // shape, never overrules a real classification.
+            let shape = meta.shape
+                ?? (trimmed.localizedLowercase.contains("boulder") ? .attempts : nil)
 
             // Already in the catalog: never overwrite, but fill anything still missing so
             // re-importing an improved CSV heals entries created by an earlier import.
             if let existing = existingByName[trimmed] {
-                if existing.shapeKey == nil, isBoulder {
-                    existing.shapeKey = ExerciseShape.attempts.rawValue
+                if existing.shapeKey == nil, let shape {
+                    existing.shapeKey = shape.rawValue
                 }
                 if existing.repsText == nil { existing.repsText = metricText(meta.reps) }
                 if existing.setsText == nil { existing.setsText = metricText(meta.sets) }
@@ -1199,13 +1261,18 @@ extension LogCSV {
                 continue
             }
 
+            // Where the file says it belongs. Only when it doesn't do we fall back to the
+            // old shelf — "Imported", subdivided by source plan — which is what put
+            // re-imported exercises somewhere they had never been filed.
             let activity = CatalogSeeder.ensureActivity(
-                isBoulder ? "Imported Bouldering" : "Imported",
+                trimmedOrNil(meta.activityName)
+                    ?? (shape == .attempts ? "Imported Bouldering" : "Imported"),
                 in: context
             )
             let planName = meta.planName?.trimmingCharacters(in: .whitespacesAndNewlines)
             let type = CatalogSeeder.ensureType(
-                (planName?.isEmpty == false) ? planName! : "Imported plan",
+                trimmedOrNil(meta.trainingTypeName)
+                    ?? ((planName?.isEmpty == false) ? planName! : "Imported plan"),
                 in: activity
             )
 
@@ -1221,8 +1288,8 @@ extension LogCSV {
 
             if let created = type.exercises.first(where: { $0.name == trimmed }) {
                 existingByName[trimmed] = created
-                if isBoulder {
-                    created.shapeKey = ExerciseShape.attempts.rawValue
+                if let shape {
+                    created.shapeKey = shape.rawValue
                 }
                 if let template = resolveTimer(for: trimmed, meta) {
                     created.timerTemplateId = template.id
