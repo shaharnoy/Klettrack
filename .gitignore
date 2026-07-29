@@ -77,3 +77,8 @@ playground.xcworkspace
 *.tmp
 *.lock
 *.log
+
+# Agents and Claude
+.agents
+.claude
+skills-lock.json
