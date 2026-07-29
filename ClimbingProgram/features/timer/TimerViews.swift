@@ -131,9 +131,22 @@ struct TimerView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                   
+                    // The timer is a tab, not a pushed view, so there is no back button
+                    // of its own — you arrive from a plan day and get stranded. Switching
+                    // back is enough: the Plans tab keeps its navigation path, so this
+                    // lands on the very day you left, and the timer keeps running.
+                    //
+                    // ponytail: tab 2 hardcoded because both switchToTimer call sites are
+                    // in PlansViews. Record an origin tab on TimerAppState if a third
+                    // entry point ever appears.
+                    if planDay != nil {
+                        Button("Plan", systemImage: "chevron.left") {
+                            timerAppState.selectedTab = 2
+                        }
+                        .accessibilityLabel("Back to the plan day")
+                    }
                 }
-                
+
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 16) {
                         // Main menu
