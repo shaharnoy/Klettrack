@@ -60,7 +60,7 @@ enum LogCSV {
         
         // Header extended with climb_id, tb2_uuid and the timer columns at the end
         // (backward compatible: the importer resolves columns by name)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,rest,timer_name,timer_spec"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,rest,timer_name,timer_spec,sets_detail"]
 
         // Catalog lookups by exercise name, built once — export walks SessionItems,
         // not catalog exercises, so a per-row fetch would be O(rows).
@@ -146,7 +146,10 @@ enum LogCSV {
                     "",  // media_ref (exercises don't use this)
                     csvEscape(restByExerciseName[i.exerciseName] ?? ""),
                     csvEscape(attachedTimer?.name ?? ""),
-                    csvEscape(attachedTimer.map { TimerSpec.encode($0) } ?? "")
+                    csvEscape(attachedTimer.map { TimerSpec.encode($0) } ?? ""),
+                    // The rollup above is lossy; without this a re-import would drop
+                    // per-set weight, effort and notes.
+                    csvEscape(i.loggedSets.csvEncoded)
                 ].joined(separator: ","))
             }
         }
@@ -190,7 +193,8 @@ enum LogCSV {
                 csvEscape(mediaRefs),                  // media_refs
                 "",                                    // rest (climbs don't use this)
                 "",                                    // timer_name (climbs don't use this)
-                ""                                     // timer_spec (climbs don't use this)
+                "",                                    // timer_spec (climbs don't use this)
+                ""                                     // sets_detail (climbs don't use this)
             ].joined(separator: ","))
         }
 
@@ -252,7 +256,8 @@ enum LogCSV {
                         "", // media_refs
                         csvEscape(restByExerciseName[exerciseName] ?? ""),
                         csvEscape(attachedTimer?.name ?? ""),
-                        csvEscape(attachedTimer.map { TimerSpec.encode($0) } ?? "")
+                        csvEscape(attachedTimer.map { TimerSpec.encode($0) } ?? ""),
+                        "" // sets_detail (a plan has nothing performed yet)
                     ].joined(separator: ","))
                 }
             }
@@ -412,8 +417,9 @@ extension LogCSV {
         let restText: String?
         let timerName: String?
         let timerSpec: String?
+        let loggedSets: [LoggedSet]
     }
-    
+
     @MainActor
     static func importCSVAsync(
         from url: URL,
@@ -487,6 +493,7 @@ extension LogCSV {
                 static let rest       = ["rest", "rest_text"]
                 static let timerName  = ["timer_name", "timer"]
                 static let timerSpec  = ["timer_spec", "timer_config"]
+                static let setsDetail = ["sets_detail", "setsdetail"]
             }
             
             let hasHeader = (idx(Cols.date) != nil && idx(Cols.type) != nil)
@@ -518,7 +525,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, restTextStr, timerNameStr, timerSpecStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, restTextStr, timerNameStr, timerSpecStr, setsDetailStr: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -550,6 +557,7 @@ extension LogCSV {
                     restTextStr  = val(parts, Cols.rest)
                     timerNameStr = val(parts, Cols.timerName)
                     timerSpecStr = val(parts, Cols.timerSpec)
+                    setsDetailStr = val(parts, Cols.setsDetail)
                 } else {
                     // Legacy positional fallback (will be removed in future)
                     func p(_ i: Int) -> String { parts.indices.contains(i) ? parts[i] : "" }
@@ -581,7 +589,7 @@ extension LogCSV {
                     restTextStr  = ""   // no rest column in legacy CSV
                     timerNameStr = ""   // no timer columns in legacy CSV
                     timerSpecStr = ""
-
+                    setsDetailStr = ""  // no per-set column in legacy CSV
                 }
                 
                 // Minimal validity check
@@ -650,7 +658,8 @@ extension LogCSV {
                     mediaRefs: mediaRefsOpt,
                     restText: restTextStr.isEmpty ? nil : restTextStr,
                     timerName: timerNameStr.isEmpty ? nil : timerNameStr,
-                    timerSpec: timerSpecStr.isEmpty ? nil : timerSpecStr
+                    timerSpec: timerSpecStr.isEmpty ? nil : timerSpecStr,
+                    loggedSets: [LoggedSet].csvDecoded(setsDetailStr)
                 ))
             }
             
@@ -843,7 +852,8 @@ extension LogCSV {
                         weightKg: e.weight,
                         grade: e.grade,
                         notes: e.notes,
-                        duration: e.duration
+                        duration: e.duration,
+                        loggedSets: e.loggedSets
                     )
                     item.sourceTag = tag
                     session.items.append(item)

@@ -78,7 +78,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         // Verify header
         let header = lines.first!
         let expectedFields = [
-            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","rest","timer_name","timer_spec"
+            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","rest","timer_name","timer_spec","sets_detail"
         ]
         let headerFields = header.components(separatedBy: ",")
         XCTAssertEqual(headerFields.count, expectedFields.count, "Header should have correct number of fields")
@@ -239,7 +239,9 @@ class ImportExportTests: ClimbingProgramTestSuite {
 
         let boulder = try XCTUnwrap(byName["Boulder Project"], "Boulder-named exercise should be in the catalog")
         XCTAssertEqual(boulder.activity, "Imported Bouldering",
-                       "Boulder-named exercises route to the activity that trips the bouldering heuristic")
+                       "Boulder-named exercises route to the bouldering-tinted activity")
+        XCTAssertEqual(boulder.exercise.shape, .attempts,
+                       "The activity name only carries the tint — the shape is what routes it to the climb log")
         XCTAssertEqual(boulder.type, planName, "TrainingType should be named after the source plan")
         XCTAssertEqual(boulder.exercise.repsText, "5")
         XCTAssertEqual(boulder.exercise.setsText, "3")
@@ -252,6 +254,26 @@ class ImportExportTests: ClimbingProgramTestSuite {
         XCTAssertEqual(hangboard.exercise.repsText, "7")
         XCTAssertEqual(hangboard.exercise.setsText, "4")
         XCTAssertNil(hangboard.exercise.durationText, "A 0.000 duration means unset, not \"0 min\"")
+        XCTAssertEqual(hangboard.exercise.shape, .weighted, "Unclassified imports keep the weight field")
+    }
+
+    /// A re-import must not overrule a classification the user (or the seed) already set.
+    func testReimportDoesNotOverruleAnExistingShape() async throws {
+        let planId = UUID()
+        let rows = [
+            "2025-08-25 09:00:00,exercise,Boulder Project,,,,,,,,,,,,5,3,0.000,,\(planId.uuidString),Shape Plan,,,,,"
+        ]
+
+        // The user decided this one is weighted — ankle weights on board problems, say.
+        let activity = createTestActivity(name: "Strength")
+        let type = createTestTrainingType(activity: activity, name: "Mine")
+        let mine = Exercise(name: "Boulder Project", shapeKey: ExerciseShape.weighted.rawValue)
+        type.exercises.append(mine)
+        try context.save()
+
+        _ = try await importPlanCSV(named: "catalog_shape.csv", rows: rows)
+
+        XCTAssertEqual(mine.shape, .weighted, "An existing classification must survive a re-import")
     }
 
     func testPlanImportDoesNotDuplicateCatalogEntries() async throws {
@@ -792,6 +814,155 @@ class ImportExportTests: ClimbingProgramTestSuite {
         XCTAssertEqual(imported, 1)
         XCTAssertNotNil(exercise(named: "Legacy Exercise"))
         XCTAssertTrue(catalogTemplates().isEmpty)
+    }
+
+    // MARK: - Per-set detail round-trip
+
+    /// The flat reps/sets/weight columns are a lossy rollup, so without a dedicated
+    /// column an export/import cycle would silently discard per-set weight, effort
+    /// and notes. Export is the backup path — that would be data loss.
+    func testPerSetDetailSurvivesExportImportRoundTrip() async throws {
+        let session = Session(date: parseDay("2026-03-04"))
+        context.insert(session)
+        session.items.append(
+            SessionItem(
+                exerciseName: "Weighted Pull-up",
+                reps: 3,
+                sets: 3,
+                weightKg: 30,
+                loggedSets: [
+                    LoggedSet(reps: 3, weightKg: 30, rpe: 1),
+                    LoggedSet(reps: 3, weightKg: 32.5, rpe: 3, note: "grip slipped, comma & \"quote\""),
+                    LoggedSet(reps: 2, weightKg: 27.5, rpe: 5)
+                ]
+            )
+        )
+        try context.save()
+
+        let exported = LogCSV.makeExportCSV(context: context).csv
+        XCTAssertTrue(exported.contains("sets_detail"), "The column has to be in the header")
+
+        (try? context.fetch(FetchDescriptor<Session>()))?.forEach { context.delete($0) }
+        try context.save()
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("per_set_roundtrip.csv")
+        try exported.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        _ = try await LogCSV.importCSVAsync(from: url, into: context, tag: "per-set", dedupe: false)
+
+        let item = try XCTUnwrap(loggedItems().first { $0.exerciseName == "Weighted Pull-up" })
+        XCTAssertEqual(item.loggedSets.count, 3)
+        XCTAssertEqual(item.loggedSets.map(\.weightKg), [30, 32.5, 27.5])
+        XCTAssertEqual(item.loggedSets.map(\.reps), [3, 3, 2])
+        XCTAssertEqual(item.loggedSets.map(\.rpe), [1, 3, 5])
+        XCTAssertEqual(
+            item.loggedSets[1].note, "grip slipped, comma & \"quote\"",
+            "A note with a comma and quotes must survive CSV escaping"
+        )
+    }
+
+    /// Build a row by column name against a header, so a fixture can't silently land a
+    /// value in the wrong column from a miscounted comma run.
+    private func csvRow(_ values: [String: String], header: String) -> String {
+        header.split(separator: ",").map { column in
+            let value = values[String(column)] ?? ""
+            return value.contains(",") || value.contains("\"")
+                ? "\"\(value.replacing("\"", with: "\"\""))\""
+                : value
+        }
+        .joined(separator: ",")
+    }
+
+    /// Hand-logged items and every pre-existing export have no per-set detail; the
+    /// blank cell must import as "no detail", not as a broken row.
+    func testRowsWithoutPerSetDetailImportCleanly() async throws {
+        let header = testCSVHeaderWithTimers
+        let imported = try await importPlanCSV(named: "no_set_detail.csv", rows: [
+            csvRow([
+                "date": "2026-03-05 09:00:00",
+                "type": "exercise",
+                "exercise_name": "Plain Pull-up",
+                "reps": "8",
+                "sets": "3"
+            ], header: header)
+        ], header: header)
+
+        XCTAssertEqual(imported, 1)
+        let item = try XCTUnwrap(loggedItems().first { $0.exerciseName == "Plain Pull-up" })
+        XCTAssertEqual(item.loggedSets, [], "No detail is not an error")
+        XCTAssertEqual(item.reps, 8, "The rollup columns still carry the numbers")
+        XCTAssertEqual(item.sets, 3)
+    }
+
+    /// A hand-mangled cell must not take the row down with it.
+    func testMalformedPerSetDetailIsIgnored() async throws {
+        let header = testCSVHeaderWithTimers + ",sets_detail"
+        let imported = try await importPlanCSV(named: "bad_set_detail.csv", rows: [
+            csvRow([
+                "date": "2026-03-06 09:00:00",
+                "type": "exercise",
+                "exercise_name": "Broken Detail",
+                "reps": "5",
+                "sets": "2",
+                "sets_detail": "not json at all"
+            ], header: header)
+        ], header: header)
+
+        XCTAssertEqual(imported, 1, "The row still imports")
+        let item = try XCTUnwrap(loggedItems().first { $0.exerciseName == "Broken Detail" })
+        XCTAssertEqual(item.loggedSets, [])
+        XCTAssertEqual(item.reps, 5)
+    }
+
+    /// A per-set cell written by hand rather than exported must still be honoured.
+    func testHandWrittenPerSetDetailIsImported() async throws {
+        let header = testCSVHeaderWithTimers + ",sets_detail"
+        let imported = try await importPlanCSV(named: "hand_set_detail.csv", rows: [
+            csvRow([
+                "date": "2026-03-08 09:00:00",
+                "type": "exercise",
+                "exercise_name": "Hand Written",
+                "reps": "3",
+                "sets": "2",
+                "weight_kg": "30",
+                "sets_detail": #"[{"reps":3,"weightKg":30,"rpe":2},{"reps":3,"weightKg":32.5}]"#
+            ], header: header)
+        ], header: header)
+
+        XCTAssertEqual(imported, 1)
+        let item = try XCTUnwrap(loggedItems().first { $0.exerciseName == "Hand Written" })
+        XCTAssertEqual(item.loggedSets.map(\.weightKg), [30, 32.5])
+        XCTAssertEqual(item.loggedSets[0].rpe, 2)
+        XCTAssertNil(item.loggedSets[1].rpe)
+    }
+
+    /// Per-set detail is outside the dedupe signature, so a second import of the same
+    /// export must not double the rows.
+    func testReimportingPerSetDetailDoesNotDuplicate() async throws {
+        let session = Session(date: parseDay("2026-03-07"))
+        context.insert(session)
+        session.items.append(
+            SessionItem(
+                exerciseName: "Dedupe Pull-up",
+                reps: 3,
+                sets: 2,
+                weightKg: 30,
+                loggedSets: [LoggedSet(reps: 3, weightKg: 30), LoggedSet(reps: 3, weightKg: 30)]
+            )
+        )
+        try context.save()
+
+        let exported = LogCSV.makeExportCSV(context: context).csv
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("per_set_dedupe.csv")
+        try exported.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        _ = try await LogCSV.importCSVAsync(from: url, into: context, tag: "dd", dedupe: true)
+
+        XCTAssertEqual(
+            loggedItems().filter { $0.exerciseName == "Dedupe Pull-up" }.count, 1,
+            "The rollup columns are unchanged, so the row dedupes as before"
+        )
     }
 
     func testTimerAttachmentSurvivesExportImportRoundTrip() async throws {
