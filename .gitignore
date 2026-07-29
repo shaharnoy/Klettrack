@@ -81,4 +81,5 @@ playground.xcworkspace
 # Agents and Claude
 .agents
 .claude
+.superpowers
 skills-lock.json
