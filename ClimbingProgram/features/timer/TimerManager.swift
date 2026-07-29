@@ -353,7 +353,7 @@ class TimerManager {
     /// `seedWeightKg` pre-fills every effort, so skipping ahead needs no special case —
     /// the row for an untouched effort already holds its planned values.
     func startSetSequence(
-        reps: Int,
+        reps: Int?,
         sets: Int,
         restBetweenReps: Int,
         restBetweenSets: Int,
@@ -366,10 +366,11 @@ class TimerManager {
         lastSnapshot = nil
         self.session = session
 
-        let repCount = max(1, reps)
         let nested = restBetweenReps > 0
         let sequence = SetSequence(
-            effortsPerSet: nested ? repCount : 1,
+            // A nested sequence still needs a concrete count to divide by; a flat one
+            // doesn't, so an unknown rep count (.attempts) collapses it to one effort.
+            effortsPerSet: nested ? max(1, reps ?? 1) : 1,
             totalSets: max(1, sets),
             restBetweenRepsSeconds: max(0, restBetweenReps),
             restBetweenSetsSeconds: max(0, restBetweenSets),
@@ -382,8 +383,9 @@ class TimerManager {
         effortLogs = (0..<sequence.totalEfforts).map { index in
             LoggedSet(
                 // A nested effort *is* one rep, so a count would be noise. A flat effort is
-                // a whole set, and its count is the thing worth recording.
-                reps: nested ? nil : Double(repCount),
+                // a whole set, and carries its rep count only when one is actually known —
+                // a try isn't a rep, so .attempts must not fabricate one.
+                reps: nested ? nil : reps.map(Double.init),
                 weightKg: seedWeightKg,
                 setNumber: sequence.setNumber(forEffortIndex: index)
             )

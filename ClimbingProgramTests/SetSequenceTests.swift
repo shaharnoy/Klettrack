@@ -566,11 +566,26 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
     func testAnAttemptsSequenceRecordsNoWeight() {
         let manager = makeManager()
         manager.startSetSequence(
-            reps: 1, sets: 3, restBetweenReps: 0, restBetweenSets: 180, shape: .attempts, session: makeSession()
+            reps: nil, sets: 3, restBetweenReps: 0, restBetweenSets: 180, shape: .attempts, session: makeSession()
         )
 
         XCTAssertEqual(manager.effortLogs.count, 3)
         XCTAssertTrue(manager.effortLogs.allSatisfy { $0.weightKg == nil })
+        XCTAssertTrue(manager.effortLogs.allSatisfy { $0.reps == nil })
+    }
+
+    /// A try isn't a rep. An exercise with no rep count must not be given one, or every
+    /// chip captions itself "1 reps".
+    func testAnEffortWithNoRepCountRecordsNone() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: nil, sets: 3, restBetweenReps: 0, restBetweenSets: 180,
+                                 shape: .attempts, session: makeSession())
+        XCTAssertTrue(manager.effortLogs.allSatisfy { $0.reps == nil })
+
+        let counted = makeManager()
+        counted.startSetSequence(reps: 5, sets: 3, restBetweenReps: 0, restBetweenSets: 180,
+                                 shape: .weighted, session: makeSession())
+        XCTAssertEqual(counted.effortLogs.map(\.reps), [5, 5, 5], "A known count is still recorded")
     }
 
     /// Effort and notes are the books' "quality of the attempt" — the one per-set thing

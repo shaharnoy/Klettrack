@@ -324,7 +324,7 @@ struct TimerView: View {
             context.insert(session)
             try? context.save()
             timerManager.startSetSequence(
-                reps: reps ?? 1,
+                reps: reps,
                 sets: sets,
                 // Task 2 replaces this with the exercise's own rest-between-reps.
                 restBetweenReps: 0,
