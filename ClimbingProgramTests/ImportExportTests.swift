@@ -479,7 +479,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
                        "Still exactly one catalog entry")
     }
 
-    /// Pins the debug fixture (docs/debug-timers.csv): four short-rest exercises covering
+    /// Pins the fixture (Fixtures/plan-timers-fast.csv): four short-rest exercises covering
     /// every branch of the classifier, so the file stays importable as the format evolves.
     /// It is a plan fixture, hence `type=plan` — importing it must not log anything.
     func testDebugTimersFixtureClassifiesEveryBranch() async throws {
@@ -731,16 +731,15 @@ class ImportExportTests: ClimbingProgramTestSuite {
         XCTAssertTrue(loggedItems().isEmpty, "A round-tripped plan is still not a log")
     }
 
-    /// Imports the real docs/debug-timers.csv off disk — not a copy of its rows — and then
-    /// runs the two computations the plan day editor renders from. This is the on-screen
-    /// bug expressed as a test: "Logged exercises" must read empty for a freshly
-    /// imported plan. Reading the shipped file also stops it drifting from the inline
-    /// rows in testDebugTimersFixtureClassifiesEveryBranch above.
+    /// Imports the real Fixtures/plan-timers-fast.csv off disk — not a copy of its rows —
+    /// and then runs the two computations the plan day editor renders from. This is the
+    /// on-screen bug expressed as a test: "Logged exercises" must read empty for a freshly
+    /// imported plan. Reading the file itself also stops it drifting from the inline rows
+    /// in testDebugTimersFixtureClassifiesEveryBranch above.
     func testShippedFixtureImportsAsAPlanWithAnEmptyLog() async throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)      // …/ClimbingProgramTests/ImportExportTests.swift
+        let testsRoot = URL(fileURLWithPath: #filePath)     // …/ClimbingProgramTests/ImportExportTests.swift
             .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let fixture = repoRoot.appendingPathComponent("docs/debug-timers.csv")
+        let fixture = testsRoot.appendingPathComponent("Fixtures/plan-timers-fast.csv")
         guard FileManager.default.fileExists(atPath: fixture.path) else {
             return XCTFail("Fixture missing at \(fixture.path)")
         }
