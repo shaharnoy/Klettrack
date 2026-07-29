@@ -704,7 +704,11 @@ Add `restBetweenRepsText: String? = nil` to the initialiser after `restText`, an
 enum ExerciseTimerPlan: Equatable {
     case durationBased(TimerConfiguration, templateId: UUID?)
     /// `restBetweenReps` of 0 means the reps run continuously and a set is one effort.
-    case repBased(reps: Int, sets: Int, restBetweenReps: Int, restBetweenSets: Int, templateId: UUID?)
+    ///
+    /// `reps` stays optional: an exercise with no reps text genuinely has no rep count,
+    /// and `.attempts` never had one — "a try isn't a rep". Defaulting it to 1 fabricates
+    /// a number the chips then render as "1 reps".
+    case repBased(reps: Int?, sets: Int, restBetweenReps: Int, restBetweenSets: Int, templateId: UUID?)
 
     var templateId: UUID? {
         switch self {
@@ -719,7 +723,10 @@ enum ExerciseTimerPlan: Equatable {
 Replace the body after the attached-template check:
 
 ```swift
-        let reps = parseCount(exercise.repsText) ?? 1
+        // Not `?? 1`: no reps text means no rep count, and inventing one shows up as a
+        // "1 reps" caption under every chip. `startSetSequence` takes `Int?` for the
+        // same reason.
+        let reps = parseCount(exercise.repsText)
         let sets = parseCount(exercise.setsText, upperBound: true) ?? 1
 
         var restBetweenReps = parseSeconds(exercise.restBetweenRepsText) ?? 0
