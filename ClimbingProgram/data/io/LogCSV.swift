@@ -60,7 +60,7 @@ enum LogCSV {
         
         // Header extended with climb_id, tb2_uuid and the timer columns at the end
         // (backward compatible: the importer resolves columns by name)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,rest,timer_name,timer_spec,sets_detail,activity,training_type,shape"]
+        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,rest,timer_name,timer_spec,sets_detail,activity,training_type,shape,rest_between_reps"]
 
         // Catalog lookups by exercise name, built once — export walks SessionItems,
         // not catalog exercises, so a per-row fetch would be O(rows).
@@ -103,13 +103,15 @@ enum LogCSV {
             }
         }
 
-        /// The three catalog columns for an exercise, blank when it isn't in the catalog.
+        /// The catalog columns for an exercise, blank when it isn't in the catalog.
         func catalogColumns(for exerciseName: String) -> [String] {
             let path = catalogPathByName[exerciseName]
+            let exercise = exerciseByName[exerciseName]
             return [
                 csvEscape(path?.activity ?? ""),
                 csvEscape(path?.type ?? ""),
-                exerciseByName[exerciseName]?.shapeKey ?? ""
+                exercise?.shapeKey ?? "",
+                csvEscape(exercise?.restBetweenRepsText ?? "")
             ]
         }
 
@@ -225,7 +227,8 @@ enum LogCSV {
                 "",                                    // sets_detail (climbs don't use this)
                 "",                                    // activity (a climb has no catalog entry)
                 "",                                    // training_type
-                ""                                     // shape
+                "",                                    // shape
+                ""                                     // rest_between_reps (climbs don't use this)
             ].joined(separator: ","))
         }
 
@@ -459,6 +462,8 @@ extension LogCSV {
         let activityName: String?
         let trainingTypeName: String?
         let shape: ExerciseShape?
+        /// Rest between the reps inside a set, straight from the catalog Exercise.
+        let restBetweenRepsText: String?
     }
 
     @MainActor
@@ -538,6 +543,7 @@ extension LogCSV {
                 static let activity   = ["activity", "activity_name"]
                 static let trainingType = ["training_type", "trainingtype", "type_name"]
                 static let shape      = ["shape", "measured_in"]
+                static let restBetweenReps = ["rest_between_reps", "restbetweenreps"]
             }
             
             let hasHeader = (idx(Cols.date) != nil && idx(Cols.type) != nil)
@@ -569,7 +575,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, restTextStr, timerNameStr, timerSpecStr, setsDetailStr, activityStr, trainingTypeStr, shapeStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, restTextStr, timerNameStr, timerSpecStr, setsDetailStr, activityStr, trainingTypeStr, shapeStr, restBetweenRepsStr: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -605,6 +611,7 @@ extension LogCSV {
                     activityStr  = val(parts, Cols.activity)
                     trainingTypeStr = val(parts, Cols.trainingType)
                     shapeStr     = val(parts, Cols.shape)
+                    restBetweenRepsStr = val(parts, Cols.restBetweenReps)
                 } else {
                     // Legacy positional fallback (will be removed in future)
                     func p(_ i: Int) -> String { parts.indices.contains(i) ? parts[i] : "" }
@@ -640,6 +647,7 @@ extension LogCSV {
                     activityStr  = ""   // no catalog-path columns in legacy CSV
                     trainingTypeStr = ""
                     shapeStr     = ""
+                    restBetweenRepsStr = ""   // no rep-rest column in legacy CSV
                 }
                 
                 // Minimal validity check
@@ -712,7 +720,8 @@ extension LogCSV {
                     loggedSets: [LoggedSet].csvDecoded(setsDetailStr),
                     activityName: activityStr.isEmpty ? nil : activityStr,
                     trainingTypeName: trainingTypeStr.isEmpty ? nil : trainingTypeStr,
-                    shape: ExerciseShape(rawValue: shapeStr)
+                    shape: ExerciseShape(rawValue: shapeStr),
+                    restBetweenRepsText: restBetweenRepsStr.isEmpty ? nil : restBetweenRepsStr
                 ))
             }
             
@@ -842,7 +851,8 @@ extension LogCSV {
                             timerSpec: e.timerSpec,
                             activityName: e.activityName,
                             trainingTypeName: e.trainingTypeName,
-                            shape: e.shape
+                            shape: e.shape,
+                            restBetweenRepsText: e.restBetweenRepsText
                         )
                     }
                 }
@@ -1178,6 +1188,8 @@ extension LogCSV {
         let activityName: String?
         let trainingTypeName: String?
         let shape: ExerciseShape?
+        /// Rest between the reps inside a set.
+        let restBetweenRepsText: String?
     }
 
     @MainActor
@@ -1254,6 +1266,9 @@ extension LogCSV {
                     existing.durationText = metricText(meta.duration).map { "\($0) min" }
                 }
                 if existing.restText == nil { existing.restText = trimmedOrNil(meta.restText) }
+                if existing.restBetweenRepsText == nil {
+                    existing.restBetweenRepsText = trimmedOrNil(meta.restBetweenRepsText)
+                }
                 if existing.notes == nil { existing.notes = meta.notes }
                 if existing.timerTemplateId == nil, let template = resolveTimer(for: trimmed, meta) {
                     existing.timerTemplateId = template.id
@@ -1291,6 +1306,7 @@ extension LogCSV {
                 if let shape {
                     created.shapeKey = shape.rawValue
                 }
+                created.restBetweenRepsText = trimmedOrNil(meta.restBetweenRepsText)
                 if let template = resolveTimer(for: trimmed, meta) {
                     created.timerTemplateId = template.id
                 }

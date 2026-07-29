@@ -14,12 +14,15 @@ struct TimerTemplateDraft: Equatable {
     var repeatCount: Int?
     var restBetweenSeconds: Int?
     var repsPerSet: Int?
+    /// Rest between the reps inside a set, distinct from `restBetweenSeconds` (between sets).
+    var restBetweenRepsSeconds: Int = 0
 
     static func == (lhs: TimerTemplateDraft, rhs: TimerTemplateDraft) -> Bool {
         lhs.totalTimeSeconds == rhs.totalTimeSeconds
             && lhs.repeatCount == rhs.repeatCount
             && lhs.restBetweenSeconds == rhs.restBetweenSeconds
             && lhs.repsPerSet == rhs.repsPerSet
+            && lhs.restBetweenRepsSeconds == rhs.restBetweenRepsSeconds
             && lhs.intervals.count == rhs.intervals.count
             && zip(lhs.intervals, rhs.intervals).allSatisfy { $0 == $1 }
     }
@@ -31,7 +34,7 @@ struct TimerTemplateDraft: Equatable {
 
 /// Grammar (`;`-separated tokens, `|`-separated interval fields — same convention as `media_refs`):
 ///
-///   reps=5;sets=3;rest=180                       rep-based, waits for confirmation each set
+///   reps=5;sets=3;rest=180;restReps=30            rep-based, waits for confirmation each set
 ///   total=180                                    plain countdown
 ///   interval=Hang|10|50|6;restBetween=180;repeat=3
 ///
@@ -45,6 +48,9 @@ enum TimerSpec {
             tokens.append("reps=\(reps)")
             tokens.append("sets=\(max(1, template.repeatCount ?? 1))")
             tokens.append("rest=\(template.restTimeBetweenIntervals ?? 0)")
+            let repRest = template.intervals.sorted { $0.order < $1.order }
+                .first?.restTimeSeconds ?? 0
+            if repRest > 0 { tokens.append("restReps=\(repRest)") }
             return tokens.joined(separator: ";")
         }
 
@@ -83,6 +89,7 @@ enum TimerSpec {
             case "reps":        draft.repsPerSet = Int(value)
             case "sets", "repeat": draft.repeatCount = Int(value)
             case "rest", "restbetween": draft.restBetweenSeconds = Int(value)
+            case "restreps": draft.restBetweenRepsSeconds = Int(value) ?? 0
             case "interval":
                 let fields = value.split(separator: "|", omittingEmptySubsequences: false)
                 guard fields.count >= 4,
@@ -120,6 +127,15 @@ enum TimerSpec {
                     repetitions: interval.reps,
                     order: index
                 )
+            )
+        }
+        // A rep-based template keeps its rest between reps on an interval, which is
+        // where plan(from:) looks for it.
+        if draft.repsPerSet != nil, draft.restBetweenRepsSeconds > 0, draft.intervals.isEmpty {
+            template.intervals.append(
+                TimerInterval(name: "Rep", workTimeSeconds: 0,
+                              restTimeSeconds: draft.restBetweenRepsSeconds,
+                              repetitions: max(1, draft.repsPerSet ?? 1), order: 0)
             )
         }
         return template

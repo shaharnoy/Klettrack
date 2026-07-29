@@ -78,7 +78,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         // Verify header
         let header = lines.first!
         let expectedFields = [
-            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","rest","timer_name","timer_spec","sets_detail","activity","training_type","shape"
+            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","rest","timer_name","timer_spec","sets_detail","activity","training_type","shape","rest_between_reps"
         ]
         let headerFields = header.components(separatedBy: ",")
         XCTAssertEqual(headerFields.count, expectedFields.count, "Header should have correct number of fields")
@@ -1291,5 +1291,74 @@ class ImportExportTests: ClimbingProgramTestSuite {
             XCTAssertEqual(climbs.count, 2)
 
         }
+
+    // MARK: - Rest between reps (nested sets/reps)
+
+    /// Both rests survive a round trip, so an imported plan arrives able to nest.
+    func testRestBetweenRepsSurvivesExportImport() async throws {
+        let activity = createTestActivity(name: "Bouldering")
+        let type = createTestTrainingType(activity: activity, name: "Limit")
+        let exercise = Exercise(name: "Nested Boulder", repsText: "3", setsText: "5",
+                                restText: "3 min", shapeKey: ExerciseShape.attempts.rawValue)
+        exercise.restBetweenRepsText = "30 sec"
+        type.exercises.append(exercise)
+
+        let planKind = try ensurePlanKind(context, key: "weekly", name: "Weekly")
+        let plan = Plan(name: "Nest Block", kind: planKind, startDate: parseDay("2026-05-04"))
+        let day = PlanDay(date: parseDay("2026-05-04"))
+        day.chosenExercises = ["Nested Boulder"]
+        plan.days.append(day)
+        context.insert(plan)
+        try context.save()
+
+        let exported = LogCSV.makeExportCSV(context: context).csv
+        XCTAssertTrue(exported.contains("30 sec"), "The rep rest is in the file")
+
+        type.exercises.removeAll { $0.name == "Nested Boulder" }
+        context.delete(exercise)
+        try context.save()
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rep_rest_rt.csv")
+        try exported.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        _ = try await LogCSV.importCSVAsync(from: url, into: context, tag: "rt", dedupe: true)
+
+        let restored = try XCTUnwrap(self.exercise(named: "Nested Boulder"))
+        XCTAssertEqual(restored.restBetweenRepsText, "30 sec")
+        XCTAssertEqual(restored.restText, "3 min")
+    }
+
+    /// Per-effort rows keep the bout they belonged to.
+    func testSetNumberSurvivesThePerSetDetailColumn() {
+        let sets = [
+            LoggedSet(reps: nil, weightKg: nil, rpe: 4, note: "crux", setNumber: 1),
+            LoggedSet(reps: nil, weightKg: nil, rpe: 5, note: nil, setNumber: 2)
+        ]
+        let decoded = [LoggedSet].csvDecoded(sets.csvEncoded)
+        XCTAssertEqual(decoded.map(\.setNumber), [1, 2])
+    }
+
+    func testTimerSpecCarriesBothRests() throws {
+        let template = TimerTemplate(name: "Bouts", isRepeating: true, repeatCount: 5,
+                                     restTimeBetweenIntervals: 180, repsPerSet: 3)
+        template.intervals.append(
+            TimerInterval(name: "Go", workTimeSeconds: 0, restTimeSeconds: 30,
+                          repetitions: 3, order: 0)
+        )
+        let spec = TimerSpec.encode(template)
+        XCTAssertEqual(spec, "reps=3;sets=5;rest=180;restReps=30")
+
+        let draft = try XCTUnwrap(TimerSpec.decode(spec))
+        XCTAssertEqual(draft.repsPerSet, 3)
+        XCTAssertEqual(draft.repeatCount, 5)
+        XCTAssertEqual(draft.restBetweenSeconds, 180)
+        XCTAssertEqual(draft.restBetweenRepsSeconds, 30)
+    }
+
+    /// A spec written before the token existed still decodes.
+    func testATimerSpecWithoutTheRepRestStillDecodes() throws {
+        let draft = try XCTUnwrap(TimerSpec.decode("reps=5;sets=3;rest=180"))
+        XCTAssertEqual(draft.restBetweenRepsSeconds, 0)
+    }
     }
     
