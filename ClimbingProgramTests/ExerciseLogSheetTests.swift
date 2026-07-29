@@ -17,24 +17,21 @@ final class ExerciseLogSheetTests: ClimbingProgramTestSuite {
             .flatMap { $0.items }
     }
 
-    /// The sheet's Save path writes through findOrCreateSession, shared with the plan day editor.
+    /// The Save button's own path, driven end to end — not a hand-built `SessionItem`.
     func testSavingWritesOneItemWithPlanIdentity() throws {
         let date = Date()
         let planId = UUID()
-        let session = findOrCreateSession(for: date, in: context)
-        session.items.append(
-            SessionItem(
-                exerciseName: "Weighted Pull-Ups",
-                planSourceId: planId,
-                planName: "Strength Block",
-                reps: 5,
-                sets: 3,
-                weightKg: 12.5,
-                notes: "felt strong",
-                duration: 9
-            )
+
+        ExerciseLogSheet.Prefill(
+            reps: "5", sets: "3", duration: "9", weight: "12.5", notes: "felt strong"
         )
-        try context.save()
+        .commit(
+            exerciseName: "Weighted Pull-Ups",
+            date: date,
+            planId: planId,
+            planName: "Strength Block",
+            in: context
+        )
 
         let logged = items(on: date)
         XCTAssertEqual(logged.count, 1)
@@ -47,6 +44,61 @@ final class ExerciseLogSheetTests: ClimbingProgramTestSuite {
         XCTAssertEqual(item.weightKg, 12.5)
         XCTAssertEqual(item.duration, 9)
         XCTAssertEqual(item.notes, "felt strong")
+    }
+
+    /// A `.decimalPad` emits the locale's separator, which is a comma across most of
+    /// Europe — and `Double("12,5")` is nil. Only the real save path parses these.
+    func testSavingParsesACommaDecimalSeparator() throws {
+        let date = Date()
+
+        ExerciseLogSheet.Prefill(reps: "5", weight: "12,5").commit(
+            exerciseName: "Weighted Pull-Ups", date: date, planId: nil, planName: nil,
+            in: context
+        )
+
+        let item = try XCTUnwrap(items(on: date).first)
+        XCTAssertEqual(item.weightKg, 12.5)
+    }
+
+    /// A field left blank means "not recorded". Storing "" instead of nil would render
+    /// as a blank line in the log rather than as an absent value.
+    func testSavingTurnsBlankFieldsIntoNilRatherThanEmptyStrings() throws {
+        let date = Date()
+
+        ExerciseLogSheet.Prefill(reps: "5", grade: "   ", notes: "").commit(
+            exerciseName: "Pull-Up", date: date, planId: nil, planName: nil, in: context
+        )
+
+        let item = try XCTUnwrap(items(on: date).first)
+        XCTAssertEqual(item.reps, 5)
+        XCTAssertNil(item.grade, "Whitespace is still blank")
+        XCTAssertNil(item.notes)
+        XCTAssertNil(item.sets)
+        XCTAssertNil(item.weightKg)
+        XCTAssertNil(item.duration)
+    }
+
+    /// Hand-editing the rollup fields must not discard what the timer recorded.
+    func testSavingKeepsThePerSetRecordAlongsideAnEditedRollup() throws {
+        let date = Date()
+        let sets = [
+            LoggedSet(reps: 5, weightKg: 40, rpe: 3),
+            LoggedSet(reps: 5, weightKg: 42.5, rpe: 4, note: "last one was slow")
+        ]
+
+        var prefill = ExerciseLogSheet.Prefill(loggedSets: sets, durationSeconds: 300)
+        prefill.weight = "45"   // the athlete corrects the rollup by hand
+
+        prefill.commit(
+            exerciseName: "Weighted Pull-Ups", date: date, planId: nil, planName: nil,
+            in: context
+        )
+
+        let item = try XCTUnwrap(items(on: date).first)
+        XCTAssertEqual(item.weightKg, 45, "The edit wins for the rollup")
+        XCTAssertEqual(item.loggedSets.count, 2, "The per-set record is untouched")
+        XCTAssertEqual(item.loggedSets.map(\.weightKg), [40, 42.5])
+        XCTAssertEqual(item.loggedSets[1].note, "last one was slow")
     }
 
     func testSavingTwiceOnADateReusesTheSession() throws {

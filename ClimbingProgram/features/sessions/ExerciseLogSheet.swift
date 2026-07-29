@@ -22,13 +22,22 @@ struct ExerciseLogSheet: View {
         /// its rollup.
         var loggedSets: [LoggedSet] = []
 
-        init(reps: String = "", sets: String = "", duration: String = "", weight: String = "", grade: String = "", notes: String = "") {
+        init(
+            reps: String = "",
+            sets: String = "",
+            duration: String = "",
+            weight: String = "",
+            grade: String = "",
+            notes: String = "",
+            loggedSets: [LoggedSet] = []
+        ) {
             self.reps = reps
             self.sets = sets
             self.duration = duration
             self.weight = weight
             self.grade = grade
             self.notes = notes
+            self.loggedSets = loggedSets
         }
 
         /// Convenience for the timer: numbers in, strings out, blanks for anything unknown.
@@ -52,6 +61,49 @@ struct ExerciseLogSheet: View {
         /// The log form takes minutes; a short rest must not round down to "0".
         private static func minutes(from seconds: Int?) -> String {
             seconds.map { String(max(1, Int((Double($0) / 60).rounded()))) } ?? ""
+        }
+
+        /// Write these values as one logged item on the given day.
+        ///
+        /// This is the Save button's whole effect apart from dismissing the sheet, which
+        /// is what makes it testable: the button and the test drive the same code, rather
+        /// than a test hand-assembling a `SessionItem` and proving only that SwiftData
+        /// stores what you put in it.
+        ///
+        /// `Prefill` already held exactly these fields as strings to seed the form; this
+        /// is the same struct read back out of it.
+        @discardableResult
+        func commit(
+            exerciseName: String,
+            date: Date,
+            planId: UUID?,
+            planName: String?,
+            in context: ModelContext
+        ) -> SessionItem {
+            let item = SessionItem(
+                exerciseName: exerciseName,
+                planSourceId: planId,
+                planName: planName,
+                reps: userDecimal(reps),
+                sets: userDecimal(sets),
+                weightKg: userDecimal(weight),
+                grade: Self.trimmedOrNil(grade),
+                notes: Self.trimmedOrNil(notes),
+                duration: userDecimal(duration),
+                // The per-set record stands even if the fields above were hand-edited:
+                // those are the rollup, this is what the timer actually captured.
+                loggedSets: loggedSets
+            )
+            findOrCreateSession(for: date, in: context).items.append(item)
+            try? context.save()
+            return item
+        }
+
+        /// An empty field means "not recorded", which the model spells as nil — never
+        /// as an empty string, which would render as a blank line in the log.
+        private static func trimmedOrNil(_ text: String) -> String? {
+            let value = text.trimmingCharacters(in: .whitespaces)
+            return value.isEmpty ? nil : value
         }
     }
 
@@ -183,34 +235,26 @@ struct ExerciseLogSheet: View {
     }
 
     private func save() {
-        let session = findOrCreateSession(for: date, in: context)
-        session.items.append(
-            SessionItem(
-                exerciseName: exerciseName,
-                planSourceId: planId,
-                planName: planName,
-                reps: number(inputReps),
-                sets: number(inputSets),
-                weightKg: number(inputWeight),
-                grade: trimmed(inputGrade),
-                notes: trimmed(inputNotes),
-                duration: number(inputDuration),
-                // The per-set record stands even if the fields above were hand-edited:
-                // those are the rollup, this is what the timer actually captured.
-                loggedSets: prefill.loggedSets
-            )
+        Prefill(
+            reps: inputReps,
+            sets: inputSets,
+            duration: inputDuration,
+            weight: inputWeight,
+            grade: inputGrade,
+            notes: inputNotes,
+            // Not editable in the form — the timer captured it, the fields above are
+            // its rollup.
+            loggedSets: prefill.loggedSets
         )
-        try? context.save()
+        .commit(
+            exerciseName: exerciseName,
+            date: date,
+            planId: planId,
+            planName: planName,
+            in: context
+        )
+
         onSaved()
         dismiss()
-    }
-
-    private func number(_ text: String) -> Double? {
-        Double(text.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-    }
-
-    private func trimmed(_ text: String) -> String? {
-        let value = text.trimmingCharacters(in: .whitespaces)
-        return value.isEmpty ? nil : value
     }
 }
