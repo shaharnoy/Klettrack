@@ -16,6 +16,14 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         TimerManager()
     }
 
+    /// A clock the test winds forward by hand, so "the athlete spent 30 seconds on this
+    /// set" is a fact rather than a sleep.
+    private final class StubClock: Clock, @unchecked Sendable {
+        private var current = Date(timeIntervalSince1970: 1_800_000_000)
+        func now() -> Date { current }
+        func advance(_ seconds: TimeInterval) { current += seconds }
+    }
+
     private func makeSession() -> TimerSession {
         let session = TimerSession(exerciseName: "Weighted Pull-Ups")
         context.insert(session)
@@ -130,6 +138,82 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         XCTAssertNil(manager.setSequence)
         XCTAssertEqual(session.totalElapsedSeconds, 0, "No rest ever ran")
         XCTAssertTrue(session.wasCompleted)
+    }
+
+    // MARK: - How long the exercise actually took
+
+    /// The logged duration is the whole exercise, sets included — not just the rests.
+    ///
+    /// Pairs with `testElapsedTimeAccumulatesAcrossRests` above, which runs the same
+    /// three sets without advancing the clock and gets 355. The 90 seconds between them
+    /// is the time spent on the sets, which used to be recorded nowhere.
+    func testDurationCountsTimeSpentOnTheSetsAndNotOnlyTheRests() {
+        let clock = StubClock()
+        let manager = TimerManager(clock: clock)
+        let session = makeSession()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: session)
+
+        clock.advance(30)             // set 1
+        manager.confirmSet()
+        manager.totalElapsedTime = 180
+        manager.advanceSetSequence()
+
+        clock.advance(30)             // set 2
+        manager.confirmSet()
+        manager.totalElapsedTime = 175
+        manager.advanceSetSequence()
+
+        clock.advance(30)             // set 3, the final one — no rest follows it
+        manager.confirmSet()
+
+        XCTAssertEqual(session.totalElapsedSeconds, 90 + 355,
+                       "Three sets of 30s plus rests of 180s and 175s")
+        XCTAssertTrue(session.wasCompleted)
+    }
+
+    /// The final set is the one nothing else would bank: no rest runs after it.
+    func testTheFinalSetsOwnTimeIsCounted() {
+        let clock = StubClock()
+        let manager = TimerManager(clock: clock)
+        let session = makeSession()
+        manager.startSetSequence(reps: 8, sets: 1, restSeconds: 180, session: session)
+
+        clock.advance(45)
+        manager.confirmSet()
+
+        XCTAssertEqual(session.totalElapsedSeconds, 45, "No rest ever ran, but the set did")
+    }
+
+    /// Finishing early still counts the set you were on when you stopped.
+    func testFinishingEarlyBanksTheSetInProgress() {
+        let clock = StubClock()
+        let manager = TimerManager(clock: clock)
+        let session = makeSession()
+        manager.startSetSequence(reps: 5, sets: 5, restSeconds: 60, session: session)
+
+        clock.advance(40)
+        manager.confirmSet()
+        manager.totalElapsedTime = 60
+        manager.advanceSetSequence()
+
+        clock.advance(20)             // partway into set 2, then stop
+        manager.finishSetSequence()
+
+        XCTAssertEqual(session.totalElapsedSeconds, 40 + 60 + 20)
+        XCTAssertEqual(session.completedIntervals, 1, "Only set 1 was confirmed")
+    }
+
+    func testAbandoningMidSetStillRecordsTheTimeSpent() {
+        let clock = StubClock()
+        let manager = TimerManager(clock: clock)
+        let session = makeSession()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: session)
+
+        clock.advance(25)
+        manager.stop()
+
+        XCTAssertEqual(session.totalElapsedSeconds, 25)
+        XCTAssertFalse(session.wasCompleted)
     }
 
     // MARK: - Delivering less than the prescription

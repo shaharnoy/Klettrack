@@ -50,7 +50,12 @@ class TimerManager {
         /// memberwise init entirely, which would make it unsettable.
         let shape: ExerciseShape
         var currentSet: Int = 1          // 1-based
-        var accumulatedSeconds: Int = 0  // summed across completed rests
+        /// How long the exercise has run: every set and every rest so far, summed.
+        ///
+        /// Both, not just the rests. This is what the log's duration is read from, and
+        /// counting only the rests reported a 3×3 min session as 6 minutes — with the
+        /// final set, which has no rest after it, missing entirely.
+        var accumulatedSeconds: Int = 0
 
         var isFinalSet: Bool { currentSet >= totalSets }
     }
@@ -118,7 +123,15 @@ class TimerManager {
     private var notificationCenter = NotificationCenter.default
 
     // MARK: Init / Deinit
-    init() { setupBackgroundHandling() }
+
+    /// Reuses `TimerEngine`'s `Clock` rather than calling `Date()` directly, so a test
+    /// can hold a set prompt open for a known number of seconds instead of sleeping.
+    private let clock: Clock
+
+    init(clock: Clock = SystemClock()) {
+        self.clock = clock
+        setupBackgroundHandling()
+    }
 
     // MARK: Flags
     var isRunning: Bool   { state == .running }
@@ -351,6 +364,7 @@ class TimerManager {
         laps = []
         lastLapTime = 0
         state = .awaitingUser
+        awaitingSince = clock.now()
         UIApplication.shared.isIdleTimerDisabled = true
         print("TimerManager.startSetSequence: sets=\(max(1, sets)), reps=\(reps.map(String.init) ?? "-"), rest=\(restSeconds)s")
     }
@@ -358,10 +372,14 @@ class TimerManager {
     /// The user finished the current set. Starts the rest, or finishes the sequence
     /// after the final set (no trailing rest).
     func confirmSet() {
-        guard let sequence = setSequence, state == .awaitingUser else { return }
+        guard var sequence = setSequence, state == .awaitingUser else { return }
         // Done is the only thing that makes a set count as performed. Skipping past one
         // with the chevron deliberately doesn't.
         performedSetCount = max(performedSetCount, sequence.currentSet)
+
+        // The set just finished: bank the time it took before the rest's clock starts.
+        bank(into: &sequence)
+        setSequence = sequence
 
         if sequence.isFinalSet {
             finishSetSequence()
@@ -394,15 +412,15 @@ class TimerManager {
     /// Park on `target`'s prompt, 1-based and clamped to the sequence. Used by the
     /// rest completing, by Skip, and by the panel's set arrows.
     ///
-    /// Any time already spent resting is banked first, so jumping — forwards or
-    /// backwards — never invents or discards rest time.
+    /// Whatever has elapsed is banked first, so jumping — forwards or backwards —
+    /// never invents or discards time.
     func goToSet(_ target: Int) {
         guard var sequence = setSequence, state != .completed else { return }
         let clamped = min(max(1, target), sequence.totalSets)
         // Already parked on that prompt: nothing to tear down.
         guard clamped != sequence.currentSet || state != .awaitingUser else { return }
 
-        sequence.accumulatedSeconds += totalElapsedTime
+        bank(into: &sequence)
         sequence.currentSet = clamped
         setSequence = sequence
         // Via `selectSet` rather than assigning the index, so arriving by chevron and
@@ -415,8 +433,32 @@ class TimerManager {
         currentTime = 0
         totalElapsedTime = 0
         state = .awaitingUser
+        awaitingSince = clock.now()
         print("TimerManager.goToSet → set \(clamped) of \(sequence.totalSets)")
         playSound(.restToWork)
+    }
+
+    /// When the current set prompt appeared, or nil if we aren't on one.
+    ///
+    /// The work itself isn't timed — the app can't see you doing reps — but the
+    /// wall-clock time it takes is still part of how long the exercise ran, and the
+    /// log's duration is read from that total.
+    private var awaitingSince: Date?
+
+    /// Fold everything elapsed since the last bank into the sequence's running total:
+    /// the time spent on a set prompt, or a rest's clock.
+    ///
+    /// Clears what it banks, so calling twice adds nothing. Wall-clock rather than the
+    /// ticker for the prompt, so time spent with the app backgrounded mid-set still
+    /// counts — you were doing the set.
+    private func bank(into sequence: inout SetSequence) {
+        if let awaitingSince {
+            let spent = clock.now().timeIntervalSince(awaitingSince)
+            sequence.accumulatedSeconds += Int(max(0, spent).rounded())
+            self.awaitingSince = nil
+        } else {
+            sequence.accumulatedSeconds += totalElapsedTime
+        }
     }
 
     /// Forward one set. From a set prompt this is the skip: the set keeps the values
@@ -509,7 +551,11 @@ class TimerManager {
     /// a prescription of five sets you answer with three is a normal training day, not
     /// an abort, so it completes and offers the log like any other finish.
     func finishSetSequence() {
-        guard let sequence = setSequence else { return }
+        guard var sequence = setSequence else { return }
+        // Finishing straight from a prompt — the "Finish here" button, or Done on the
+        // final set, which has no rest after it — is the one set whose time nothing
+        // else banks. Adds nothing when `confirmSet` has already banked it.
+        bank(into: &sequence)
         ticker?.stop()
         engine = nil
         state = .completed
@@ -525,7 +571,7 @@ class TimerManager {
             session.wasCompleted = true
         }
         setSequence = nil
-        print("TimerManager.finishSetSequence: \(performedSetCount) of \(sequence.totalSets) sets, \(sequence.accumulatedSeconds)s resting")
+        print("TimerManager.finishSetSequence: \(performedSetCount) of \(sequence.totalSets) sets, \(sequence.accumulatedSeconds)s elapsed")
         playSound(.complete)
     }
 
@@ -551,7 +597,12 @@ class TimerManager {
 
     func stop() {
         // Abort any set sequence first, or a later completion would resurrect it.
-        let sequenceElapsed = setSequence?.accumulatedSeconds ?? 0
+        // Banking on the way out so a set abandoned mid-prompt still counts its time.
+        var sequenceElapsed = 0
+        if var sequence = setSequence {
+            bank(into: &sequence)
+            sequenceElapsed = sequence.accumulatedSeconds
+        }
         setSequence = nil
 
         state = .stopped
