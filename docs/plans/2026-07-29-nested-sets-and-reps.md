@@ -726,8 +726,18 @@ Replace the body after the attached-template check:
         // Not `?? 1`: no reps text means no rep count, and inventing one shows up as a
         // "1 reps" caption under every chip. `startSetSequence` takes `Int?` for the
         // same reason.
-        let reps = parseCount(exercise.repsText)
+        var reps = parseCount(exercise.repsText)
         let sets = parseCount(exercise.setsText, upperBound: true) ?? 1
+
+        // An attempts exercise that names no count anywhere still needs one, or the
+        // sequence is a single tap that finishes before any rest runs. Seven seeded
+        // limit boulders carry their count in the exercise *name* —
+        // "3–6 near-maximal boulders" — where nothing can read it. Ten tries is what
+        // this branch defaulted to before reps and sets were separated, and what the
+        // books prescribe for a limit session.
+        if exercise.shape == .attempts, reps == nil, parseCount(exercise.setsText) == nil {
+            reps = 10
+        }
 
         var restBetweenReps = parseSeconds(exercise.restBetweenRepsText) ?? 0
         var restBetweenSets = parseSeconds(exercise.restText) ?? 0
@@ -858,7 +868,11 @@ Replace `derivedTimerSummary`'s rep-based cases so the editor shows what will ac
         let setRest = ExerciseTimerDefaults.parseSeconds(rest)
         let repRest = ExerciseTimerDefaults.parseSeconds(restBetweenReps)
         let setCount = ExerciseTimerDefaults.parseCount(sets, upperBound: true) ?? 1
-        let repCount = ExerciseTimerDefaults.parseCount(reps) ?? 1
+        // Mirrors `plan(for:in:)`, including its attempts fallback. The summary exists to
+        // say what the timer will actually do, so a count it invents here — "1 sets of
+        // 1 reps" for an exercise with both fields blank — is a lie, not a placeholder.
+        let repCount = ExerciseTimerDefaults.parseCount(reps)
+            ?? (shape == .attempts && ExerciseTimerDefaults.parseCount(sets) == nil ? 10 : 1)
 
         if shape == .attempts, (setRest ?? 0) > 0 || (repRest ?? 0) > 0 {
             return nestedSummary(sets: setCount, reps: repCount, setRest: setRest, repRest: repRest)
