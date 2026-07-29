@@ -238,7 +238,7 @@ struct TimerView: View {
                 ClimbLogForm(
                     title: "Climb Log for \(context.exerciseName)",
                     initialDate: context.planDayDate,
-                    initialAttempts: timerManager.setLogs.count
+                    initialAttempts: timerManager.effortLogs.count
                 )
             } else {
                 ExerciseLogSheet(
@@ -324,11 +324,11 @@ struct TimerView: View {
             context.insert(session)
             try? context.save()
             timerManager.startSetSequence(
-                reps: reps,
+                reps: reps ?? 1,
                 sets: sets,
-                restSeconds: restSeconds,
-                // Start every set where you left off last time rather than at zero —
-                // but only where load is part of the exercise at all.
+                // Task 2 replaces this with the exercise's own rest-between-reps.
+                restBetweenReps: 0,
+                restBetweenSets: restSeconds,
                 seedWeightKg: exercise.shape.takesLoad
                     ? lastLoggedWeight(for: exercise.exerciseName, in: context)
                     : nil,
@@ -351,9 +351,9 @@ struct TimerView: View {
     /// it prefills from actuals rather than from the plan's counts.
     private func logPrefill(for exercise: ExerciseTimerContext) -> ExerciseLogSheet.Prefill {
         let elapsed = timerManager.session?.totalElapsedSeconds
-        // Performed, not planned: `setLogs` carries a row per prescribed set so you can
-        // skip to a pre-filled one, and logging those would claim work never done.
-        let performed = timerManager.performedSetLogs
+        // Performed, not planned: `effortLogs` carries a row per prescribed effort so you
+        // can skip to a pre-filled one, and logging those would claim work never done.
+        let performed = timerManager.performedEffortLogs
         if !performed.isEmpty {
             return .init(loggedSets: performed, durationSeconds: elapsed)
         }

@@ -39,63 +39,77 @@ class TimerManager {
     /// "wait for the user" segment would have no duration, which breaks its
     /// invariant that position is a pure function of elapsed seconds.
     struct SetSequence: Equatable {
-        let repsPerSet: Int?
-        /// `var` because `addSet` extends the plan mid-session — an attempts-based
-        /// session doesn't know its try count up front.
-        var totalSets: Int
-        let restSeconds: Int
-        /// Decides whether the log panel offers added load, and what one unit of work
-        /// is called. Declared before the defaulted fields so it stays a required
-        /// memberwise argument — a `let` *with* a default is left out of the
-        /// memberwise init entirely, which would make it unsettable.
+        /// Efforts in each set: the rep count when a rest separates the reps, otherwise 1.
+        /// Five continuous pull-ups are one effort, not five — you stop once, not five times.
+        let effortsPerSet: Int
+        let totalSets: Int
+        /// 0 ⇒ the reps run continuously, so every boundary is a set boundary and this
+        /// whole structure collapses to the flat sequence it replaced.
+        let restBetweenRepsSeconds: Int
+        let restBetweenSetsSeconds: Int
+        /// Decides whether the log panel offers added load. Declared before the defaulted
+        /// fields so it stays a required memberwise argument — a `let` *with* a default is
+        /// left out of the memberwise init entirely, which would make it unsettable.
         let shape: ExerciseShape
-        var currentSet: Int = 1          // 1-based
-        /// How long the exercise has run: every set and every rest so far, summed.
+        /// 1-based, counted across the whole exercise rather than within a set, so
+        /// navigation and the performed high-water mark stay one-dimensional.
+        var currentEffort: Int = 1
+        /// How long the exercise has run: every effort and every rest so far, summed.
         ///
         /// Both, not just the rests. This is what the log's duration is read from, and
         /// counting only the rests reported a 3×3 min session as 6 minutes — with the
         /// final set, which has no rest after it, missing entirely.
         var accumulatedSeconds: Int = 0
 
-        var isFinalSet: Bool { currentSet >= totalSets }
+        // Set membership is arithmetic because nothing can widen a single set: the plan
+        // comes from the catalog and the timer can only under-deliver it.
+        var totalEfforts: Int { effortsPerSet * totalSets }
+        var currentSet: Int { (currentEffort - 1) / effortsPerSet + 1 }
+        var currentRep: Int { (currentEffort - 1) % effortsPerSet + 1 }
+        var isLastRepOfSet: Bool { currentRep == effortsPerSet }
+        var isFinalEffort: Bool { currentEffort >= totalEfforts }
+        var isNested: Bool { restBetweenRepsSeconds > 0 }
+
+        /// The rest that runs once the current effort is confirmed.
+        var restAfterCurrentEffort: Int {
+            isLastRepOfSet ? restBetweenSetsSeconds : restBetweenRepsSeconds
+        }
+
+        /// Which set an effort index (0-based) belongs to, for seeding and reading the log.
+        func setNumber(forEffortIndex index: Int) -> Int { index / effortsPerSet + 1 }
     }
 
-    // MARK: Per-set log (rep-based sequences)
+    // MARK: Per-effort log
 
-    /// One entry per planned set, seeded when the sequence starts so that advancing
-    /// past a set you never touched still records it at its planned values.
-    private(set) var setLogs: [LoggedSet] = []
+    /// One entry per planned effort, seeded when the sequence starts so that advancing
+    /// past one you never touched still records it at its planned values.
+    private(set) var effortLogs: [LoggedSet] = []
 
-    /// Which set the log panel is editing, 0-based. Independent of `currentSet`:
-    /// reviewing set 1 mid-rest must not move the timer.
-    private(set) var editingSetIndex: Int = 0
+    /// Which effort the log panel is editing, 0-based. Independent of `currentEffort`:
+    /// reviewing rep 1 mid-rest must not move the timer.
+    private(set) var editingEffortIndex: Int = 0
 
-    /// The weight every set was seeded with, for the panel's "Last: N kg" caption.
+    /// The weight every effort was seeded with, for the panel's "Last: N kg" caption.
     private(set) var seedWeightKg: Double?
 
-    /// How many sets were actually confirmed with Done. High-water mark, so stepping
-    /// back to correct set 2 of 4 doesn't retract sets 3 and 4.
-    ///
-    /// `setLogs` holds a row per *planned* set — that is what lets you skip ahead to a
-    /// pre-filled set — so it cannot answer "how much did I do". Ending a 5-set
-    /// prescription after 3 must log three sets, not five.
-    private(set) var performedSetCount: Int = 0
+    /// How many efforts were confirmed with Done. High-water mark, so stepping back to
+    /// correct rep 2 of 4 doesn't retract reps 3 and 4.
+    private(set) var performedEffortCount: Int = 0
 
-    /// The sets to write to the log: those confirmed, in order. Empty until the first
-    /// Done, so abandoning a sequence immediately logs nothing.
-    var performedSetLogs: [LoggedSet] {
-        Array(setLogs.prefix(performedSetCount))
+    /// The efforts to write to the log: those confirmed, in order.
+    var performedEffortLogs: [LoggedSet] {
+        Array(effortLogs.prefix(performedEffortCount))
     }
 
-    /// How a set reads in the panel, derived rather than stored.
+    /// How an effort reads in the panel, derived rather than stored.
     enum SetStatus: Equatable { case done, current, upcoming }
 
-    func setStatus(at index: Int) -> SetStatus {
+    func effortStatus(at index: Int) -> SetStatus {
         guard let sequence = setSequence else { return .upcoming }
-        let setNumber = index + 1
-        if setNumber < sequence.currentSet { return .done }
-        if setNumber > sequence.currentSet { return .upcoming }
-        // The current set counts as done once we've moved on to resting after it.
+        let effort = index + 1
+        if effort < sequence.currentEffort { return .done }
+        if effort > sequence.currentEffort { return .upcoming }
+        // The current effort counts as done once we've moved on to resting after it.
         return state == .awaitingUser ? .current : .done
     }
 
@@ -199,19 +213,18 @@ class TimerManager {
     var progressPercentage: Double {
         if state == .completed { return 1 }
 
-        // A set sequence's configuration describes one rest, so measuring time against
-        // it would report the rest's progress instead of the exercise's. Count sets
-        // instead: each set plus the rest that follows it is one equal slice, so
-        // finishing set 2 of 4 and its rest lands exactly on 50%.
+        // A set sequence's configuration describes one rest, so measuring time against it
+        // would report that rest's progress instead of the exercise's. Count efforts
+        // instead: each effort plus the rest that follows it is one equal slice.
         if let sequence = setSequence {
-            let completedSets = Double(sequence.currentSet - 1)
-            // Waiting on a set contributes nothing: the work itself isn't timed.
+            let completed = Double(sequence.currentEffort - 1)
+            // Waiting on an effort contributes nothing: the work itself isn't timed.
             var restFraction = 0.0
-            if !isAwaitingUser, sequence.restSeconds > 0 {
-                restFraction = min(1, Double(totalElapsedTime) / Double(sequence.restSeconds))
+            let rest = sequence.restAfterCurrentEffort
+            if !isAwaitingUser, rest > 0 {
+                restFraction = min(1, Double(totalElapsedTime) / Double(rest))
             }
-            let slices = Double(max(1, sequence.totalSets))
-            return min(1, max(0, (completedSets + restFraction) / slices))
+            return min(1, max(0, (completed + restFraction) / Double(max(1, sequence.totalEfforts))))
         }
 
         guard let config = configuration else { return 0 }
@@ -330,15 +343,20 @@ class TimerManager {
 
     // MARK: Rep-based set sequence
 
-    /// Begin a rep-based exercise. Lands on the Set 1 prompt with nothing counting;
+    /// Begin a rep-based exercise. Lands on the first prompt with nothing counting;
     /// the caller supplies one session that spans the whole sequence.
     ///
-    /// `seedWeightKg` pre-fills every set, so skipping ahead needs no special case —
-    /// the row for an untouched set already holds its planned reps and weight.
+    /// `restBetweenReps` is what decides the shape. Non-zero and each rep becomes its own
+    /// effort with its own log row; zero and a set is one effort, which is what every
+    /// continuous exercise wants and exactly what this did before nesting existed.
+    ///
+    /// `seedWeightKg` pre-fills every effort, so skipping ahead needs no special case —
+    /// the row for an untouched effort already holds its planned values.
     func startSetSequence(
-        reps: Int?,
+        reps: Int,
         sets: Int,
-        restSeconds: Int,
+        restBetweenReps: Int,
+        restBetweenSets: Int,
         seedWeightKg: Double? = nil,
         shape: ExerciseShape = .weighted,
         session: TimerSession? = nil
@@ -347,17 +365,31 @@ class TimerManager {
         engine = nil
         lastSnapshot = nil
         self.session = session
-        self.configuration = TimerConfiguration(totalTimeSeconds: restSeconds)
-        let totalSets = max(1, sets)
-        setSequence = SetSequence(
-            repsPerSet: reps, totalSets: totalSets, restSeconds: restSeconds, shape: shape
+
+        let repCount = max(1, reps)
+        let nested = restBetweenReps > 0
+        let sequence = SetSequence(
+            effortsPerSet: nested ? repCount : 1,
+            totalSets: max(1, sets),
+            restBetweenRepsSeconds: max(0, restBetweenReps),
+            restBetweenSetsSeconds: max(0, restBetweenSets),
+            shape: shape
         )
+        setSequence = sequence
+        self.configuration = TimerConfiguration(totalTimeSeconds: sequence.restAfterCurrentEffort)
 
         self.seedWeightKg = seedWeightKg
-        setLogs = (0..<totalSets).map { _ in
-            LoggedSet(reps: reps.map(Double.init), weightKg: seedWeightKg)
+        effortLogs = (0..<sequence.totalEfforts).map { index in
+            LoggedSet(
+                // A nested effort *is* one rep, so a count would be noise. A flat effort is
+                // a whole set, and its count is the thing worth recording.
+                reps: nested ? nil : Double(repCount),
+                weightKg: seedWeightKg,
+                setNumber: sequence.setNumber(forEffortIndex: index)
+            )
         }
-        editingSetIndex = 0
+        editingEffortIndex = 0
+        performedEffortCount = 0
 
         currentTime = 0
         totalElapsedTime = 0
@@ -366,66 +398,67 @@ class TimerManager {
         state = .awaitingUser
         awaitingSince = clock.now()
         UIApplication.shared.isIdleTimerDisabled = true
-        print("TimerManager.startSetSequence: sets=\(max(1, sets)), reps=\(reps.map(String.init) ?? "-"), rest=\(restSeconds)s")
+        print("TimerManager.startSetSequence: \(sequence.totalSets) sets x \(sequence.effortsPerSet) efforts, rest \(restBetweenReps)s/\(restBetweenSets)s")
     }
 
-    /// The user finished the current set. Starts the rest, or finishes the sequence
-    /// after the final set (no trailing rest).
-    func confirmSet() {
+    /// The user finished the current effort. Starts the appropriate rest, or finishes the
+    /// sequence after the last effort (which has no trailing rest).
+    func confirmEffort() {
         guard var sequence = setSequence, state == .awaitingUser else { return }
-        // Done is the only thing that makes a set count as performed. Skipping past one
-        // with the chevron deliberately doesn't.
-        performedSetCount = max(performedSetCount, sequence.currentSet)
+        // Done is the only thing that makes an effort count as performed. Skipping past
+        // one with the chevron deliberately doesn't.
+        performedEffortCount = max(performedEffortCount, sequence.currentEffort)
 
-        // The set just finished: bank the time it took before the rest's clock starts.
+        // Bank the time the effort took before the rest's clock starts.
         bank(into: &sequence)
         setSequence = sequence
 
-        if sequence.isFinalSet {
+        if sequence.isFinalEffort {
             finishSetSequence()
             return
         }
 
-        // Rest before the next set, reusing the sequence's single session.
-        // No get-ready: you tapped Done because the set is over, so the rest starts now.
+        // Which rest runs is the whole nesting rule, in one line.
+        // No get-ready: you tapped Done because the effort is over.
         // `start` leaves `setSequence` alone, so our bookkeeping survives it.
         start(
-            with: TimerConfiguration(totalTimeSeconds: sequence.restSeconds, getReady: false),
+            with: TimerConfiguration(totalTimeSeconds: sequence.restAfterCurrentEffort, getReady: false),
             session: session
         )
     }
 
-    /// End the current rest early and move straight to the next set.
+    /// End the current rest early and move straight to the next effort.
     /// The time actually rested still counts, so cutting a 3 min rest at 2 min logs 2 min.
     func skipRest() {
         guard setSequence != nil, !isAwaitingUser, state != .completed else { return }
         advanceSetSequence()
     }
 
-    /// Called when a rest countdown finishes and more sets remain.
+    /// Called when a rest countdown finishes and efforts remain.
     /// Internal rather than private so tests can drive it without waiting out a real rest.
     func advanceSetSequence() {
         guard let sequence = setSequence else { return }
-        goToSet(sequence.currentSet + 1)
+        goToEffort(sequence.currentEffort + 1)
     }
 
-    /// Park on `target`'s prompt, 1-based and clamped to the sequence. Used by the
-    /// rest completing, by Skip, and by the panel's set arrows.
+    /// Park on `target`'s prompt, 1-based across the whole exercise and clamped to it.
+    /// Used by a rest completing, by Skip, and by the panel's arrows.
     ///
-    /// Whatever has elapsed is banked first, so jumping — forwards or backwards —
-    /// never invents or discards time.
-    func goToSet(_ target: Int) {
+    /// Whatever has elapsed is banked first, so jumping — forwards or backwards — never
+    /// invents or discards time. Clamping is also what stops navigation from growing the
+    /// plan: there is no effort beyond `totalEfforts` to reach.
+    func goToEffort(_ target: Int) {
         guard var sequence = setSequence, state != .completed else { return }
-        let clamped = min(max(1, target), sequence.totalSets)
+        let clamped = min(max(1, target), sequence.totalEfforts)
         // Already parked on that prompt: nothing to tear down.
-        guard clamped != sequence.currentSet || state != .awaitingUser else { return }
+        guard clamped != sequence.currentEffort || state != .awaitingUser else { return }
 
         bank(into: &sequence)
-        sequence.currentSet = clamped
+        sequence.currentEffort = clamped
         setSequence = sequence
-        // Via `selectSet` rather than assigning the index, so arriving by chevron and
+        // Via `selectEffort` rather than assigning the index, so arriving by chevron and
         // arriving by chip tap carry the weight forward the same way.
-        selectSet(at: clamped - 1)
+        selectEffort(at: clamped - 1)
 
         ticker?.stop()
         engine = nil
@@ -434,7 +467,7 @@ class TimerManager {
         totalElapsedTime = 0
         state = .awaitingUser
         awaitingSince = clock.now()
-        print("TimerManager.goToSet → set \(clamped) of \(sequence.totalSets)")
+        print("TimerManager.goToEffort → set \(sequence.currentSet) rep \(sequence.currentRep)")
         playSound(.restToWork)
     }
 
@@ -461,77 +494,61 @@ class TimerManager {
         }
     }
 
-    /// Forward one set. From a set prompt this is the skip: the set keeps the values
-    /// it was seeded with and is logged as-is. Mid-rest it cuts the rest short.
-    func nextSet() {
+    /// Forward one effort. From a prompt this is the skip: the effort keeps the values it
+    /// was seeded with and is not counted as performed. Mid-rest it cuts the rest short.
+    func nextEffort() {
         guard let sequence = setSequence, state != .completed else { return }
         guard isAwaitingUser else {
             skipRest()
             return
         }
-        if sequence.isFinalSet {
+        if sequence.isFinalEffort {
             finishSetSequence()
         } else {
-            goToSet(sequence.currentSet + 1)
+            goToEffort(sequence.currentEffort + 1)
         }
     }
 
-    /// Back one set, to redo it or correct what was recorded. No-op on set 1's prompt.
-    func previousSet() {
+    /// Back one effort, to redo it or correct what was recorded. No-op on the first.
+    func previousEffort() {
         guard let sequence = setSequence else { return }
-        goToSet(sequence.currentSet - 1)
-    }
-
-    /// Room for one more than planned.
-    ///
-    /// A limit session's try count isn't knowable in advance — you stop when you stop.
-    /// Without this, under-estimating it ends the session on the final `nextSet`
-    /// (see `nextSet`), with no way to keep going.
-    ///
-    /// Doesn't touch the clock or the current set: this only extends the plan.
-    func addSet() {
-        guard var sequence = setSequence, state != .completed else { return }
-        sequence.totalSets += 1
-        setSequence = sequence
-        setLogs.append(
-            LoggedSet(reps: sequence.repsPerSet.map(Double.init), weightKg: seedWeightKg)
-        )
+        goToEffort(sequence.currentEffort - 1)
     }
 
     // MARK: Editing the per-set log
 
     /// Move the panel's editing cursor without touching the clock.
     ///
-    /// A set with no weight of its own inherits the last one actually recorded, so
-    /// landing on set 2 shows the working weight rather than an empty box.
-    /// `startSetSequence` already pre-fills every set from history; this is the same
+    /// An effort with no weight of its own inherits the last one actually recorded, so
+    /// landing on the next one shows the working weight rather than an empty box.
+    /// `startSetSequence` already pre-fills every effort from history; this is the same
     /// policy with a fresher source, and the only one available when the exercise has
     /// never been logged.
-    func selectSet(at index: Int) {
-        guard setLogs.indices.contains(index) else { return }
-        editingSetIndex = index
+    func selectEffort(at index: Int) {
+        guard effortLogs.indices.contains(index) else { return }
+        editingEffortIndex = index
         // Only when unset, which is what makes this safe going backwards: returning to
-        // a set to correct it never overwrites what is already there.
-        if setLogs[index].weightKg == nil,
-           let carried = setLogs[..<index].compactMap(\.weightKg).last {
-            setLogs[index].weightKg = carried
+        // an effort to correct it never overwrites what is already there.
+        if effortLogs[index].weightKg == nil,
+           let carried = effortLogs[..<index].compactMap(\.weightKg).last {
+            effortLogs[index].weightKg = carried
         }
     }
 
-    /// Mutate one set's record. One entry point rather than a setter per field, so
+    /// Mutate one effort's record. One entry point rather than a setter per field, so
     /// "leave unchanged" and "set to nil" never get confused.
     func updateSet(at index: Int, _ mutate: (inout LoggedSet) -> Void) {
-        guard setLogs.indices.contains(index) else { return }
-        mutate(&setLogs[index])
+        guard effortLogs.indices.contains(index) else { return }
+        mutate(&effortLogs[index])
     }
 
     /// Only for the abort paths. Finishing a sequence deliberately leaves the log
     /// intact — the log sheet reads it after completion.
     private func clearSetLogs() {
-        setLogs = []
-        editingSetIndex = 0
+        effortLogs = []
+        editingEffortIndex = 0
         seedWeightKg = nil
-        performedSetCount = 0
+        performedEffortCount = 0
     }
 
     /// Abandon any set sequence, for a caller about to run something unrelated.
@@ -553,8 +570,8 @@ class TimerManager {
     func finishSetSequence() {
         guard var sequence = setSequence else { return }
         // Finishing straight from a prompt — the "Finish here" button, or Done on the
-        // final set, which has no rest after it — is the one set whose time nothing
-        // else banks. Adds nothing when `confirmSet` has already banked it.
+        // final effort, which has no rest after it — is the one effort whose time
+        // nothing else banks. Adds nothing when `confirmEffort` has already banked it.
         bank(into: &sequence)
         ticker?.stop()
         engine = nil
@@ -567,11 +584,11 @@ class TimerManager {
             session.endDate = Date()
             session.totalElapsedSeconds = sequence.accumulatedSeconds
             // What was done, not what was asked for.
-            session.completedIntervals = performedSetCount
+            session.completedIntervals = performedEffortCount
             session.wasCompleted = true
         }
         setSequence = nil
-        print("TimerManager.finishSetSequence: \(performedSetCount) of \(sequence.totalSets) sets, \(sequence.accumulatedSeconds)s elapsed")
+        print("TimerManager.finishSetSequence: \(performedEffortCount) of \(sequence.totalEfforts) efforts, \(sequence.accumulatedSeconds)s elapsed")
         playSound(.complete)
     }
 

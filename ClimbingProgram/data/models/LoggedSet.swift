@@ -20,11 +20,18 @@ struct LoggedSet: Codable, Hashable, Identifiable, Sendable {
     /// Perceived effort, 1...5. See `LoggedSet.effortLabels`.
     var rpe: Int?
     var note: String?
+    /// Which set this effort belonged to, 1-based.
+    ///
+    /// Stored rather than derived because the log outlives the sequence that produced
+    /// it: `SessionItem` has no rep count to reconstruct the grouping from, so without
+    /// this a fifteen-effort boulder session reads back as a flat run of fifteen.
+    /// `nil` on anything logged before this existed, and on hand-entered items.
+    var setNumber: Int?
 
     /// `id` is identity for `ForEach` only. Leaving it out of the coding keys keeps
     /// exported cells small and stops a stale UUID surviving a CSV round-trip;
     /// the default value covers the decode.
-    private enum CodingKeys: String, CodingKey { case reps, weightKg, rpe, note }
+    private enum CodingKeys: String, CodingKey { case reps, weightKg, rpe, note, setNumber }
 
     static let effortLabels = ["Easy", "Moderate", "Hard", "Very Hard", "Max"]
 

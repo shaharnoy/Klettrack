@@ -18,8 +18,8 @@ struct SetLogPanel: View {
     let sequence: TimerManager.SetSequence
 
     private var editing: LoggedSet? {
-        timerManager.setLogs.indices.contains(timerManager.editingSetIndex)
-            ? timerManager.setLogs[timerManager.editingSetIndex]
+        timerManager.effortLogs.indices.contains(timerManager.editingEffortIndex)
+            ? timerManager.effortLogs[timerManager.editingEffortIndex]
             : nil
     }
 
@@ -31,23 +31,23 @@ struct SetLogPanel: View {
                 if sequence.shape.takesLoad {
                     SetWeightStepper(
                         timerManager: timerManager,
-                        index: timerManager.editingSetIndex,
+                        index: timerManager.editingEffortIndex,
                         weightKg: editing.weightKg,
                         seedWeightKg: timerManager.seedWeightKg,
-                        status: timerManager.setStatus(at: timerManager.editingSetIndex)
+                        status: timerManager.effortStatus(at: timerManager.editingEffortIndex)
                     )
                 }
 
                 SetEffortBar(
                     timerManager: timerManager,
-                    index: timerManager.editingSetIndex,
+                    index: timerManager.editingEffortIndex,
                     rpe: editing.rpe,
                     unit: sequence.shape.unitLabel.lowercased()
                 )
 
                 SetNoteField(
                     timerManager: timerManager,
-                    index: timerManager.editingSetIndex,
+                    index: timerManager.editingEffortIndex,
                     note: editing.note,
                     unit: sequence.shape.unitLabel.lowercased()
                 )
@@ -55,29 +55,29 @@ struct SetLogPanel: View {
 
             if timerManager.isAwaitingUser {
                 Button {
-                    timerManager.confirmSet()
+                    timerManager.confirmEffort()
                 } label: {
-                    Label(sequence.isFinalSet ? "Finish" : "Done", systemImage: "checkmark")
+                    Label(sequence.isFinalEffort ? "Finish" : "Done", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(FullWidthTimerButtonStyle(color: .green))
                 .accessibilityLabel(
-                    sequence.isFinalSet
+                    sequence.isFinalEffort
                         ? "Finish exercise"
-                        : "\(sequence.shape.unitLabel.capitalized) \(sequence.currentSet) done, start \(sequence.restSeconds / 60) minute rest"
+                        : "\(sequence.shape.unitLabel.capitalized) \(sequence.currentSet) done, start \(sequence.restAfterCurrentEffort / 60) minute rest"
                 )
 
                 // Stopping short of the prescription is a normal training decision — the
                 // plan asks for up to five sets, three is what you had today. Without
-                // this the only way out is tapping the chevron past every set you aren't
-                // going to do.
-                if timerManager.performedSetCount > 0, !sequence.isFinalSet {
+                // this the only way out is tapping the chevron past every effort you
+                // aren't going to do.
+                if timerManager.performedEffortCount > 0, !sequence.isFinalEffort {
                     Button("Finish here") {
                         timerManager.finishSetSequence()
                     }
                     .font(.subheadline)
                     .accessibilityLabel(
-                        "Finish after \(timerManager.performedSetCount) of \(sequence.totalSets)"
+                        "Finish after \(timerManager.performedEffortCount) of \(sequence.totalEfforts)"
                     )
                 }
             }
@@ -97,31 +97,19 @@ struct SetChipStrip: View {
 
     var body: some View {
         FlowLayout(spacing: 8, rowSpacing: 8) {
-            ForEach(timerManager.setLogs.indices, id: \.self) { index in
+            ForEach(timerManager.effortLogs.indices, id: \.self) { index in
                 Button {
-                    timerManager.selectSet(at: index)
+                    timerManager.selectEffort(at: index)
                 } label: {
                     SetChip(
                         number: index + 1,
                         unit: shape.unitLabel,
-                        log: timerManager.setLogs[index],
-                        status: timerManager.setStatus(at: index),
-                        isSelected: index == timerManager.editingSetIndex
+                        log: timerManager.effortLogs[index],
+                        status: timerManager.effortStatus(at: index),
+                        isSelected: index == timerManager.editingEffortIndex
                     )
                 }
                 .buttonStyle(.plain)
-            }
-
-            // Attempts only: a planned set count is a prescription, but a try count is
-            // a result. Sitting at the end of the strip it reads as "one more".
-            if shape == .attempts {
-                Button {
-                    timerManager.addSet()
-                } label: {
-                    AddSetChip()
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add another try")
             }
         }
     }
@@ -173,27 +161,6 @@ struct SetChip: View {
         }
         .accessibilityLabel("\(unit.capitalized) \(number)\(status == .done ? ", done" : "")")
         .accessibilityHint("Edit this \(unit.lowercased())")
-    }
-}
-
-/// The trailing "+" in an attempts strip. Dashed rather than filled so it reads as an
-/// empty slot to be claimed, not as a try already logged.
-struct AddSetChip: View {
-    var body: some View {
-        Image(systemName: "plus")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.tint)
-            .padding(.horizontal, 14)
-            // Matches SetChip's two-line height so the strip doesn't go ragged.
-            .padding(.vertical, 8)
-            .frame(minWidth: 44, minHeight: 46)
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(
-                        Color.accentColor.opacity(0.5),
-                        style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
-                    )
-            }
     }
 }
 
@@ -426,7 +393,7 @@ struct SetNavigationRow: View {
     var body: some View {
         HStack {
             Button("Previous set", systemImage: "chevron.left") {
-                timerManager.previousSet()
+                timerManager.previousEffort()
             }
             .labelStyle(.iconOnly)
             .disabled(sequence.currentSet <= 1)
@@ -448,7 +415,7 @@ struct SetNavigationRow: View {
             Spacer()
 
             Button("Next set", systemImage: "chevron.right") {
-                timerManager.nextSet()
+                timerManager.nextEffort()
             }
             .labelStyle(.iconOnly)
         }
