@@ -107,15 +107,14 @@ struct SetChipStrip: View {
 
     var body: some View {
         if sequence.isNested {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(1...sequence.totalSets, id: \.self) { set in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("SET \(set)")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        chips(forSet: set)
-                    }
-                }
+            // Only the bout you are on. Laying all six out meant twenty-four chips and a
+            // screen you had to scroll to reach Done — and the other five sets are not
+            // actionable anyway. The arrows above move between them.
+            VStack(alignment: .leading, spacing: 6) {
+                Text("SET \(sequence.currentSet) OF \(sequence.totalSets)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                chips(forSet: sequence.currentSet)
             }
         } else {
             chips(forSet: nil)
@@ -427,39 +426,96 @@ struct SetNavigationRow: View {
     let timerManager: TimerManager
     let sequence: TimerManager.SetSequence
     let label: String
+    var sublabel: String? = nil
     let labelColor: Color
 
     var body: some View {
-        HStack {
-            Button("Previous set", systemImage: "chevron.left") {
-                timerManager.previousEffort()
+        HStack(spacing: 4) {
+            if sequence.isNested {
+                SetJumpButton(
+                    title: "SET", systemImage: "backward.end.fill",
+                    accessibilityLabel: "Back to the start of the set"
+                ) { timerManager.jumpToPreviousSet() }
+                .disabled(sequence.currentEffort <= 1)
             }
-            .labelStyle(.iconOnly)
+
+            SetJumpButton(
+                title: sequence.isNested ? "REP" : nil,
+                systemImage: sequence.isNested ? "backward.fill" : "chevron.left",
+                accessibilityLabel: sequence.isNested ? "Previous rep" : "Previous set"
+            ) { timerManager.previousEffort() }
             .disabled(sequence.currentEffort <= 1)
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // Same gradient the clock wears, so "SET 3 OF 5" reads as the thing the
-            // countdown turns into rather than as a different screen's heading.
-            Text(label)
-                .font(.title3.weight(.semibold).monospaced())
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [labelColor, labelColor.opacity(0.7)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            VStack(spacing: 2) {
+                // Same gradient the clock wears, so the prompt reads as the thing the
+                // countdown turns into rather than as a different screen's heading.
+                Text(label)
+                    .font(.title3.weight(.semibold).monospaced())
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [labelColor, labelColor.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-
-            Spacer()
-
-            Button("Next set", systemImage: "chevron.right") {
-                timerManager.nextEffort()
+                if let sublabel {
+                    Text(sublabel)
+                        .font(.caption2.weight(.medium).monospaced())
+                        .foregroundStyle(.secondary)
+                }
             }
-            .labelStyle(.iconOnly)
+            .multilineTextAlignment(.center)
+
+            Spacer(minLength: 8)
+
+            SetJumpButton(
+                title: sequence.isNested ? "REP" : nil,
+                systemImage: sequence.isNested ? "forward.fill" : "chevron.right",
+                accessibilityLabel: sequence.isNested ? "Skip this rep" : "Skip this set"
+            ) { timerManager.nextEffort() }
+
+            if sequence.isNested {
+                SetJumpButton(
+                    title: "SET", systemImage: "forward.end.fill",
+                    accessibilityLabel: sequence.currentSet < sequence.totalSets
+                        ? "Finish this set and start the rest"
+                        : "Finish the exercise"
+                ) { timerManager.jumpToNextSet() }
+            }
         }
-        .font(.title2)
         .buttonStyle(.plain)
         .foregroundStyle(.tint)
+    }
+}
+
+/// One navigation control: the glyph with what it moves underneath it.
+///
+/// Labelled rather than icon-only because a nested sequence has two things you can move
+/// through, and `forward.fill` beside `forward.end.fill` is not self-explanatory. Flat
+/// sequences pass no title and get the plain chevrons they always had.
+struct SetJumpButton: View {
+    let title: String?
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 1) {
+                Image(systemName: systemImage)
+                    .font(title == nil ? .title2 : .body)
+                if let title {
+                    Text(title)
+                        .font(.caption2.weight(.semibold))
+                }
+            }
+            // A consistent tap target whether or not there's a caption, and wide enough
+            // to stay reachable with one thumb.
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+        }
+        .accessibilityLabel(accessibilityLabel)
     }
 }

@@ -107,10 +107,12 @@ class TimerManager {
     func effortStatus(at index: Int) -> SetStatus {
         guard let sequence = setSequence else { return .upcoming }
         let effort = index + 1
-        if effort < sequence.currentEffort { return .done }
-        if effort > sequence.currentEffort { return .upcoming }
-        // The current effort counts as done once we've moved on to resting after it.
-        return state == .awaitingUser ? .current : .done
+        // Done means confirmed with Done, not merely passed. Position alone would put a
+        // green check on every rep you skipped over, claiming work the log correctly
+        // refuses to record.
+        if effort <= performedEffortCount { return .done }
+        if effort == sequence.currentEffort { return .current }
+        return .upcoming
     }
 
     // MARK: Internals
@@ -515,6 +517,49 @@ class TimerManager {
     func previousEffort() {
         guard let sequence = setSequence else { return }
         goToEffort(sequence.currentEffort - 1)
+    }
+
+    /// End this bout here and take the rest that follows it.
+    ///
+    /// "I'm done with this problem after two goes" — the remaining reps are abandoned
+    /// rather than performed, so they never reach the log, and the between-sets rest
+    /// starts immediately. Parking on the set's last rep first is what makes that work:
+    /// `restAfterCurrentEffort` then resolves to the between-sets rest, and the rest
+    /// completing advances to the next set's first rep by the ordinary path.
+    func jumpToNextSet() {
+        guard var sequence = setSequence, state != .completed else { return }
+        guard sequence.currentSet < sequence.totalSets else {
+            // Nothing to rest before — this was the last bout.
+            finishSetSequence()
+            return
+        }
+
+        bank(into: &sequence)
+        sequence.currentEffort = sequence.currentSet * sequence.effortsPerSet
+        setSequence = sequence
+
+        // A sequence with no between-sets rest has nothing to run, and a zero-second
+        // timer builds an empty timeline. Step straight across instead.
+        guard sequence.restBetweenSetsSeconds > 0 else {
+            goToEffort(sequence.currentEffort + 1)
+            return
+        }
+
+        start(
+            with: TimerConfiguration(totalTimeSeconds: sequence.restBetweenSetsSeconds, getReady: false),
+            session: session
+        )
+    }
+
+    /// Back to the start of this bout, or to the start of the previous one when already
+    /// there — the way a track-skip button behaves.
+    func jumpToPreviousSet() {
+        guard let sequence = setSequence else { return }
+        let firstOfCurrent = (sequence.currentSet - 1) * sequence.effortsPerSet + 1
+        let target = sequence.currentEffort > firstOfCurrent
+            ? firstOfCurrent
+            : firstOfCurrent - sequence.effortsPerSet
+        goToEffort(target)
     }
 
     // MARK: Editing the per-set log

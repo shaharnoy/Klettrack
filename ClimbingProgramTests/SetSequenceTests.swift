@@ -322,6 +322,96 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         XCTAssertFalse(session.wasCompleted)
     }
 
+    // MARK: - Jumping a whole set
+
+    /// "Done with this problem after two goes." The bout ends, the between-sets rest
+    /// runs, and finishing it lands on the next set's first rep.
+    func testJumpingToTheNextSetRunsTheBetweenSetsRest() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 4, sets: 3, restBetweenReps: 60, restBetweenSets: 240,
+                                 shape: .attempts, session: makeSession())
+
+        manager.confirmEffort()          // set 1 rep 1 done
+        manager.advanceSetSequence()     // now on set 1 rep 2
+        manager.jumpToNextSet()
+
+        XCTAssertEqual(manager.configuration?.totalTimeSeconds, 240, "The set rest, not the rep rest")
+        XCTAssertNotEqual(manager.state, .awaitingUser, "The rest is running")
+
+        manager.advanceSetSequence()
+        XCTAssertEqual(manager.setSequence?.currentSet, 2)
+        XCTAssertEqual(manager.setSequence?.currentRep, 1)
+        manager.stop()
+    }
+
+    /// Abandoned reps are not performed, so they never reach the log.
+    func testJumpingASetDoesNotLogTheRepsItSkipped() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 4, sets: 3, restBetweenReps: 60, restBetweenSets: 240,
+                                 shape: .attempts, session: makeSession())
+
+        manager.confirmEffort()
+        manager.advanceSetSequence()
+        manager.jumpToNextSet()
+
+        XCTAssertEqual(manager.performedEffortCount, 1)
+        XCTAssertEqual(manager.performedEffortLogs.count, 1, "Reps 2–4 were abandoned, not done")
+        manager.stop()
+    }
+
+    /// A skipped rep must not wear a green check — the chip would claim work the log
+    /// correctly refuses to record.
+    func testSkippedEffortsDoNotReadAsDone() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 4, sets: 2, restBetweenReps: 60, restBetweenSets: 240,
+                                 shape: .attempts, session: makeSession())
+
+        manager.nextEffort()   // skip rep 1 without confirming it
+        manager.nextEffort()   // skip rep 2
+
+        XCTAssertEqual(manager.setSequence?.currentRep, 3)
+        XCTAssertEqual(manager.effortStatus(at: 0), .upcoming, "Skipped, not done")
+        XCTAssertEqual(manager.effortStatus(at: 1), .upcoming)
+        XCTAssertEqual(manager.effortStatus(at: 2), .current)
+    }
+
+    /// Jumping on the last bout has no rest to take, so it finishes.
+    func testJumpingTheFinalSetFinishesTheExercise() {
+        let manager = makeManager()
+        let session = makeSession()
+        manager.startSetSequence(reps: 3, sets: 1, restBetweenReps: 30, restBetweenSets: 0,
+                                 shape: .attempts, session: session)
+
+        manager.confirmEffort()
+        manager.advanceSetSequence()
+        manager.jumpToNextSet()
+
+        XCTAssertEqual(manager.state, .completed)
+        XCTAssertEqual(session.completedIntervals, 1)
+    }
+
+    /// Track-skip behaviour: back to the top of this bout, then back a whole bout.
+    func testJumpingBackGoesToTheStartOfTheSetThenThePreviousOne() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 3, sets: 3, restBetweenReps: 30, restBetweenSets: 120,
+                                 shape: .attempts, session: makeSession())
+
+        manager.goToEffort(8)   // set 3, rep 2
+        XCTAssertEqual(manager.setSequence?.currentSet, 3)
+
+        manager.jumpToPreviousSet()
+        XCTAssertEqual(manager.setSequence?.currentEffort, 7, "Start of set 3")
+
+        manager.jumpToPreviousSet()
+        XCTAssertEqual(manager.setSequence?.currentEffort, 4, "Start of set 2")
+
+        manager.jumpToPreviousSet()
+        XCTAssertEqual(manager.setSequence?.currentEffort, 1, "Start of set 1")
+
+        manager.jumpToPreviousSet()
+        XCTAssertEqual(manager.setSequence?.currentEffort, 1, "Clamped, not negative")
+    }
+
     // MARK: - Delivering less than the prescription
 
     /// The plan asks for five sets, you had three in you. Only the three reach the log.
@@ -946,14 +1036,19 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
 
     // MARK: - Set status
 
-    func testStatusMarksThePassedSetsDoneAndTheRestUpcoming() {
+    /// Reaching "done" means confirming, not passing over. This used to drive
+    /// `nextEffort()` — a skip — and expect a green check, which claimed work the log
+    /// deliberately refuses to record; `testSkippedEffortsDoNotReadAsDone` now pins the
+    /// other half of that.
+    func testStatusMarksTheConfirmedSetsDoneAndTheRestUpcoming() {
         let manager = makeManager()
         manager.startSetSequence(reps: 3, sets: 3, restBetweenReps: 0, restBetweenSets: 180, session: makeSession())
 
         XCTAssertEqual(manager.effortStatus(at: 0), .current)
         XCTAssertEqual(manager.effortStatus(at: 1), .upcoming)
 
-        manager.nextEffort()   // now on set 2
+        manager.confirmEffort()          // set 1 done
+        manager.advanceSetSequence()     // now on set 2
 
         XCTAssertEqual(manager.effortStatus(at: 0), .done)
         XCTAssertEqual(manager.effortStatus(at: 1), .current)

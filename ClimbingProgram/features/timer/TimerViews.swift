@@ -93,9 +93,15 @@ struct TimerView: View {
                             SetNavigationRow(
                                 timerManager: timerManager,
                                 sequence: sequence,
+                                // The set sits on its own line rather than beside the rep:
+                                // with four controls flanking it, one string wrapped
+                                // mid-phrase. The chip strip below repeats the set anyway.
                                 label: sequence.isNested
-                                    ? "REP \(sequence.currentRep) OF \(sequence.effortsPerSet) · SET \(sequence.currentSet) OF \(sequence.totalSets)"
+                                    ? "REP \(sequence.currentRep) OF \(sequence.effortsPerSet)"
                                     : "SET \(sequence.currentSet) OF \(sequence.totalSets)",
+                                sublabel: sequence.isNested
+                                    ? "SET \(sequence.currentSet) OF \(sequence.totalSets)"
+                                    : nil,
                                 labelColor: .primary
                             )
                             .timerCard()
