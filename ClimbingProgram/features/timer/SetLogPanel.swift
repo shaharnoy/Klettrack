@@ -68,10 +68,7 @@ struct SetLogPanel: View {
                 )
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity)
-        .background(Color(.systemGray6))
-        .clipShape(.rect(cornerRadius: 16))
+        .timerCard(padding: 16)
     }
 }
 
@@ -423,8 +420,14 @@ struct SetNavigationRow: View {
             Spacer()
 
             Text(label)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(labelColor)
+                .font(.title3.weight(.semibold).monospaced())
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [labelColor, labelColor.opacity(0.7)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
 
             Spacer()
 
@@ -436,5 +439,7 @@ struct SetNavigationRow: View {
         .font(.title2)
         .buttonStyle(.plain)
         .foregroundStyle(.tint)
+            // Same gradient the clock wears, so "SET 3 OF 5" reads as the thing the
+            // countdown turns into rather than as a different screen's heading.
     }
 }

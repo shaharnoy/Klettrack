@@ -88,12 +88,15 @@ struct TimerView: View {
                         // being counted. Resting shows the countdown above the same panel,
                         // so a weight can still be corrected mid-rest.
                         if timerManager.isAwaitingUser {
+                            // On the same card the clock uses, in its place — the set
+                            // prompt is what the countdown becomes, not a lesser state.
                             SetNavigationRow(
                                 timerManager: timerManager,
                                 sequence: sequence,
                                 label: "\(sequence.shape.unitLabel) \(sequence.currentSet) OF \(sequence.totalSets)",
-                                labelColor: .secondary
+                                labelColor: .primary
                             )
+                            .timerCard()
                         } else {
                             timerDisplaySection
                             restSkipSection(sequence)
@@ -469,14 +472,9 @@ struct TimerView: View {
                 }
             }
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-        )
+        .timerCard()
     }
-    
+
     // MARK: - Progress Section
     private var progressSection: some View {
         VStack(spacing: 16) {
@@ -532,12 +530,7 @@ struct TimerView: View {
                 }
             }
         }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        )
+        .timerCard(padding: 12)
     }
     
     // MARK: - Current Interval Section
@@ -673,9 +666,7 @@ struct TimerView: View {
             }
             .frame(maxHeight: 150)
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(.rect(cornerRadius: 12))
+        .timerCard(padding: 16)
     }
     
     // MARK: - Helper Methods
@@ -802,6 +793,38 @@ struct LapRowView: View {
         let remainingSeconds = seconds % 60
         let paddedSeconds = remainingSeconds.formatted(.number.grouping(.never).precision(.integerLength(2)))
         return "\(minutes):\(paddedSeconds)"
+    }
+}
+
+// MARK: - Card Chrome
+
+/// The timer's one card surface: material, rounded, softly shadowed.
+///
+/// Every panel on this screen wore its own chrome — the clock on `.regularMaterial`
+/// at radius 20, the set log and laps on flat `systemGray6` at 16 and 12. Waiting on
+/// a set therefore looked like a different screen from resting between them, which is
+/// what a plan-launched timer spends most of its time doing. One modifier instead, so
+/// the shading the clock has is the shading everything has.
+struct TimerCard: ViewModifier {
+    var padding: CGFloat = 24
+
+    func body(content: Content) -> some View {
+        content
+            .padding(padding)
+            // Full width for every card, so the surface doesn't resize underneath you
+            // when a rest ends and the clock gives way to the set prompt.
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(.regularMaterial)
+                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+            )
+    }
+}
+
+extension View {
+    func timerCard(padding: CGFloat = 24) -> some View {
+        modifier(TimerCard(padding: padding))
     }
 }
 
