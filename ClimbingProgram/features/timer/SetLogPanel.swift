@@ -66,6 +66,20 @@ struct SetLogPanel: View {
                         ? "Finish exercise"
                         : "\(sequence.shape.unitLabel.capitalized) \(sequence.currentSet) done, start \(sequence.restSeconds / 60) minute rest"
                 )
+
+                // Stopping short of the prescription is a normal training decision — the
+                // plan asks for up to five sets, three is what you had today. Without
+                // this the only way out is tapping the chevron past every set you aren't
+                // going to do.
+                if timerManager.performedSetCount > 0, !sequence.isFinalSet {
+                    Button("Finish here") {
+                        timerManager.finishSetSequence()
+                    }
+                    .font(.subheadline)
+                    .accessibilityLabel(
+                        "Finish after \(timerManager.performedSetCount) of \(sequence.totalSets)"
+                    )
+                }
             }
         }
         .timerCard(padding: 16)
@@ -419,6 +433,8 @@ struct SetNavigationRow: View {
 
             Spacer()
 
+            // Same gradient the clock wears, so "SET 3 OF 5" reads as the thing the
+            // countdown turns into rather than as a different screen's heading.
             Text(label)
                 .font(.title3.weight(.semibold).monospaced())
                 .foregroundStyle(
@@ -439,7 +455,5 @@ struct SetNavigationRow: View {
         .font(.title2)
         .buttonStyle(.plain)
         .foregroundStyle(.tint)
-            // Same gradient the clock wears, so "SET 3 OF 5" reads as the thing the
-            // countdown turns into rather than as a different screen's heading.
     }
 }

@@ -49,6 +49,47 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         XCTAssertNil(ExerciseTimerDefaults.parseCount(nil))
     }
 
+    func testParseCountCanTakeTheTopOfARange() {
+        let top = { ExerciseTimerDefaults.parseCount($0, upperBound: true) }
+
+        XCTAssertEqual(top("3-5"), 5)
+        XCTAssertEqual(top("3–6"), 6, "En dash must parse like a hyphen")
+        XCTAssertEqual(top("10–20"), 20)
+        XCTAssertEqual(top("3 - 5"), 5, "Spaces around the dash are still a range")
+
+        // No range: the single number is both bounds.
+        XCTAssertEqual(top("3"), 3)
+        XCTAssertEqual(top("2 each hand"), 2)
+        XCTAssertEqual(top("5 ascents"), 5)
+        XCTAssertNil(top("as many as possible"))
+        XCTAssertNil(top(nil))
+    }
+
+    /// A second number only counts when a dash joins it to the first. Otherwise it is
+    /// counting something else, and reading it as a set count would invent sets.
+    func testParseCountUpperBoundIgnoresANonRangeSecondNumber() {
+        XCTAssertEqual(ExerciseTimerDefaults.parseCount("3 sets of 5", upperBound: true), 3)
+        XCTAssertEqual(ExerciseTimerDefaults.parseCount("2 each hand, 3 rounds", upperBound: true), 2)
+    }
+
+    /// The reported case: the catalog says 3–5 sets and the timer laid out three.
+    func testASetRangePrescribesItsUpperBound() throws {
+        let activity = createTestActivity(name: "Climbing-Specific Exercises")
+        let type = createTestTrainingType(activity: activity, name: "Power")
+        let exercise = Exercise(
+            name: "Boulder Campusing", repsText: "5", setsText: "3-5", restText: "3 min"
+        )
+        type.exercises.append(exercise)
+        try context.save()
+
+        guard case .repBased(let reps, let sets, _, _) =
+                try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        else { return XCTFail("Expected a rep-based plan") }
+
+        XCTAssertEqual(sets, 5, "The plan prescribes up to five sets; you can stop short")
+        XCTAssertEqual(reps, 5, "Reps keep the lower bound — an inflated target over-reports")
+    }
+
     // MARK: - Timer blurb
 
     func testBlurbPrefersDescriptionThenFallsBackToNotes() {
@@ -103,8 +144,8 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         guard case .repBased(let reps, let sets, let restSeconds, let templateId) = plan else {
             return XCTFail("Expected rep-based, got \(plan)")
         }
-        XCTAssertEqual(reps, 5)
-        XCTAssertEqual(sets, 3, "Set ranges take the lower bound")
+        XCTAssertEqual(reps, 5, "Rep ranges take the lower bound")
+        XCTAssertEqual(sets, 6, "Set ranges prescribe the upper bound — you may stop short")
         XCTAssertEqual(restSeconds, 180)
         XCTAssertNil(templateId)
     }

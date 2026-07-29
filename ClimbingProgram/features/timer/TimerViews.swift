@@ -351,8 +351,11 @@ struct TimerView: View {
     /// it prefills from actuals rather than from the plan's counts.
     private func logPrefill(for exercise: ExerciseTimerContext) -> ExerciseLogSheet.Prefill {
         let elapsed = timerManager.session?.totalElapsedSeconds
-        if !timerManager.setLogs.isEmpty {
-            return .init(loggedSets: timerManager.setLogs, durationSeconds: elapsed)
+        // Performed, not planned: `setLogs` carries a row per prescribed set so you can
+        // skip to a pre-filled one, and logging those would claim work never done.
+        let performed = timerManager.performedSetLogs
+        if !performed.isEmpty {
+            return .init(loggedSets: performed, durationSeconds: elapsed)
         }
         switch exercise.plan {
         case .repBased(let reps, let sets, _, _):

@@ -68,6 +68,20 @@ class TimerManager {
     /// The weight every set was seeded with, for the panel's "Last: N kg" caption.
     private(set) var seedWeightKg: Double?
 
+    /// How many sets were actually confirmed with Done. High-water mark, so stepping
+    /// back to correct set 2 of 4 doesn't retract sets 3 and 4.
+    ///
+    /// `setLogs` holds a row per *planned* set — that is what lets you skip ahead to a
+    /// pre-filled set — so it cannot answer "how much did I do". Ending a 5-set
+    /// prescription after 3 must log three sets, not five.
+    private(set) var performedSetCount: Int = 0
+
+    /// The sets to write to the log: those confirmed, in order. Empty until the first
+    /// Done, so abandoning a sequence immediately logs nothing.
+    var performedSetLogs: [LoggedSet] {
+        Array(setLogs.prefix(performedSetCount))
+    }
+
     /// How a set reads in the panel, derived rather than stored.
     enum SetStatus: Equatable { case done, current, upcoming }
 
@@ -345,6 +359,9 @@ class TimerManager {
     /// after the final set (no trailing rest).
     func confirmSet() {
         guard let sequence = setSequence, state == .awaitingUser else { return }
+        // Done is the only thing that makes a set count as performed. Skipping past one
+        // with the chevron deliberately doesn't.
+        performedSetCount = max(performedSetCount, sequence.currentSet)
 
         if sequence.isFinalSet {
             finishSetSequence()
@@ -472,6 +489,7 @@ class TimerManager {
         setLogs = []
         editingSetIndex = 0
         seedWeightKg = nil
+        performedSetCount = 0
     }
 
     /// Abandon any set sequence, for a caller about to run something unrelated.
@@ -486,8 +504,11 @@ class TimerManager {
         clearSetLogs()
     }
 
-    /// Final set confirmed: write the summed elapsed time and land in the completed state.
-    private func finishSetSequence() {
+    /// End the sequence here: write the summed elapsed time and land in the completed
+    /// state. Reached by confirming the final set, or by Finish on any earlier one —
+    /// a prescription of five sets you answer with three is a normal training day, not
+    /// an abort, so it completes and offers the log like any other finish.
+    func finishSetSequence() {
         guard let sequence = setSequence else { return }
         ticker?.stop()
         engine = nil
@@ -499,11 +520,12 @@ class TimerManager {
         if let session {
             session.endDate = Date()
             session.totalElapsedSeconds = sequence.accumulatedSeconds
-            session.completedIntervals = sequence.totalSets
+            // What was done, not what was asked for.
+            session.completedIntervals = performedSetCount
             session.wasCompleted = true
         }
         setSequence = nil
-        print("TimerManager.finishSetSequence: \(sequence.totalSets) sets, \(sequence.accumulatedSeconds)s resting")
+        print("TimerManager.finishSetSequence: \(performedSetCount) of \(sequence.totalSets) sets, \(sequence.accumulatedSeconds)s resting")
         playSound(.complete)
     }
 

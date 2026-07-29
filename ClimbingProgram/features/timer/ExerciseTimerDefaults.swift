@@ -47,10 +47,19 @@ enum ExerciseTimerDefaults {
         return Int((value * 60).rounded())
     }
 
-    /// A count (sets, reps) from a string. Takes the first integer, so ranges
-    /// like "3–6" yield the lower bound.
-    static func parseCount(_ text: String?) -> Int? {
-        guard let normalised = normalise(text), let value = firstNumber(in: normalised) else { return nil }
+    /// A count (sets, reps) from a string. Takes the first integer, so ranges like
+    /// "3–6" yield the lower bound — pass `upperBound: true` for the top of the range.
+    ///
+    /// Which end you want depends on what the number is for. A *set* count is a
+    /// prescription the timer lays out in advance, and you can always stop short of it,
+    /// so "3–5 sets" should offer five. A *rep* count is a target inside one set, and
+    /// an inflated one silently over-reports what you did.
+    static func parseCount(_ text: String?, upperBound: Bool = false) -> Int? {
+        guard let normalised = normalise(text) else { return nil }
+        guard let value = upperBound
+                ? lastNumberOfRange(in: normalised)
+                : firstNumber(in: normalised)
+        else { return nil }
         let count = Int(value.rounded())
         return count > 0 ? count : nil
     }
@@ -63,6 +72,42 @@ enum ExerciseTimerDefaults {
             .lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return normalised.isEmpty ? nil : normalised
+    }
+
+    /// The top of an `n-m` range, or the single number when there is no range.
+    ///
+    /// Deliberately strict about what a range is: a second number counts only if a dash
+    /// joins it to the first. "3-5 mins" is 5 and "3 - 5" is 5, but "3 sets of 5" is 3 —
+    /// a trailing number that isn't a range end is almost always counting something else.
+    private static func lastNumberOfRange(in text: String) -> Double? {
+        let characters = Array(text)
+
+        /// The number starting at `start`, and the index just past it.
+        func number(at start: Int) -> (value: Double, end: Int)? {
+            var digits = ""
+            var index = start
+            while index < characters.count,
+                  characters[index].isNumber || (characters[index] == "." && !digits.isEmpty) {
+                digits.append(characters[index])
+                index += 1
+            }
+            guard let value = Double(digits) else { return nil }
+            return (value, index)
+        }
+
+        func skippingSpaces(from start: Int) -> Int {
+            var index = start
+            while index < characters.count, characters[index] == " " { index += 1 }
+            return index
+        }
+
+        var start = 0
+        while start < characters.count, !characters[start].isNumber { start += 1 }
+        guard let first = number(at: start) else { return nil }
+
+        let afterDash = skippingSpaces(from: first.end)
+        guard afterDash < characters.count, characters[afterDash] == "-" else { return first.value }
+        return number(at: skippingSpaces(from: afterDash + 1))?.value ?? first.value
     }
 
     /// First number in the string, e.g. "3-5 mins" → 3, "2 each hand" → 2.
@@ -111,8 +156,11 @@ enum ExerciseTimerDefaults {
                 // A try isn't a rep, and the app can't time one.
                 reps: nil,
                 // "3 ascents" / "3–6 boulders" is the try count; the books' default
-                // for a limit session is 10 tries across two or three problems.
-                sets: parseCount(exercise.repsText) ?? parseCount(exercise.setsText) ?? 10,
+                // for a limit session is 10 tries across two or three problems. Both
+                // texts count tries here, so both take the top of their range.
+                sets: parseCount(exercise.repsText, upperBound: true)
+                    ?? parseCount(exercise.setsText, upperBound: true)
+                    ?? 10,
                 restSeconds: rest,
                 templateId: nil
             )
@@ -120,7 +168,9 @@ enum ExerciseTimerDefaults {
 
         // Duration-based: the work itself is timed.
         if let work = parseSeconds(exercise.durationText), work > 0 {
-            let repetitions = parseCount(exercise.repsText) ?? parseCount(exercise.setsText) ?? 1
+            let repetitions = parseCount(exercise.repsText)
+                ?? parseCount(exercise.setsText, upperBound: true)
+                ?? 1
             let interval = IntervalConfiguration(
                 name: exercise.name,
                 workTimeSeconds: work,
@@ -134,7 +184,7 @@ enum ExerciseTimerDefaults {
         if let rest, rest > 0 {
             return .repBased(
                 reps: parseCount(exercise.repsText),
-                sets: max(1, parseCount(exercise.setsText) ?? 1),
+                sets: max(1, parseCount(exercise.setsText, upperBound: true) ?? 1),
                 restSeconds: rest,
                 templateId: nil
             )

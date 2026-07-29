@@ -132,6 +132,74 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         XCTAssertTrue(session.wasCompleted)
     }
 
+    // MARK: - Delivering less than the prescription
+
+    /// The plan asks for five sets, you had three in you. Only the three reach the log.
+    func testFinishingEarlyLogsOnlyTheSetsActuallyConfirmed() {
+        let manager = makeManager()
+        let session = makeSession()
+        manager.startSetSequence(reps: 5, sets: 5, restSeconds: 180, session: session)
+
+        for _ in 1...3 {
+            manager.confirmSet()
+            manager.totalElapsedTime = 180
+            manager.advanceSetSequence()
+        }
+
+        XCTAssertEqual(manager.setLogs.count, 5, "All five are laid out, so you can skip ahead")
+        XCTAssertEqual(manager.performedSetCount, 3)
+        XCTAssertEqual(manager.performedSetLogs.count, 3, "Only what was confirmed is logged")
+
+        manager.finishSetSequence()
+
+        XCTAssertEqual(manager.state, .completed)
+        XCTAssertEqual(session.completedIntervals, 3, "What was done, not what was asked")
+        XCTAssertTrue(session.wasCompleted, "Stopping short is a training decision, not an abort")
+        XCTAssertEqual(manager.performedSetLogs.count, 3, "The log survives completion")
+    }
+
+    /// Skipping with the chevron is not doing the set.
+    func testSkippingASetDoesNotCountItAsPerformed() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 5, sets: 4, restSeconds: 180, session: makeSession())
+
+        manager.confirmSet()          // set 1 done
+        manager.totalElapsedTime = 180
+        manager.advanceSetSequence()  // now on set 2
+        manager.nextSet()             // skip set 2 without doing it
+
+        XCTAssertEqual(manager.setSequence?.currentSet, 3)
+        XCTAssertEqual(manager.performedSetCount, 1)
+        XCTAssertEqual(manager.performedSetLogs.count, 1)
+    }
+
+    /// Going back to correct set 2 of 4 must not retract sets 3 and 4.
+    func testSteppingBackKeepsTheHighWaterMark() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 5, sets: 4, restSeconds: 60, session: makeSession())
+
+        for _ in 1...3 {
+            manager.confirmSet()
+            manager.advanceSetSequence()
+        }
+        XCTAssertEqual(manager.performedSetCount, 3)
+
+        manager.previousSet()
+        manager.previousSet()
+
+        XCTAssertEqual(manager.setSequence?.currentSet, 2)
+        XCTAssertEqual(manager.performedSetCount, 3, "Reviewing a set doesn't undo later ones")
+    }
+
+    func testNothingIsLoggedBeforeTheFirstDone() {
+        let manager = makeManager()
+        manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: makeSession())
+
+        XCTAssertEqual(manager.setLogs.count, 3)
+        XCTAssertEqual(manager.performedSetCount, 0)
+        XCTAssertTrue(manager.performedSetLogs.isEmpty)
+    }
+
     func testStopAbortsTheSequence() {
         let manager = makeManager()
         manager.startSetSequence(reps: 5, sets: 3, restSeconds: 180, session: makeSession())
@@ -603,7 +671,8 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         XCTAssertEqual(manager.state, .completed)
         XCTAssertNil(manager.setSequence)
         XCTAssertTrue(session.wasCompleted)
-        XCTAssertEqual(session.completedIntervals, 2)
+        XCTAssertEqual(session.completedIntervals, 0,
+                       "Both sets were skipped, not done — the sequence ended having logged nothing")
     }
 
     /// Mid-rest, forward means "stop resting", which is the pre-existing skip.
