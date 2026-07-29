@@ -182,6 +182,7 @@ struct TimerView: View {
                 case .timerSetup:
                     TimerSetupView(planDay: planDay) { config, template in
                         // Load the configuration immediately to display on screen
+                        leaveExercise()
                         timerManager.loadConfiguration(config)
 
                         // Update template usage but don't start the timer
@@ -295,6 +296,19 @@ struct TimerView: View {
             return
         }
         apply(exercise)
+    }
+
+    /// Hand-picking a template or building a custom timer replaces the exercise's own
+    /// protocol, so the screen must stop claiming to be running that exercise: the
+    /// header named it while the clock ran something else, and the set panel stayed on
+    /// screen driving nothing.
+    ///
+    /// Clearing the shared context too, or the tab would re-apply the exercise the next
+    /// time this view appeared and quietly undo the switch.
+    private func leaveExercise() {
+        appliedExercise = nil
+        timerAppState.exerciseContext = nil
+        timerManager.clearSetSequence()
     }
 
     private func apply(_ exercise: ExerciseTimerContext) {
@@ -737,6 +751,10 @@ struct TimerView: View {
     }
     
     private func startTimer(with config: TimerConfiguration, template: TimerTemplate? = nil) {
+        // Only reached from Select Template and Custom Timer — both are the user
+        // choosing timing by hand, which is no longer the exercise's own.
+        leaveExercise()
+
         let session = TimerSession(
             templateId: template?.id,
             templateName: template?.name,

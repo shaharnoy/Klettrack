@@ -474,6 +474,18 @@ class TimerManager {
         seedWeightKg = nil
     }
 
+    /// Abandon any set sequence, for a caller about to run something unrelated.
+    ///
+    /// `start()` deliberately leaves `setSequence` alone — a sequence runs each of its
+    /// rests *through* `start()`, so clearing it there would tear down the thing driving
+    /// the call. That leaves loading a template mid-sequence to clear it explicitly;
+    /// without this, the set panel and the REST label stayed bolted to a template that
+    /// knows nothing about them.
+    func clearSetSequence() {
+        setSequence = nil
+        clearSetLogs()
+    }
+
     /// Final set confirmed: write the summed elapsed time and land in the completed state.
     private func finishSetSequence() {
         guard let sequence = setSequence else { return }
