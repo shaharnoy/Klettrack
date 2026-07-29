@@ -62,6 +62,17 @@ final class LoggedSetTests: ClimbingProgramTestSuite {
         XCTAssertNil(rollup.weightKg)
     }
 
+    /// A nested session stamps the same set number on every rep within a set. The
+    /// rollup's set count must read the distinct sets, not the per-effort tally — a
+    /// 5x3 session is five sets, not fifteen.
+    func testNestedSetsRollUpToTheDistinctSetCountNotTheEffortCount() {
+        let sets = (1...5).flatMap { setNumber in
+            (0..<3).map { _ in LoggedSet(reps: 5, weightKg: 40, setNumber: setNumber) }
+        }
+        XCTAssertEqual(sets.count, 15)
+        XCTAssertEqual(sets.rollup.sets, 5)
+    }
+
     // MARK: - Effort
 
     func testEffortLabelMapsTheFiveLevels() {
@@ -193,5 +204,18 @@ final class LoggedSetTests: ClimbingProgramTestSuite {
         let sets = [LoggedSet(reps: 5, weightKg: 40), LoggedSet(reps: 5, weightKg: 40)]
         XCTAssertEqual(sets.groupedBySet.count, 1)
         XCTAssertNil(sets.groupedBySet.first?.setNumber)
+    }
+
+    /// A flat session stamps a distinct set number per entry. Grouping those would
+    /// caption every set as holding a single rep, where the plain list was right.
+    func testAFlatLogWithOneEffortPerSetStaysFlat() {
+        let sets = [
+            LoggedSet(reps: 5, weightKg: 40, setNumber: 1),
+            LoggedSet(reps: 5, weightKg: 40, setNumber: 2),
+            LoggedSet(reps: 5, weightKg: 40, setNumber: 3)
+        ]
+        XCTAssertEqual(sets.groupedBySet.count, 1)
+        XCTAssertNil(sets.groupedBySet.first?.setNumber)
+        XCTAssertEqual(sets.groupedBySet.first?.efforts.count, 3)
     }
 }

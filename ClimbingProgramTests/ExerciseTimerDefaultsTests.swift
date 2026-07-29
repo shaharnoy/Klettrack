@@ -212,6 +212,38 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         }
     }
 
+    /// A single flat set is one effort. Only a try-counted exercise reads a lone rest as
+    /// separating reps — for everything else one set of continuous reps is one effort.
+    func testASingleSetWeightedExerciseIsNotPromotedToNested() throws {
+        let exercise = makeExercise(name: "Single Set", reps: "5", sets: "1", rest: "5 sec")
+
+        guard case .repBased(let reps, let sets, let restBetweenReps, let restBetweenSets, _) =
+                try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        else { return XCTFail("Expected a rep-based plan") }
+
+        XCTAssertEqual(reps, 5)
+        XCTAssertEqual(sets, 1)
+        XCTAssertEqual(restBetweenReps, 0, "Not promoted — the five reps are continuous")
+        XCTAssertEqual(restBetweenSets, 5)
+    }
+
+    /// The guard used to ask the Sets field's lower bound while `sets` itself reads the
+    /// upper bound. For "0–5" they disagreed: the guard saw no genuine count and
+    /// fabricated ten reps on top of the five sets the range already specified.
+    func testAttemptsFallbackGuardAgreesWithTheSetsItGuards() throws {
+        let exercise = makeExercise(
+            name: "Ambiguous Range", sets: "0–5", rest: "2 min", shape: .attempts
+        )
+
+        guard case .repBased(let reps, let sets, _, let restBetweenSets, _) =
+                try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        else { return XCTFail("Expected a rep-based plan") }
+
+        XCTAssertNil(reps, "A genuine sets value is present — no fabricated ten reps")
+        XCTAssertEqual(sets, 5, "The range's upper bound, the same call the guard now uses")
+        XCTAssertEqual(restBetweenSets, 120)
+    }
+
     /// The try count comes from the Sets field's upper bound, same as every other shape —
     /// not from Reps, which is what the conflation bug did.
     func testAttemptsReadTheTryCountFromSets() throws {

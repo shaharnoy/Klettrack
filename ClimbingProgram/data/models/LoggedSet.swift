@@ -75,7 +75,12 @@ extension Array where Element == LoggedSet {
     /// per-set charts are ever wanted.
     var rollup: (reps: Double?, sets: Double?, weightKg: Double?) {
         guard !isEmpty else { return (nil, nil, nil) }
-        return (mean(\.reps), Double(count), mean(\.weightKg))
+        // A nested session stamps the same set number on every rep in that set, so the
+        // distinct count is the true set count; a flat or pre-nesting log carries no set
+        // numbers at all, and falls back to one set per effort as before.
+        let distinctSetNumbers = Set(compactMap(\.setNumber))
+        let sets = distinctSetNumbers.isEmpty ? count : distinctSetNumbers.count
+        return (mean(\.reps), Double(sets), mean(\.weightKg))
     }
 
     private func mean(_ value: (Element) -> Double?) -> Double? {
@@ -87,7 +92,12 @@ extension Array where Element == LoggedSet {
     /// The log split into bouts for display. One group with a `nil` number when the
     /// entries carry no set — hand-logged items, and anything written before nesting.
     var groupedBySet: [(setNumber: Int?, efforts: [LoggedSet])] {
-        guard contains(where: { $0.setNumber != nil }) else {
+        // Only worth grouping when a set holds more than one effort. A flat session
+        // stamps a distinct set number on every entry, and grouping those would caption
+        // each of six pull-up sets as a set containing one rep — noise where the old
+        // flat list was exactly right.
+        let numbered = Set(compactMap(\.setNumber))
+        guard !numbered.isEmpty, numbered.count < count else {
             return isEmpty ? [] : [(nil, self)]
         }
         return Dictionary(grouping: self) { $0.setNumber }

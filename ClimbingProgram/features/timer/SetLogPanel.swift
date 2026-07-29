@@ -67,7 +67,7 @@ struct SetLogPanel: View {
                 .accessibilityLabel(
                     sequence.isFinalEffort
                         ? "Finish exercise"
-                        : "\(sequence.isNested ? "Rep \(sequence.currentRep)" : "Set \(sequence.currentSet)") done, start \(sequence.restAfterCurrentEffort / 60) minute rest"
+                        : "\(sequence.isNested ? "Rep \(sequence.currentRep)" : "Set \(sequence.currentSet)") done, start \(Self.restPhrase(seconds: sequence.restAfterCurrentEffort)) rest"
                 )
 
                 // Stopping short of the prescription is a normal training decision — the
@@ -86,6 +86,13 @@ struct SetLogPanel: View {
             }
         }
         .timerCard(padding: 16)
+    }
+
+    /// "30 second" / "3 minute" — integer minutes read fine back when every rest was at
+    /// least a minute long, but the spec's canonical rep rest is 30 seconds, and dividing
+    /// that by 60 announces "0 minute rest" to VoiceOver.
+    static func restPhrase(seconds: Int) -> String {
+        seconds < 60 ? "\(seconds) second" : "\(seconds / 60) minute"
     }
 }
 

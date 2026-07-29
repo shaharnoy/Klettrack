@@ -154,24 +154,32 @@ enum ExerciseTimerDefaults {
         // "1 reps" caption under every chip. `startSetSequence` takes `Int?` for the
         // same reason.
         var reps = parseCount(exercise.repsText)
-        let sets = parseCount(exercise.setsText, upperBound: true) ?? 1
+        let parsedSets = parseCount(exercise.setsText, upperBound: true)
+        let sets = parsedSets ?? 1
 
         // An attempts exercise that names no count anywhere still needs one, or the
         // sequence is a single tap. The seeded limit boulders carry their count in the
         // exercise name — "3–6 near-maximal boulders" — where nothing can read it. Ten
         // tries is what this branch defaulted to before reps and sets were separated,
         // and what the books prescribe for a limit session.
-        if exercise.shape == .attempts, reps == nil, parseCount(exercise.setsText) == nil {
+        //
+        // Guards on `parsedSets`, the same upper-bound read that produces `sets` above:
+        // guarding on the lower bound instead let a range like "0–5" disagree with
+        // itself and fabricate ten reps on top of the five sets the range already gave.
+        if exercise.shape == .attempts, reps == nil, parsedSets == nil {
             reps = 10
         }
 
         var restBetweenReps = parseSeconds(exercise.restBetweenRepsText) ?? 0
         var restBetweenSets = parseSeconds(exercise.restText) ?? 0
 
-        // With a single set there are no set boundaries, so a lone rest can only be the
-        // rest between reps. This is what makes "3 ascents · 3 min/asc" read as one bout
-        // of three goes three minutes apart, rather than three goes with no rest at all.
-        if sets == 1, restBetweenReps == 0, restBetweenSets > 0 {
+        // With a single set there are no set boundaries for a try-counted exercise, so a
+        // lone rest can only be the rest between reps. This is what makes "3 ascents ·
+        // 3 min/asc" read as one bout of three goes three minutes apart, rather than
+        // three goes with no rest at all. Restricted to `.attempts`: for every other
+        // shape, a single set of continuous reps is genuinely one effort, and promoting
+        // its rest would turn a flat exercise into a nested one.
+        if exercise.shape == .attempts, sets == 1, restBetweenReps == 0, restBetweenSets > 0 {
             restBetweenReps = restBetweenSets
             restBetweenSets = 0
         }
