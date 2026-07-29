@@ -17,6 +17,9 @@ struct ExerciseTimerContext: Equatable, Identifiable {
     let planId: UUID?
     let planName: String?
     let plan: ExerciseTimerPlan?
+    /// Whether this exercise takes added load, and what one unit of work is called.
+    /// Trailing and defaulted so existing construction sites are untouched.
+    var shape: ExerciseShape = .weighted
 
     var id: String { "\(exerciseName)|\(planDayDate.timeIntervalSince1970)" }
 }

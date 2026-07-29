@@ -69,6 +69,8 @@ final class Exercise {
     var notes: String?
     /// Optional explicit timer template; nil falls back to guidance-derived timing.
     var timerTemplateId: UUID?
+    /// How this exercise is measured and logged. See `ExerciseShape`; nil ⇒ `.weighted`.
+    var shapeKey: String?
 
     init(
         id: UUID = UUID(),
@@ -81,7 +83,8 @@ final class Exercise {
         setsText: String? = nil,
         restText: String? = nil,
         notes: String? = nil,
-        timerTemplateId: UUID? = nil
+        timerTemplateId: UUID? = nil,
+        shapeKey: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -94,6 +97,7 @@ final class Exercise {
         self.restText = restText
         self.notes = notes
         self.timerTemplateId = timerTemplateId
+        self.shapeKey = shapeKey
     }
 }
 

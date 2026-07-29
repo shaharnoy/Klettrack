@@ -102,6 +102,22 @@ enum ExerciseTimerDefaults {
 
         let rest = parseSeconds(exercise.restText)
 
+        // Attempts: rest between tries beats the duration, which is a session budget
+        // rather than a work interval. A limit boulder is seeded with both — "30 min"
+        // and "3 min/asc" — and counting down 30 blind minutes tells you nothing,
+        // where a try counter with a rest between attempts is the actual protocol.
+        if exercise.shape == .attempts, let rest, rest > 0 {
+            return .repBased(
+                // A try isn't a rep, and the app can't time one.
+                reps: nil,
+                // "3 ascents" / "3–6 boulders" is the try count; the books' default
+                // for a limit session is 10 tries across two or three problems.
+                sets: parseCount(exercise.repsText) ?? parseCount(exercise.setsText) ?? 10,
+                restSeconds: rest,
+                templateId: nil
+            )
+        }
+
         // Duration-based: the work itself is timed.
         if let work = parseSeconds(exercise.durationText), work > 0 {
             let repetitions = parseCount(exercise.repsText) ?? parseCount(exercise.setsText) ?? 1

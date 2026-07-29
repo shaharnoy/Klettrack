@@ -267,6 +267,7 @@ struct TrainingTypeDetailView: View {
     @State private var draftDescription = ""
     @State private var draftAbout = ""
     @State private var draftTimerTemplateId: UUID? = nil
+    @State private var draftShape: ExerciseShape = .weighted
 
     private var exercisesByArea: [(String, [Exercise])] {
         let grouped = Dictionary(grouping: trainingType.exercises) { $0.area ?? "" }
@@ -444,6 +445,7 @@ struct TrainingTypeDetailView: View {
                     notes: $draftNotes,
                     description: $draftDescription,
                     timerTemplateId: $draftTimerTemplateId,
+                    shape: $draftShape,
                     availableAreas: availableAreas
                 ) {
                     let nextOrder = (trainingType.exercises.map { $0.order }.max() ?? 0) + 1
@@ -457,7 +459,8 @@ struct TrainingTypeDetailView: View {
                         setsText: draftSets.isEmpty ? nil : draftSets,
                         restText: draftRest.isEmpty ? nil : draftRest,
                         notes: draftNotes.isEmpty ? nil : draftNotes,
-                        timerTemplateId: draftTimerTemplateId
+                        timerTemplateId: draftTimerTemplateId,
+                        shapeKey: draftShape.rawValue
                     )
                     trainingType.exercises.append(ex)
                     try? context.save()
@@ -478,6 +481,7 @@ struct TrainingTypeDetailView: View {
                 notes: $draftNotes,
                 description: $draftDescription,
                 timerTemplateId: $draftTimerTemplateId,
+                shape: $draftShape,
                 availableAreas: availableAreas
             ) {
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
@@ -491,6 +495,8 @@ struct TrainingTypeDetailView: View {
                 ex.restText = draftRest.isEmpty ? nil : draftRest
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
                 ex.timerTemplateId = draftTimerTemplateId
+                // Always written, so nil keeps meaning "never classified".
+                ex.shapeKey = draftShape.rawValue
                 try? context.save()
             }
         }
@@ -499,11 +505,13 @@ struct TrainingTypeDetailView: View {
     private func startNewExercise() {
         draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDuration = "";
         draftTimerTemplateId = nil
+        draftShape = .weighted
         modalRoute = .newExercise
     }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name
         draftArea = ex.area ?? ""
+        draftShape = ex.shape
         draftDescription = ex.exerciseDescription ?? ""
         draftReps = ex.repsText ?? ""
         draftSets = ex.setsText ?? ""
@@ -542,6 +550,7 @@ struct CombinationDetailView: View {
     @State private var draftDesc = ""
     @State private var draftAbout = ""
     @State private var draftTimerTemplateId: UUID? = nil
+    @State private var draftShape: ExerciseShape = .attempts
 
 
     var body: some View {
@@ -628,6 +637,7 @@ struct CombinationDetailView: View {
                     notes: $draftNotes,
                     description: $draftDesc,
                     timerTemplateId: $draftTimerTemplateId,
+                    shape: $draftShape,
                     availableAreas: []
                 ) {
                     let nextOrder = (combo.exercises.map { $0.order }.max() ?? 0) + 1
@@ -641,7 +651,8 @@ struct CombinationDetailView: View {
                         setsText: draftSets.isEmpty ? nil : draftSets,
                         restText: draftRest.isEmpty ? nil : draftRest,
                         notes: draftNotes.isEmpty ? nil : draftNotes,
-                        timerTemplateId: draftTimerTemplateId
+                        timerTemplateId: draftTimerTemplateId,
+                        shapeKey: draftShape.rawValue
                     )
                     combo.exercises.append(ex)
                     try? context.save()
@@ -662,6 +673,7 @@ struct CombinationDetailView: View {
                 notes: $draftNotes,
                 description: $draftDesc,
                 timerTemplateId: $draftTimerTemplateId,
+                shape: $draftShape,
                 availableAreas: []
             ) {
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
@@ -673,6 +685,8 @@ struct CombinationDetailView: View {
                 ex.restText = draftRest.isEmpty ? nil : draftRest
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
                 ex.timerTemplateId = draftTimerTemplateId
+                // Always written, so nil keeps meaning "never classified".
+                ex.shapeKey = draftShape.rawValue
                 try? context.save()
             }
         }
@@ -681,11 +695,14 @@ struct CombinationDetailView: View {
     private func startNewExercise() {
         draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDesc = ""; draftDuration = "";
         draftTimerTemplateId = nil
+        // An exercise added under a bouldering combination is wall work by default.
+        draftShape = .attempts
         modalRoute = .newExercise
     }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name
         draftArea = ex.area ?? ""
+        draftShape = ex.shape
         draftDesc = ex.exerciseDescription ?? ""
         draftReps = ex.repsText ?? ""
         draftSets = ex.setsText ?? ""
@@ -820,6 +837,7 @@ struct ExerciseEditSheet: View {
     @Binding var notes: String
     @Binding var description: String
     @Binding var timerTemplateId: UUID?
+    @Binding var shape: ExerciseShape
 
     let availableAreas: [String]
     let onSave: () -> Void
@@ -830,6 +848,15 @@ struct ExerciseEditSheet: View {
     /// What the timer button will do if no template is attached.
     private var derivedTimerSummary: String {
         let restSeconds = ExerciseTimerDefaults.parseSeconds(rest)
+
+        // Mirrors the precedence in `ExerciseTimerDefaults.plan(for:in:)`, where an
+        // attempts exercise takes its rest over its duration.
+        if shape == .attempts, let restSeconds, restSeconds > 0 {
+            let tries = ExerciseTimerDefaults.parseCount(reps)
+                ?? ExerciseTimerDefaults.parseCount(sets)
+                ?? 10
+            return "Attempts: \(tries) tries, \(readable(restSeconds)) rest between each."
+        }
 
         if let work = ExerciseTimerDefaults.parseSeconds(duration), work > 0 {
             let restPart: String = restSeconds.map { ", \(readable($0)) rest" } ?? ""
@@ -849,6 +876,18 @@ struct ExerciseEditSheet: View {
         seconds >= 60 && seconds % 60 == 0 ? "\(seconds / 60) min" : "\(seconds)s"
     }
 
+    /// Says what the choice actually changes, rather than restating the label.
+    private var shapeFooter: String {
+        switch shape {
+        case .weighted:
+            return "Weight fields are shown when logging this exercise."
+        case .bodyweight:
+            return "No weight fields — this exercise takes no added load."
+        case .attempts:
+            return "Counted in tries at a problem, and logged as a climb. No weight fields."
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -859,9 +898,16 @@ struct ExerciseEditSheet: View {
                         .textCase(nil)
                 }
                 
-                // Area selection for climbing exercises
-                if !availableAreas.isEmpty {
-                    Section {
+                Section {
+                    Picker("Measured in", selection: $shape) {
+                        ForEach(ExerciseShape.allCases, id: \.self) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    // Area only applies to climbing types; the shape applies to all.
+                    if !availableAreas.isEmpty {
                         Picker("Area", selection: $area) {
                             Text("None").tag("")
                             ForEach(availableAreas, id: \.self) { area in
@@ -869,11 +915,11 @@ struct ExerciseEditSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
-                    } header: {
-                        Text("CATEGORY")
-                    } footer: {
-                        Text("Choose the exercise category (e.g., Fingers, Pull).")
                     }
+                } header: {
+                    Text("CATEGORY")
+                } footer: {
+                    Text(shapeFooter)
                 }
                 
                 Section {

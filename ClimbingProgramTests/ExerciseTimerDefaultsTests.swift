@@ -77,7 +77,8 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         reps: String? = nil,
         sets: String? = nil,
         duration: String? = nil,
-        rest: String? = nil
+        rest: String? = nil,
+        shape: ExerciseShape = .weighted
     ) -> Exercise {
         let activity = createTestActivity(name: "Strength")
         let type = createTestTrainingType(activity: activity, name: "Power")
@@ -86,7 +87,8 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
             repsText: reps,
             durationText: duration,
             setsText: sets,
-            restText: rest
+            restText: rest,
+            shapeKey: shape.rawValue
         )
         type.exercises.append(exercise)
         try? context.save()
@@ -127,6 +129,80 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
 
     func testUnparseableRestYieldsNoPlan() {
         let exercise = makeExercise(name: "Vague", reps: "5", sets: "3", rest: "minimal")
+        XCTAssertNil(ExerciseTimerDefaults.plan(for: exercise, in: context))
+    }
+
+    // MARK: - Attempts
+    //
+    // A limit boulder is seeded with both a duration and a rest. "30 min" is a session
+    // budget; "3 min/asc" is the protocol. For attempts the rest has to win.
+
+    /// The motivating case: "Work on 1–3 limit boulders" as seeded.
+    func testAttemptsTakeRestOverDuration() throws {
+        let exercise = makeExercise(
+            name: "Work on 1–3 limit boulders",
+            duration: "60 min",
+            rest: "3 min/asc",
+            shape: .attempts
+        )
+
+        let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        guard case .repBased(let reps, let sets, let restSeconds, _) = plan else {
+            return XCTFail("Expected a try counter, got \(plan)")
+        }
+        XCTAssertNil(reps, "A try isn't a rep, and the app can't time one")
+        XCTAssertEqual(sets, 10, "The books' default is 10 tries across 2–3 problems")
+        XCTAssertEqual(restSeconds, 180)
+    }
+
+    /// The same guidance on a loaded exercise must keep its old duration-based timer.
+    func testTheFlipOnlyAppliesToAttempts() throws {
+        let exercise = makeExercise(
+            name: "Timed hang",
+            duration: "60 min",
+            rest: "3 min/asc",
+            shape: .weighted
+        )
+
+        let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        guard case .durationBased = plan else {
+            return XCTFail("Expected duration-based, got \(plan)")
+        }
+    }
+
+    func testAttemptsReadTheTryCountFromReps() throws {
+        let exercise = makeExercise(
+            name: "Bouldering", reps: "3 ascents", sets: "3–10 problems",
+            rest: "2 min/asc", shape: .attempts
+        )
+
+        let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        guard case .repBased(_, let sets, let restSeconds, _) = plan else {
+            return XCTFail("Expected a try counter, got \(plan)")
+        }
+        XCTAssertEqual(sets, 3)
+        XCTAssertEqual(restSeconds, 120)
+    }
+
+    /// "on the minute" doesn't parse, which used to leave Classic 4×4 with no work
+    /// interval at all. As attempts it just doesn't matter.
+    func testClassic4x4BecomesATryCounter() throws {
+        let exercise = makeExercise(
+            name: "Classic 4×4", reps: "4", sets: "4",
+            duration: "on the minute", rest: "4 min", shape: .attempts
+        )
+
+        let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        guard case .repBased(_, let sets, let restSeconds, _) = plan else {
+            return XCTFail("Expected a try counter, got \(plan)")
+        }
+        XCTAssertEqual(sets, 4)
+        XCTAssertEqual(restSeconds, 240)
+    }
+
+    /// A skill drill has no guidance at all — it must still yield no timer.
+    func testAttemptsWithNoRestYieldNoPlan() {
+        let exercise = makeExercise(name: "One Touch", shape: .attempts)
         XCTAssertNil(ExerciseTimerDefaults.plan(for: exercise, in: context))
     }
 

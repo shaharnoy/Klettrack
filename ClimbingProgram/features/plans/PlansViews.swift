@@ -44,7 +44,10 @@ private final class PlanDayEditorCache {
 
     var guidanceByName: [String: ExerciseGuidance] = [:]
     var timerPlanByName: [String: ExerciseTimerPlan] = [:]
-    var boulderingExerciseNames: Set<String> = []
+    /// Missing name ⇒ `.weighted`, matching `Exercise.shape`'s own default.
+    var shapeByName: [String: ExerciseShape] = [:]
+    /// Names whose shape is `.attempts` — wall work, logged as a climb.
+    var attemptsExerciseNames: Set<String> = []
     var catalogInfoByExerciseName: [String: ExerciseCatalogInfo] = [:]
     var parentPlan: Plan? = nil
     var loggedItemsForDay: [SessionItem] = []
@@ -822,9 +825,14 @@ struct PlanDayEditor: View {
         self._cache = State(initialValue: PlanDayEditorCache.forDay(day.wrappedValue.id))
     }
     
-    // Helper function to check if an exercise belongs to the Bouldering activity
-    private func isBoulderingExercise(name: String) -> Bool {
-        cache.boulderingExerciseNames.contains(name)
+    /// Whether this exercise is counted in tries at a problem, and so logs as a climb.
+    ///
+    /// Reads the shape the catalog records, replacing a substring match on the parent
+    /// activity's name. That heuristic missed wall work filed elsewhere — "Bouldering",
+    /// "Boulder Campusing" and "Big-Move Boulder Problems" all live under
+    /// "Climbing-Specific Exercises" and were being offered a weight field.
+    private func isAttemptsExercise(name: String) -> Bool {
+        cache.attemptsExerciseNames.contains(name)
     }
 
     
@@ -976,8 +984,8 @@ struct PlanDayEditor: View {
         let exerciseInfo = cache.isWarm
             ? getExerciseInfo(name: name)
             : (repsText: " ", setsText: " ", restText: " ", notes: " ", durationText: " ", hasGuidance: true)
-        // Bouldering detection: tri-state to avoid briefly showing the wrong icon while loading.
-        let isBouldering: Bool? = cache.isWarm ? isBoulderingExercise(name: name) : nil
+        // Attempts detection: tri-state to avoid briefly showing the wrong icon while loading.
+        let isBouldering: Bool? = cache.isWarm ? isAttemptsExercise(name: name) : nil
 
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -1121,7 +1129,8 @@ struct PlanDayEditor: View {
             planDayDate: day.date,
             planId: cache.parentPlan?.id,
             planName: cache.parentPlan?.name,
-            plan: cache.timerPlanByName[name]
+            plan: cache.timerPlanByName[name],
+            shape: cache.shapeByName[name] ?? .weighted
         )
     }
 
@@ -1180,10 +1189,10 @@ struct PlanDayEditor: View {
     
     // Helper to determine if a session item is a climb log
     private func isClimbLog(item: SessionItem) -> Bool {
-        // Check if the notes contain climb log indicators or if it's a bouldering exercise
+        // The notes checks stay for items logged before the shape field existed.
         return item.notes?.contains("Plan climb log") == true ||
                item.notes?.contains("Attempts:") == true ||
-               isBoulderingExercise(name: item.exerciseName)
+               isAttemptsExercise(name: item.exerciseName)
     }
 
     // Break down the chosen activities section into its own component
@@ -1525,10 +1534,24 @@ struct PlanDayEditor: View {
             uniquingKeysWith: { existing, _ in existing }
         )
 
-        // 2) Bouldering set (Activities)
+        // 1c) Shape per exercise — same fetch again. Decides whether the timer's log
+        // panel offers added load.
+        cache.shapeByName = Dictionary(
+            exercises.map { ($0.name, $0.shape) },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
+        // 2) Attempts set + activity tints (Activities)
+        //
+        // The attempts set comes from the shape map above, not from matching "boulder"
+        // in the activity name — one source of truth, and it catches wall work filed
+        // under Climbing-Specific.
+        let attemptsSet = Set(
+            cache.shapeByName.filter { $0.value == .attempts }.keys
+        )
+
         let actDesc = FetchDescriptor<Activity>()
         let activities = (try? context.fetch(actDesc)) ?? []
-        var boulderSet: Set<String> = []
 
         var catalogInfoByExerciseName: [String: PlanDayEditorCache.ExerciseCatalogInfo] = [:]
 
@@ -1551,9 +1574,6 @@ struct PlanDayEditor: View {
         for a in activities {
             for t in a.types {
                 for ex in t.exercises {
-                    if a.name.localizedLowercase.contains("boulder") {
-                        boulderSet.insert(ex.name)
-                    }
                     upsertCatalogInfo(
                         exerciseName: ex.name,
                         order: ex.order,
@@ -1563,9 +1583,6 @@ struct PlanDayEditor: View {
                 }
                 for c in t.combinations {
                     for ex in c.exercises {
-                        if a.name.localizedLowercase.contains("boulder") {
-                            boulderSet.insert(ex.name)
-                        }
                         upsertCatalogInfo(
                             exerciseName: ex.name,
                             order: ex.order,
@@ -1576,7 +1593,7 @@ struct PlanDayEditor: View {
                 }
             }
         }
-        cache.boulderingExerciseNames = boulderSet
+        cache.attemptsExerciseNames = attemptsSet
         cache.catalogInfoByExerciseName = catalogInfoByExerciseName
 
         // 3) Parent plan (resolve once)

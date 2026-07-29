@@ -1165,9 +1165,17 @@ extension LogCSV {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
+            // Wall work logs as a climb rather than as a weighted session item. Name
+            // matching is all a CSV gives us — the column doesn't exist — but it only
+            // ever *fills* a blank shape, never overrules a real classification.
+            let isBoulder = trimmed.localizedLowercase.contains("boulder")
+
             // Already in the catalog: never overwrite, but fill anything still missing so
             // re-importing an improved CSV heals entries created by an earlier import.
             if let existing = existingByName[trimmed] {
+                if existing.shapeKey == nil, isBoulder {
+                    existing.shapeKey = ExerciseShape.attempts.rawValue
+                }
                 if existing.repsText == nil { existing.repsText = metricText(meta.reps) }
                 if existing.setsText == nil { existing.setsText = metricText(meta.sets) }
                 if existing.durationText == nil {
@@ -1181,7 +1189,6 @@ extension LogCSV {
                 continue
             }
 
-            let isBoulder = trimmed.localizedLowercase.contains("boulder")
             let activity = CatalogSeeder.ensureActivity(
                 isBoulder ? "Imported Bouldering" : "Imported",
                 in: context
@@ -1204,6 +1211,9 @@ extension LogCSV {
 
             if let created = type.exercises.first(where: { $0.name == trimmed }) {
                 existingByName[trimmed] = created
+                if isBoulder {
+                    created.shapeKey = ExerciseShape.attempts.rawValue
+                }
                 if let template = resolveTimer(for: trimmed, meta) {
                     created.timerTemplateId = template.id
                 }
