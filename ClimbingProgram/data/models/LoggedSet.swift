@@ -83,4 +83,15 @@ extension Array where Element == LoggedSet {
         guard !values.isEmpty else { return nil }
         return values.reduce(0, +) / Double(values.count)
     }
+
+    /// The log split into bouts for display. One group with a `nil` number when the
+    /// entries carry no set — hand-logged items, and anything written before nesting.
+    var groupedBySet: [(setNumber: Int?, efforts: [LoggedSet])] {
+        guard contains(where: { $0.setNumber != nil }) else {
+            return isEmpty ? [] : [(nil, self)]
+        }
+        return Dictionary(grouping: self) { $0.setNumber }
+            .sorted { ($0.key ?? .max) < ($1.key ?? .max) }
+            .map { (setNumber: $0.key, efforts: $0.value) }
+    }
 }

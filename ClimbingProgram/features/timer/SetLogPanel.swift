@@ -25,7 +25,7 @@ struct SetLogPanel: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            SetChipStrip(timerManager: timerManager, shape: sequence.shape)
+            SetChipStrip(timerManager: timerManager, sequence: sequence)
 
             if let editing {
                 if sequence.shape.takesLoad {
@@ -34,7 +34,10 @@ struct SetLogPanel: View {
                         index: timerManager.editingEffortIndex,
                         weightKg: editing.weightKg,
                         seedWeightKg: timerManager.seedWeightKg,
-                        status: timerManager.effortStatus(at: timerManager.editingEffortIndex)
+                        status: timerManager.effortStatus(at: timerManager.editingEffortIndex),
+                        caption: sequence.isNested
+                            ? "Rep \(timerManager.editingEffortIndex % sequence.effortsPerSet + 1)"
+                            : "Set \(timerManager.editingEffortIndex + 1)"
                     )
                 }
 
@@ -42,14 +45,14 @@ struct SetLogPanel: View {
                     timerManager: timerManager,
                     index: timerManager.editingEffortIndex,
                     rpe: editing.rpe,
-                    unit: sequence.shape.unitLabel.lowercased()
+                    unit: sequence.isNested ? "rep" : "set"
                 )
 
                 SetNoteField(
                     timerManager: timerManager,
                     index: timerManager.editingEffortIndex,
                     note: editing.note,
-                    unit: sequence.shape.unitLabel.lowercased()
+                    unit: sequence.isNested ? "rep" : "set"
                 )
             }
 
@@ -64,7 +67,7 @@ struct SetLogPanel: View {
                 .accessibilityLabel(
                     sequence.isFinalEffort
                         ? "Finish exercise"
-                        : "\(sequence.shape.unitLabel.capitalized) \(sequence.currentSet) done, start \(sequence.restAfterCurrentEffort / 60) minute rest"
+                        : "\(sequence.isNested ? "Rep \(sequence.currentRep)" : "Set \(sequence.currentSet)") done, start \(sequence.restAfterCurrentEffort / 60) minute rest"
                 )
 
                 // Stopping short of the prescription is a normal training decision — the
@@ -93,17 +96,37 @@ struct SetLogPanel: View {
 /// Wrapping also keeps every set on screen instead of hiding the later ones.
 struct SetChipStrip: View {
     let timerManager: TimerManager
-    let shape: ExerciseShape
+    let sequence: TimerManager.SetSequence
 
     var body: some View {
+        if sequence.isNested {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(1...sequence.totalSets, id: \.self) { set in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("SET \(set)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        chips(forSet: set)
+                    }
+                }
+            }
+        } else {
+            chips(forSet: nil)
+        }
+    }
+
+    /// The chips for one set, or all of them when the sequence is flat.
+    private func chips(forSet set: Int?) -> some View {
         FlowLayout(spacing: 8, rowSpacing: 8) {
-            ForEach(timerManager.effortLogs.indices, id: \.self) { index in
+            ForEach(indices(forSet: set), id: \.self) { index in
                 Button {
                     timerManager.selectEffort(at: index)
                 } label: {
                     SetChip(
-                        number: index + 1,
-                        unit: shape.unitLabel,
+                        number: sequence.isNested
+                            ? index % sequence.effortsPerSet + 1
+                            : index + 1,
+                        unit: sequence.isNested ? "REP" : "SET",
                         log: timerManager.effortLogs[index],
                         status: timerManager.effortStatus(at: index),
                         isSelected: index == timerManager.editingEffortIndex
@@ -111,6 +134,13 @@ struct SetChipStrip: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+    }
+
+    private func indices(forSet set: Int?) -> [Int] {
+        guard let set else { return Array(timerManager.effortLogs.indices) }
+        return timerManager.effortLogs.indices.filter {
+            timerManager.effortLogs[$0].setNumber == set
         }
     }
 }
@@ -174,6 +204,8 @@ struct SetWeightStepper: View {
     let weightKg: Double?
     let seedWeightKg: Double?
     let status: TimerManager.SetStatus
+    /// What this effort is called — "Set 3", or "Rep 2" inside a nested set.
+    let caption: String
 
     /// Small enough for fingerboard work, coarse enough to reach a working weight fast.
     private static let step: Double = 2.5
@@ -221,7 +253,7 @@ struct SetWeightStepper: View {
 
             VStack(alignment: .trailing, spacing: 6) {
                 HStack(spacing: 6) {
-                    Text("Set \(index + 1)")
+                    Text(caption)
                         .font(.subheadline)
                     if status == .done {
                         Image(systemName: "checkmark.circle.fill")
@@ -396,7 +428,7 @@ struct SetNavigationRow: View {
                 timerManager.previousEffort()
             }
             .labelStyle(.iconOnly)
-            .disabled(sequence.currentSet <= 1)
+            .disabled(sequence.currentEffort <= 1)
 
             Spacer()
 

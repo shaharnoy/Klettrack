@@ -39,11 +39,6 @@ enum ExerciseShape: String, CaseIterable {
         case .attempts: return "Attempts"
         }
     }
-
-    /// The noun for one unit of work, for the timer's set chips and navigation row.
-    var unitLabel: String {
-        self == .attempts ? "TRY" : "SET"
-    }
 }
 
 extension Exercise {

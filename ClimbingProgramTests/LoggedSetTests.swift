@@ -174,4 +174,24 @@ final class LoggedSetTests: ClimbingProgramTestSuite {
         XCTAssertEqual(decoded.rollup.weightKg, nil, "No weight means no weight, not zero")
         XCTAssertEqual(decoded.rollup.sets, 2)
     }
+
+    // MARK: - Grouping
+
+    /// A nested session reads back as bouts, not as a flat run of fifteen.
+    func testGroupingAPerEffortLogBySet() {
+        let sets = [
+            LoggedSet(rpe: 3, setNumber: 1),
+            LoggedSet(rpe: 4, setNumber: 1),
+            LoggedSet(rpe: 5, setNumber: 2)
+        ]
+        XCTAssertEqual(sets.groupedBySet.map(\.setNumber), [1, 2])
+        XCTAssertEqual(sets.groupedBySet.map { $0.efforts.count }, [2, 1])
+    }
+
+    /// Hand-logged and pre-nesting rows have no set number; they stay one flat group.
+    func testUngroupedLogsStayFlat() {
+        let sets = [LoggedSet(reps: 5, weightKg: 40), LoggedSet(reps: 5, weightKg: 40)]
+        XCTAssertEqual(sets.groupedBySet.count, 1)
+        XCTAssertNil(sets.groupedBySet.first?.setNumber)
+    }
 }

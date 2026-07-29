@@ -16,9 +16,22 @@ struct LoggedSetsRow: View {
 
     var body: some View {
         if !sets.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(sets.enumerated(), id: \.element.id) { index, set in
-                    LoggedSetLine(number: index + 1, set: set)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(sets.groupedBySet.enumerated()), id: \.offset) { _, group in
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let number = group.setNumber {
+                            Text("Set \(number)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        ForEach(Array(group.efforts.enumerated()), id: \.element.id) { index, set in
+                            LoggedSetLine(
+                                number: index + 1,
+                                unit: group.setNumber == nil ? "Set" : "Rep",
+                                set: set
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -27,11 +40,12 @@ struct LoggedSetsRow: View {
 
 struct LoggedSetLine: View {
     let number: Int
+    var unit: String = "Set"
     let set: LoggedSet
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("Set \(number)")
+            Text("\(unit) \(number)")
                 .foregroundStyle(.tertiary)
 
             if let reps = set.reps {

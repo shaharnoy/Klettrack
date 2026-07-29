@@ -93,7 +93,9 @@ struct TimerView: View {
                             SetNavigationRow(
                                 timerManager: timerManager,
                                 sequence: sequence,
-                                label: "\(sequence.shape.unitLabel) \(sequence.currentSet) OF \(sequence.totalSets)",
+                                label: sequence.isNested
+                                    ? "REP \(sequence.currentRep) OF \(sequence.effortsPerSet) · SET \(sequence.currentSet) OF \(sequence.totalSets)"
+                                    : "SET \(sequence.currentSet) OF \(sequence.totalSets)",
                                 labelColor: .primary
                             )
                             .timerCard()
@@ -267,19 +269,24 @@ struct TimerView: View {
     
     // MARK: - Rest between sets
     private func restSkipSection(_ sequence: TimerManager.SetSequence) -> some View {
-        let nextSet = min(sequence.currentSet + 1, sequence.totalSets)
+        // Mid-rest, currentEffort is still the one just finished, so this reads the rest
+        // that is actually running rather than the next one.
+        let crossingSets = sequence.isLastRepOfSet
+        let nextEffort = min(sequence.currentEffort + 1, sequence.totalEfforts)
+        let nextSet = (nextEffort - 1) / sequence.effortsPerSet + 1
+        let nextRep = (nextEffort - 1) % sequence.effortsPerSet + 1
 
-        // The total-timer display has no phase label of its own, so the nav row
-        // carries it. Forward here ends the rest early, which is what Skip rest did.
         return VStack(spacing: 6) {
             SetNavigationRow(
                 timerManager: timerManager,
                 sequence: sequence,
-                label: "REST",
-                labelColor: .orange
+                label: crossingSets && sequence.isNested ? "REST BETWEEN SETS" : "REST",
+                labelColor: crossingSets && sequence.isNested ? .purple : .orange
             )
 
-            Text("Next up: set \(nextSet) of \(sequence.totalSets)")
+            Text(sequence.isNested
+                 ? "Next up: rep \(nextRep) of \(sequence.effortsPerSet) · set \(nextSet) of \(sequence.totalSets)"
+                 : "Next up: set \(nextSet) of \(sequence.totalSets)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
