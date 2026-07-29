@@ -863,7 +863,14 @@ struct ExerciseEditSheet: View {
         let setRest = ExerciseTimerDefaults.parseSeconds(rest)
         let repRest = ExerciseTimerDefaults.parseSeconds(restBetweenReps)
         let setCount = ExerciseTimerDefaults.parseCount(sets, upperBound: true) ?? 1
-        let repCount = ExerciseTimerDefaults.parseCount(reps) ?? 1
+
+        // Mirrors plan(for:in:)'s attempts fallback: the seeded limit boulders carry
+        // their try count in the exercise name — "3–6 near-maximal boulders" — where
+        // nothing can read it, and without a count the sequence is a single tap.
+        var repCount = ExerciseTimerDefaults.parseCount(reps)
+        if shape == .attempts, repCount == nil, ExerciseTimerDefaults.parseCount(sets) == nil {
+            repCount = 10
+        }
 
         if shape == .attempts, (setRest ?? 0) > 0 || (repRest ?? 0) > 0 {
             return nestedSummary(sets: setCount, reps: repCount, setRest: setRest, repRest: repRest)
@@ -882,8 +889,9 @@ struct ExerciseEditSheet: View {
     }
 
     /// Says the two-level shape out loud, because a rest in the wrong box is invisible
-    /// until you are mid-session.
-    private func nestedSummary(sets: Int, reps: Int, setRest: Int?, repRest: Int?) -> String {
+    /// until you are mid-session. `reps` is nil exactly when `plan(for:in:)` would leave
+    /// it nil too — printing "1 reps" then would fabricate a number nobody entered.
+    private func nestedSummary(sets: Int, reps: Int?, setRest: Int?, repRest: Int?) -> String {
         // Mirrors plan(for:in:): with one set, a lone rest separates the reps.
         var betweenReps = repRest ?? 0
         var betweenSets = setRest ?? 0
@@ -892,11 +900,13 @@ struct ExerciseEditSheet: View {
             betweenSets = 0
         }
 
+        let setsPart = reps.map { "\(sets) sets of \($0) reps" } ?? "\(sets) sets"
+
         if betweenReps > 0 {
             let setPart = betweenSets > 0 ? ", \(readable(betweenSets)) between sets" : ""
-            return "\(sets) sets of \(reps) reps: \(readable(betweenReps)) between reps\(setPart)."
+            return "\(setsPart): \(readable(betweenReps)) between reps\(setPart)."
         }
-        return "\(sets) sets of \(reps) reps, \(readable(betweenSets)) between sets."
+        return "\(setsPart), \(readable(betweenSets)) between sets."
     }
 
     private func readable(_ seconds: Int) -> String {

@@ -603,6 +603,31 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         XCTAssertNil(manager.effortLogs[0].weightKg)
     }
 
+    /// Guards the failure mode directly: the sequence must not be over before it starts.
+    func testASeededLimitBoulderRunsMoreThanOneEffort() throws {
+        let activity = createTestActivity(name: "Bouldering")
+        let type = createTestTrainingType(activity: activity, name: "Maximum & contact Strength")
+        let exercise = Exercise(name: "3–6 near-maximal boulders", durationText: "30 min",
+                                restText: "3 min/asc", shapeKey: ExerciseShape.attempts.rawValue)
+        type.exercises.append(exercise)
+        try context.save()
+
+        guard case .repBased(let reps, let sets, let restBetweenReps, let restBetweenSets, _) =
+                try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        else { return XCTFail("Expected a rep-based plan") }
+
+        let manager = TimerManager()
+        manager.startSetSequence(reps: reps, sets: sets, restBetweenReps: restBetweenReps,
+                                 restBetweenSets: restBetweenSets, shape: .attempts)
+
+        XCTAssertEqual(manager.setSequence?.totalEfforts, 10)
+        XCTAssertFalse(manager.setSequence?.isFinalEffort ?? true,
+                       "The first try must not also be the last")
+        manager.confirmEffort()
+        XCTAssertEqual(manager.state, .running, "A rest runs after the first try")
+        manager.stop()
+    }
+
     // MARK: - Overall progress
     //
     // The bar reports the whole exercise, not the current rest. Each set plus the rest

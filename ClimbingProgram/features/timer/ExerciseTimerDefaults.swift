@@ -153,8 +153,17 @@ enum ExerciseTimerDefaults {
         // Not `?? 1`: no reps text means no rep count, and inventing one shows up as a
         // "1 reps" caption under every chip. `startSetSequence` takes `Int?` for the
         // same reason.
-        let reps = parseCount(exercise.repsText)
+        var reps = parseCount(exercise.repsText)
         let sets = parseCount(exercise.setsText, upperBound: true) ?? 1
+
+        // An attempts exercise that names no count anywhere still needs one, or the
+        // sequence is a single tap. The seeded limit boulders carry their count in the
+        // exercise name — "3–6 near-maximal boulders" — where nothing can read it. Ten
+        // tries is what this branch defaulted to before reps and sets were separated,
+        // and what the books prescribe for a limit session.
+        if exercise.shape == .attempts, reps == nil, parseCount(exercise.setsText) == nil {
+            reps = 10
+        }
 
         var restBetweenReps = parseSeconds(exercise.restBetweenRepsText) ?? 0
         var restBetweenSets = parseSeconds(exercise.restText) ?? 0

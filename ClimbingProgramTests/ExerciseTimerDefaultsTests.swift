@@ -191,7 +191,7 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         guard case .repBased(let reps, let sets, let restBetweenReps, let restBetweenSets, _) = plan else {
             return XCTFail("Expected a try counter, got \(plan)")
         }
-        XCTAssertNil(reps, "A try isn't a rep, and the app can't time one")
+        XCTAssertEqual(reps, 10, "No count anywhere — the books' default for a limit session")
         XCTAssertEqual(sets, 1, "No set count given — attempts default to one set, like every other shape")
         XCTAssertEqual(restBetweenReps, 180, "With one set, the lone rest separates the tries")
         XCTAssertEqual(restBetweenSets, 0)
@@ -249,6 +249,25 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
     func testAttemptsWithNoRestYieldNoPlan() {
         let exercise = makeExercise(name: "One Touch", shape: .attempts)
         XCTAssertNil(ExerciseTimerDefaults.plan(for: exercise, in: context))
+    }
+
+    /// The seeded limit boulders keep their try count in the exercise name, so nothing
+    /// parses it. Without a fallback the sequence is one tap and no rest ever runs.
+    func testAnAttemptsExerciseWithNoCountsStillGetsATryCount() throws {
+        let activity = createTestActivity(name: "Bouldering")
+        let type = createTestTrainingType(activity: activity, name: "Maximum & contact Strength")
+        let exercise = Exercise(name: "Work on 1–3 limit boulders", durationText: "60 min",
+                                restText: "3 min/asc", shapeKey: ExerciseShape.attempts.rawValue)
+        type.exercises.append(exercise)
+        try context.save()
+
+        guard case .repBased(let reps, let sets, let restBetweenReps, _, _) =
+                try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        else { return XCTFail("Expected a rep-based plan") }
+
+        XCTAssertEqual(reps, 10, "The books' default for a limit session")
+        XCTAssertEqual(sets, 1)
+        XCTAssertEqual(restBetweenReps, 180)
     }
 
     // MARK: - Precedence
