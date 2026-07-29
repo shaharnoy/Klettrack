@@ -315,7 +315,7 @@ struct TimerView: View {
         appliedExercise = exercise
 
         switch exercise.plan {
-        case .repBased(let reps, let sets, let restSeconds, let templateId):
+        case .repBased(let reps, let sets, let restBetweenReps, let restBetweenSets, let templateId):
             let session = TimerSession(
                 templateId: templateId,
                 planDayId: planDay?.id,
@@ -326,9 +326,8 @@ struct TimerView: View {
             timerManager.startSetSequence(
                 reps: reps,
                 sets: sets,
-                // Task 2 replaces this with the exercise's own rest-between-reps.
-                restBetweenReps: 0,
-                restBetweenSets: restSeconds,
+                restBetweenReps: restBetweenReps,
+                restBetweenSets: restBetweenSets,
                 seedWeightKg: exercise.shape.takesLoad
                     ? lastLoggedWeight(for: exercise.exerciseName, in: context)
                     : nil,
@@ -358,7 +357,7 @@ struct TimerView: View {
             return .init(loggedSets: performed, durationSeconds: elapsed)
         }
         switch exercise.plan {
-        case .repBased(let reps, let sets, _, _):
+        case .repBased(let reps, let sets, _, _, _):
             return .init(reps: reps, sets: sets, durationSeconds: elapsed)
         case .durationBased(let config, _):
             return .init(

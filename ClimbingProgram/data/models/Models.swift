@@ -66,6 +66,9 @@ final class Exercise {
     var durationText: String?
     var setsText: String?
     var restText: String?
+    /// Rest between the reps *inside* a set, where `restText` is the rest between sets.
+    /// nil ⇒ the reps run continuously, which is most exercises.
+    var restBetweenRepsText: String?
     var notes: String?
     /// Optional explicit timer template; nil falls back to guidance-derived timing.
     var timerTemplateId: UUID?
@@ -82,6 +85,7 @@ final class Exercise {
         durationText: String? = nil,
         setsText: String? = nil,
         restText: String? = nil,
+        restBetweenRepsText: String? = nil,
         notes: String? = nil,
         timerTemplateId: UUID? = nil,
         shapeKey: String? = nil
@@ -95,6 +99,7 @@ final class Exercise {
         self.durationText = durationText
         self.setsText = setsText
         self.restText = restText
+        self.restBetweenRepsText = restBetweenRepsText
         self.notes = notes
         self.timerTemplateId = timerTemplateId
         self.shapeKey = shapeKey

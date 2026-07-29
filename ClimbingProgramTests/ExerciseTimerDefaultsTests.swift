@@ -82,7 +82,7 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         type.exercises.append(exercise)
         try context.save()
 
-        guard case .repBased(let reps, let sets, _, _) =
+        guard case .repBased(let reps, let sets, _, _, _) =
                 try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
         else { return XCTFail("Expected a rep-based plan") }
 
@@ -141,12 +141,12 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         let exercise = makeExercise(name: "Weighted Pull-Ups", reps: "5", sets: "3–6", rest: "3 min")
 
         let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
-        guard case .repBased(let reps, let sets, let restSeconds, let templateId) = plan else {
+        guard case .repBased(let reps, let sets, _, let restBetweenSets, let templateId) = plan else {
             return XCTFail("Expected rep-based, got \(plan)")
         }
         XCTAssertEqual(reps, 5, "Rep ranges take the lower bound")
         XCTAssertEqual(sets, 6, "Set ranges prescribe the upper bound — you may stop short")
-        XCTAssertEqual(restSeconds, 180)
+        XCTAssertEqual(restBetweenSets, 180)
         XCTAssertNil(templateId)
     }
 
@@ -188,12 +188,13 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         )
 
         let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
-        guard case .repBased(let reps, let sets, let restSeconds, _) = plan else {
+        guard case .repBased(let reps, let sets, let restBetweenReps, let restBetweenSets, _) = plan else {
             return XCTFail("Expected a try counter, got \(plan)")
         }
         XCTAssertNil(reps, "A try isn't a rep, and the app can't time one")
-        XCTAssertEqual(sets, 10, "The books' default is 10 tries across 2–3 problems")
-        XCTAssertEqual(restSeconds, 180)
+        XCTAssertEqual(sets, 1, "No set count given — attempts default to one set, like every other shape")
+        XCTAssertEqual(restBetweenReps, 180, "With one set, the lone rest separates the tries")
+        XCTAssertEqual(restBetweenSets, 0)
     }
 
     /// The same guidance on a loaded exercise must keep its old duration-based timer.
@@ -211,18 +212,21 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         }
     }
 
-    func testAttemptsReadTheTryCountFromReps() throws {
+    /// The try count comes from the Sets field's upper bound, same as every other shape —
+    /// not from Reps, which is what the conflation bug did.
+    func testAttemptsReadTheTryCountFromSets() throws {
         let exercise = makeExercise(
             name: "Bouldering", reps: "3 ascents", sets: "3–10 problems",
             rest: "2 min/asc", shape: .attempts
         )
 
         let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
-        guard case .repBased(_, let sets, let restSeconds, _) = plan else {
+        guard case .repBased(let reps, let sets, _, let restBetweenSets, _) = plan else {
             return XCTFail("Expected a try counter, got \(plan)")
         }
-        XCTAssertEqual(sets, 3)
-        XCTAssertEqual(restSeconds, 120)
+        XCTAssertEqual(reps, 3)
+        XCTAssertEqual(sets, 10, "The Sets field's upper bound, not the Reps field")
+        XCTAssertEqual(restBetweenSets, 120)
     }
 
     /// "on the minute" doesn't parse, which used to leave Classic 4×4 with no work
@@ -234,11 +238,11 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         )
 
         let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
-        guard case .repBased(_, let sets, let restSeconds, _) = plan else {
+        guard case .repBased(_, let sets, _, let restBetweenSets, _) = plan else {
             return XCTFail("Expected a try counter, got \(plan)")
         }
         XCTAssertEqual(sets, 4)
-        XCTAssertEqual(restSeconds, 240)
+        XCTAssertEqual(restBetweenSets, 240)
     }
 
     /// A skill drill has no guidance at all — it must still yield no timer.
@@ -277,12 +281,12 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         try context.save()
 
         let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
-        guard case .repBased(let reps, let sets, let restSeconds, let templateId) = plan else {
+        guard case .repBased(let reps, let sets, _, let restBetweenSets, let templateId) = plan else {
             return XCTFail("Expected rep-based, got \(plan)")
         }
         XCTAssertEqual(reps, 6)
         XCTAssertEqual(sets, 4)
-        XCTAssertEqual(restSeconds, 150)
+        XCTAssertEqual(restBetweenSets, 150)
         XCTAssertEqual(templateId, template.id)
     }
 
@@ -298,10 +302,93 @@ final class ExerciseTimerDefaultsTests: ClimbingProgramTestSuite {
         try context.save()
 
         let plan = try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
-        guard case .repBased(_, _, let restSeconds, _) = plan else {
+        guard case .repBased(_, _, _, let restBetweenSets, _) = plan else {
             return XCTFail("Expected the derived rep-based plan, got \(plan)")
         }
-        XCTAssertEqual(restSeconds, 180)
+        XCTAssertEqual(restBetweenSets, 180)
+    }
+
+    // MARK: - Two rests
+
+    func testARepRestMakesThePlanNested() throws {
+        let activity = createTestActivity(name: "Bouldering")
+        let type = createTestTrainingType(activity: activity, name: "Limit")
+        let exercise = Exercise(name: "Boulder Limit Session", repsText: "3", setsText: "5",
+                                restText: "3 min", shapeKey: ExerciseShape.attempts.rawValue)
+        exercise.restBetweenRepsText = "30 sec"
+        type.exercises.append(exercise)
+        try context.save()
+
+        guard case .repBased(let reps, let sets, let restReps, let restSets, _) =
+                try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        else { return XCTFail("Expected a rep-based plan") }
+
+        XCTAssertEqual(reps, 3, "Reps mean reps")
+        XCTAssertEqual(sets, 5, "Sets mean sets — not read from the reps field")
+        XCTAssertEqual(restReps, 30)
+        XCTAssertEqual(restSets, 180)
+    }
+
+    /// The conflation this whole change is about: the attempts branch used to read the
+    /// Reps field as the set count, so 5 sets x 3 reps ran three sets and lost the five.
+    func testAttemptsNoLongerReadRepsAsTheSetCount() throws {
+        let activity = createTestActivity(name: "Bouldering")
+        let type = createTestTrainingType(activity: activity, name: "Limit")
+        let exercise = Exercise(name: "Boulder Campusing", repsText: "3", setsText: "5",
+                                restText: "3 min", shapeKey: ExerciseShape.attempts.rawValue)
+        type.exercises.append(exercise)
+        try context.save()
+
+        guard case .repBased(let reps, let sets, _, _, _) =
+                try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        else { return XCTFail("Expected a rep-based plan") }
+
+        XCTAssertEqual(sets, 5)
+        XCTAssertEqual(reps, 3)
+    }
+
+    /// "3 ascents · 3 min/asc" is one bout of three goes, three minutes apart. With a
+    /// single set there are no set boundaries, so a lone rest can only mean between reps.
+    func testALoneCountBecomesRepsInOneSetAndTheRestGoesBetweenThem() throws {
+        let activity = createTestActivity(name: "Bouldering")
+        let type = createTestTrainingType(activity: activity, name: "Limit")
+        let exercise = Exercise(name: "Limit Boulders", repsText: "3 ascents",
+                                durationText: "30 min", restText: "3 min/asc",
+                                shapeKey: ExerciseShape.attempts.rawValue)
+        type.exercises.append(exercise)
+        try context.save()
+
+        guard case .repBased(let reps, let sets, let restReps, let restSets, _) =
+                try XCTUnwrap(ExerciseTimerDefaults.plan(for: exercise, in: context))
+        else { return XCTFail("Expected rest to beat the 30 min session budget") }
+
+        XCTAssertEqual(reps, 3)
+        XCTAssertEqual(sets, 1)
+        XCTAssertEqual(restReps, 180, "The lone rest separates the goes")
+        XCTAssertEqual(restSets, 0)
+    }
+
+    /// A rep-based template already carries both rests; it was discarding one of them.
+    func testARepBasedTemplateKeepsItsIntervalRest() throws {
+        let template = TimerTemplate(name: "Limit bouts", isRepeating: true,
+                                     repeatCount: 5, restTimeBetweenIntervals: 180,
+                                     repsPerSet: 3)
+        template.intervals.append(
+            TimerInterval(name: "Go", workTimeSeconds: 0, restTimeSeconds: 30,
+                          repetitions: 3, order: 0)
+        )
+        context.insert(template)
+        try context.save()
+
+        guard case .repBased(let reps, let sets, let restReps, let restSets, let id) =
+                ExerciseTimerDefaults.plan(from: template)
+        else { return XCTFail("Expected a rep-based plan") }
+
+        XCTAssertEqual(reps, 3)
+        XCTAssertEqual(sets, 5)
+        XCTAssertEqual(restReps, 30, "The interval rest is the rest between reps")
+        XCTAssertEqual(restSets, 180)
+        XCTAssertEqual(id, template.id)
     }
 
     // MARK: - Seed linking

@@ -263,6 +263,7 @@ struct TrainingTypeDetailView: View {
     @State private var draftSets = ""
     @State private var draftDuration = ""
     @State private var draftRest = ""
+    @State private var draftRestBetweenReps = ""
     @State private var draftNotes = ""
     @State private var draftDescription = ""
     @State private var draftAbout = ""
@@ -442,6 +443,7 @@ struct TrainingTypeDetailView: View {
                     sets: $draftSets,
                     duration: $draftDuration,
                     rest: $draftRest,
+                    restBetweenReps: $draftRestBetweenReps,
                     notes: $draftNotes,
                     description: $draftDescription,
                     timerTemplateId: $draftTimerTemplateId,
@@ -462,6 +464,7 @@ struct TrainingTypeDetailView: View {
                         timerTemplateId: draftTimerTemplateId,
                         shapeKey: draftShape.rawValue
                     )
+                    ex.restBetweenRepsText = draftRestBetweenReps.isEmpty ? nil : draftRestBetweenReps
                     trainingType.exercises.append(ex)
                     try? context.save()
                 }
@@ -478,6 +481,7 @@ struct TrainingTypeDetailView: View {
                 sets: $draftSets,
                 duration: $draftDuration,
                 rest: $draftRest,
+                restBetweenReps: $draftRestBetweenReps,
                 notes: $draftNotes,
                 description: $draftDescription,
                 timerTemplateId: $draftTimerTemplateId,
@@ -493,6 +497,7 @@ struct TrainingTypeDetailView: View {
                 // duration whenever sets happened to be empty.
                 ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
+                ex.restBetweenRepsText = draftRestBetweenReps.isEmpty ? nil : draftRestBetweenReps
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
                 ex.timerTemplateId = draftTimerTemplateId
                 // Always written, so nil keeps meaning "never classified".
@@ -503,7 +508,7 @@ struct TrainingTypeDetailView: View {
     }
 
     private func startNewExercise() {
-        draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDuration = "";
+        draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftRestBetweenReps = ""; draftNotes = ""; draftDuration = "";
         draftTimerTemplateId = nil
         draftShape = .weighted
         modalRoute = .newExercise
@@ -517,6 +522,7 @@ struct TrainingTypeDetailView: View {
         draftSets = ex.setsText ?? ""
         draftDuration = ex.durationText ?? ""
         draftRest = ex.restText ?? ""
+        draftRestBetweenReps = ex.restBetweenRepsText ?? ""
         draftNotes = ex.notes ?? ""
         draftTimerTemplateId = ex.timerTemplateId
         editingExercise = ex
@@ -546,6 +552,7 @@ struct CombinationDetailView: View {
     @State private var draftSets = ""
     @State private var draftDuration = ""
     @State private var draftRest = ""
+    @State private var draftRestBetweenReps = ""
     @State private var draftNotes = ""
     @State private var draftDesc = ""
     @State private var draftAbout = ""
@@ -634,6 +641,7 @@ struct CombinationDetailView: View {
                     sets: $draftSets,
                     duration: $draftDuration,
                     rest: $draftRest,
+                    restBetweenReps: $draftRestBetweenReps,
                     notes: $draftNotes,
                     description: $draftDesc,
                     timerTemplateId: $draftTimerTemplateId,
@@ -654,6 +662,7 @@ struct CombinationDetailView: View {
                         timerTemplateId: draftTimerTemplateId,
                         shapeKey: draftShape.rawValue
                     )
+                    ex.restBetweenRepsText = draftRestBetweenReps.isEmpty ? nil : draftRestBetweenReps
                     combo.exercises.append(ex)
                     try? context.save()
                 }
@@ -670,6 +679,7 @@ struct CombinationDetailView: View {
                 sets: $draftSets,
                 duration: $draftDuration,
                 rest: $draftRest,
+                restBetweenReps: $draftRestBetweenReps,
                 notes: $draftNotes,
                 description: $draftDesc,
                 timerTemplateId: $draftTimerTemplateId,
@@ -683,6 +693,7 @@ struct CombinationDetailView: View {
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
                 ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
+                ex.restBetweenRepsText = draftRestBetweenReps.isEmpty ? nil : draftRestBetweenReps
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
                 ex.timerTemplateId = draftTimerTemplateId
                 // Always written, so nil keeps meaning "never classified".
@@ -693,7 +704,7 @@ struct CombinationDetailView: View {
     }
 
     private func startNewExercise() {
-        draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDesc = ""; draftDuration = "";
+        draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftRestBetweenReps = ""; draftNotes = ""; draftDesc = ""; draftDuration = "";
         draftTimerTemplateId = nil
         // An exercise added under a bouldering combination is wall work by default.
         draftShape = .attempts
@@ -708,6 +719,7 @@ struct CombinationDetailView: View {
         draftSets = ex.setsText ?? ""
         draftDuration = ex.durationText ?? ""
         draftRest = ex.restText ?? ""
+        draftRestBetweenReps = ex.restBetweenRepsText ?? ""
         draftNotes = ex.notes ?? ""
         draftTimerTemplateId = ex.timerTemplateId
         editingExercise = ex
@@ -834,6 +846,7 @@ struct ExerciseEditSheet: View {
     @Binding var sets: String
     @Binding var duration: String
     @Binding var rest: String
+    @Binding var restBetweenReps: String
     @Binding var notes: String
     @Binding var description: String
     @Binding var timerTemplateId: UUID?
@@ -847,29 +860,43 @@ struct ExerciseEditSheet: View {
 
     /// What the timer button will do if no template is attached.
     private var derivedTimerSummary: String {
-        let restSeconds = ExerciseTimerDefaults.parseSeconds(rest)
+        let setRest = ExerciseTimerDefaults.parseSeconds(rest)
+        let repRest = ExerciseTimerDefaults.parseSeconds(restBetweenReps)
+        let setCount = ExerciseTimerDefaults.parseCount(sets, upperBound: true) ?? 1
+        let repCount = ExerciseTimerDefaults.parseCount(reps) ?? 1
 
-        // Mirrors the precedence in `ExerciseTimerDefaults.plan(for:in:)`, where an
-        // attempts exercise takes its rest over its duration.
-        if shape == .attempts, let restSeconds, restSeconds > 0 {
-            let tries = ExerciseTimerDefaults.parseCount(reps)
-                ?? ExerciseTimerDefaults.parseCount(sets)
-                ?? 10
-            return "Attempts: \(tries) tries, \(readable(restSeconds)) rest between each."
+        if shape == .attempts, (setRest ?? 0) > 0 || (repRest ?? 0) > 0 {
+            return nestedSummary(sets: setCount, reps: repCount, setRest: setRest, repRest: repRest)
         }
 
         if let work = ExerciseTimerDefaults.parseSeconds(duration), work > 0 {
-            let restPart: String = restSeconds.map { ", \(readable($0)) rest" } ?? ""
+            let restPart: String = setRest.map { ", \(readable($0)) rest" } ?? ""
             return "Duration-based: \(readable(work)) work\(restPart)."
         }
 
-        if let restSeconds, restSeconds > 0 {
-            let setCount: Int = ExerciseTimerDefaults.parseCount(sets) ?? 1
-            let repPart: String = ExerciseTimerDefaults.parseCount(reps).map { "\($0) reps" } ?? "each set"
-            return "Rep-based: \(repPart) × \(setCount) sets, \(readable(restSeconds)) rest between sets."
+        if (setRest ?? 0) > 0 || (repRest ?? 0) > 0 {
+            return nestedSummary(sets: setCount, reps: repCount, setRest: setRest, repRest: repRest)
         }
 
-        return "No timer — add a duration or rest above, or attach a template."
+        return "No timer can be derived — attach a template, or add a duration or rest."
+    }
+
+    /// Says the two-level shape out loud, because a rest in the wrong box is invisible
+    /// until you are mid-session.
+    private func nestedSummary(sets: Int, reps: Int, setRest: Int?, repRest: Int?) -> String {
+        // Mirrors plan(for:in:): with one set, a lone rest separates the reps.
+        var betweenReps = repRest ?? 0
+        var betweenSets = setRest ?? 0
+        if sets == 1, betweenReps == 0, betweenSets > 0 {
+            betweenReps = betweenSets
+            betweenSets = 0
+        }
+
+        if betweenReps > 0 {
+            let setPart = betweenSets > 0 ? ", \(readable(betweenSets)) between sets" : ""
+            return "\(sets) sets of \(reps) reps: \(readable(betweenReps)) between reps\(setPart)."
+        }
+        return "\(sets) sets of \(reps) reps, \(readable(betweenSets)) between sets."
     }
 
     private func readable(_ seconds: Int) -> String {
@@ -953,6 +980,13 @@ struct ExerciseEditSheet: View {
                         Label("Rest", systemImage: "hourglass")
                     }
                     .textCase(nil)
+
+                    LabeledContent {
+                        TextField("e.g. 30 sec", text: $restBetweenReps)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Text("Rest between reps")
+                    }
                 } header: {
                     Text("DISPLAY FIELDS")
                 } footer: {

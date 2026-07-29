@@ -27,7 +27,7 @@ final class TimerAppStateTests: XCTestCase {
             planDayDate: Date(),
             planId: UUID(),
             planName: "Strength Block",
-            plan: .repBased(reps: 7, sets: 4, restSeconds: 180, templateId: nil)
+            plan: .repBased(reps: 7, sets: 4, restBetweenReps: 0, restBetweenSets: 180, templateId: nil)
         )
 
         state.switchToTimer(exercise: context)

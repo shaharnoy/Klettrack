@@ -350,7 +350,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         XCTAssertEqual(imported.timerTemplateId, template.id)
 
         // And it classifies the way the timer expects.
-        guard case .repBased(let reps, let sets, let rest, _)? =
+        guard case .repBased(let reps, let sets, _, let rest, _)? =
                 ExerciseTimerDefaults.plan(for: imported, in: context) else {
             return XCTFail("Imported exercise should be rep-based")
         }
@@ -435,7 +435,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         let imported = try XCTUnwrap(exercise(named: "Pull-ups Weighted"))
         XCTAssertEqual(imported.restText, "3 min")
 
-        guard case .repBased(let reps, let sets, let restSeconds, _)? =
+        guard case .repBased(let reps, let sets, _, let restSeconds, _)? =
                 ExerciseTimerDefaults.plan(for: imported, in: context) else {
             return XCTFail("An imported exercise with rest should be rep-based")
         }
@@ -500,14 +500,14 @@ class ImportExportTests: ClimbingProgramTestSuite {
         }
 
         // Derived from "5 sec" — the seconds unit must not be read as minutes.
-        guard case .repBased(let reps, let sets, let rest, _) = try plan("DEBUG Rep 5s") else {
+        guard case .repBased(let reps, let sets, _, let rest, _) = try plan("DEBUG Rep 5s") else {
             return XCTFail("DEBUG Rep 5s should be rep-based")
         }
         XCTAssertEqual((reps, sets, rest).0, 3)
         XCTAssertEqual(sets, 3)
         XCTAssertEqual(rest, 5, "5 sec is five seconds, not five minutes")
 
-        guard case .repBased(let specReps, let specSets, let specRest, let specTemplate) = try plan("DEBUG Rep Spec 8s") else {
+        guard case .repBased(let specReps, let specSets, _, let specRest, let specTemplate) = try plan("DEBUG Rep Spec 8s") else {
             return XCTFail("DEBUG Rep Spec 8s should be rep-based")
         }
         XCTAssertEqual(specReps, 3)
@@ -523,7 +523,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         XCTAssertEqual(interval.restTimeSeconds, 5)
         XCTAssertEqual(interval.repetitions, 3)
 
-        guard case .repBased(_, let singleSets, _, _) = try plan("DEBUG Single Set") else {
+        guard case .repBased(_, let singleSets, _, _, _) = try plan("DEBUG Single Set") else {
             return XCTFail("DEBUG Single Set should be rep-based")
         }
         XCTAssertEqual(singleSets, 1, "Finishes on the first confirmation, no rest ever runs")

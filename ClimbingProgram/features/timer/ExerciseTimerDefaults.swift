@@ -15,11 +15,16 @@ import SwiftData
 /// and the rest runs.
 enum ExerciseTimerPlan: Equatable {
     case durationBased(TimerConfiguration, templateId: UUID?)
-    case repBased(reps: Int?, sets: Int, restSeconds: Int, templateId: UUID?)
+    /// `restBetweenReps` of 0 means the reps run continuously and a set is one effort.
+    ///
+    /// `reps` stays optional: an exercise with no reps text genuinely has no rep count,
+    /// and `.attempts` never had one — "a try isn't a rep". Defaulting it to 1 fabricates
+    /// a number the chips then render as "1 reps".
+    case repBased(reps: Int?, sets: Int, restBetweenReps: Int, restBetweenSets: Int, templateId: UUID?)
 
     var templateId: UUID? {
         switch self {
-        case .durationBased(_, let id), .repBased(_, _, _, let id): return id
+        case .durationBased(_, let id), .repBased(_, _, _, _, let id): return id
         }
     }
 }
@@ -145,25 +150,36 @@ enum ExerciseTimerDefaults {
             return plan(from: template)
         }
 
-        let rest = parseSeconds(exercise.restText)
+        // Not `?? 1`: no reps text means no rep count, and inventing one shows up as a
+        // "1 reps" caption under every chip. `startSetSequence` takes `Int?` for the
+        // same reason.
+        let reps = parseCount(exercise.repsText)
+        let sets = parseCount(exercise.setsText, upperBound: true) ?? 1
 
-        // Attempts: rest between tries beats the duration, which is a session budget
-        // rather than a work interval. A limit boulder is seeded with both — "30 min"
-        // and "3 min/asc" — and counting down 30 blind minutes tells you nothing,
-        // where a try counter with a rest between attempts is the actual protocol.
-        if exercise.shape == .attempts, let rest, rest > 0 {
-            return .repBased(
-                // A try isn't a rep, and the app can't time one.
-                reps: nil,
-                // "3 ascents" / "3–6 boulders" is the try count; the books' default
-                // for a limit session is 10 tries across two or three problems. Both
-                // texts count tries here, so both take the top of their range.
-                sets: parseCount(exercise.repsText, upperBound: true)
-                    ?? parseCount(exercise.setsText, upperBound: true)
-                    ?? 10,
-                restSeconds: rest,
-                templateId: nil
-            )
+        var restBetweenReps = parseSeconds(exercise.restBetweenRepsText) ?? 0
+        var restBetweenSets = parseSeconds(exercise.restText) ?? 0
+
+        // With a single set there are no set boundaries, so a lone rest can only be the
+        // rest between reps. This is what makes "3 ascents · 3 min/asc" read as one bout
+        // of three goes three minutes apart, rather than three goes with no rest at all.
+        if sets == 1, restBetweenReps == 0, restBetweenSets > 0 {
+            restBetweenReps = restBetweenSets
+            restBetweenSets = 0
+        }
+
+        let hasRest = restBetweenReps > 0 || restBetweenSets > 0
+
+        func repBasedPlan() -> ExerciseTimerPlan {
+            .repBased(reps: reps, sets: sets, restBetweenReps: restBetweenReps,
+                      restBetweenSets: restBetweenSets, templateId: nil)
+        }
+
+        // Attempts: a rest beats the duration, which is a session budget rather than a
+        // work interval. A limit boulder is seeded with both — "30 min" and "3 min/asc" —
+        // and counting down 30 blind minutes tells you nothing. Only the precedence is
+        // special here; the counts above are read the same way for every shape.
+        if exercise.shape == .attempts, hasRest {
+            return repBasedPlan()
         }
 
         // Duration-based: the work itself is timed.
@@ -174,21 +190,14 @@ enum ExerciseTimerDefaults {
             let interval = IntervalConfiguration(
                 name: exercise.name,
                 workTimeSeconds: work,
-                restTimeSeconds: rest ?? 0,
+                restTimeSeconds: restBetweenSets > 0 ? restBetweenSets : restBetweenReps,
                 repetitions: max(1, repetitions)
             )
             return .durationBased(TimerConfiguration(intervals: [interval]), templateId: nil)
         }
 
-        // Rep-based: nothing to time except the rest between sets.
-        if let rest, rest > 0 {
-            return .repBased(
-                reps: parseCount(exercise.repsText),
-                sets: max(1, parseCount(exercise.setsText, upperBound: true) ?? 1),
-                restSeconds: rest,
-                templateId: nil
-            )
-        }
+        // Rep-based: nothing to time except the rests.
+        if hasRest { return repBasedPlan() }
 
         return nil
     }
@@ -197,9 +206,12 @@ enum ExerciseTimerDefaults {
     static func plan(from template: TimerTemplate) -> ExerciseTimerPlan {
         if let reps = template.repsPerSet {
             return .repBased(
-                reps: reps,
+                reps: max(1, reps),
                 sets: max(1, template.repeatCount ?? 1),
-                restSeconds: template.restTimeBetweenIntervals ?? 0,
+                // The template has carried this all along — it was simply thrown away.
+                restBetweenReps: template.intervals.sorted { $0.order < $1.order }
+                    .first?.restTimeSeconds ?? 0,
+                restBetweenSets: template.restTimeBetweenIntervals ?? 0,
                 templateId: template.id
             )
         }
