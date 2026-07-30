@@ -438,6 +438,42 @@ final class SetSequenceTests: ClimbingProgramTestSuite {
         XCTAssertEqual(manager.performedEffortLogs.count, 3, "The log survives completion")
     }
 
+    /// "Finish here" is offered during a rest, which is where the decision to stop actually
+    /// gets made. Finishing mid-rest must complete cleanly and keep the sets already banked.
+    func testFinishingDuringARestCompletesAndKeepsWhatWasDone() {
+        let clock = StubClock()
+        let manager = TimerManager(clock: clock)
+        let session = makeSession()
+        manager.startSetSequence(reps: 5, sets: 5, restBetweenReps: 0, restBetweenSets: 180, session: session)
+
+        clock.advance(40)
+        manager.confirmEffort()          // set 1 done, the 180s rest is now running
+        XCTAssertFalse(manager.isAwaitingUser, "Precondition: mid-rest, not at a prompt")
+        clock.advance(30)
+
+        manager.finishSetSequence()
+
+        XCTAssertEqual(manager.state, .completed)
+        XCTAssertEqual(session.completedIntervals, 1, "The set that was done still counts")
+        XCTAssertEqual(manager.performedEffortLogs.count, 1)
+    }
+
+    /// Finishing before confirming anything is allowed — but it must not claim a set.
+    /// The log sheet reads `performedEffortLogs`, so it has to come back empty.
+    func testFinishingBeforeAnySetIsConfirmedLogsNothing() {
+        let manager = makeManager()
+        let session = makeSession()
+        manager.startSetSequence(reps: 5, sets: 5, restBetweenReps: 0, restBetweenSets: 180, session: session)
+
+        manager.finishSetSequence()
+
+        XCTAssertEqual(manager.state, .completed)
+        XCTAssertEqual(manager.performedEffortCount, 0)
+        XCTAssertTrue(manager.performedEffortLogs.isEmpty, "Nothing was done, so nothing is logged")
+        XCTAssertEqual(session.completedIntervals, 0)
+        XCTAssertFalse(manager.effortLogs.isEmpty, "The seeded rows survive, marking that it ran")
+    }
+
     /// Skipping with the chevron is not doing the set.
     func testSkippingASetDoesNotCountItAsPerformed() {
         let manager = makeManager()

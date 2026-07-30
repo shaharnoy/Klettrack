@@ -21,6 +21,7 @@ struct TimerView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(TimerAppState.self) private var timerAppState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     // Keep shared timer manager alive in view state and observe via @Observable tracking
     @State private var sharedTimerManager = SharedTimerManager.shared
@@ -93,15 +94,12 @@ struct TimerView: View {
                             SetNavigationRow(
                                 timerManager: timerManager,
                                 sequence: sequence,
-                                // The set sits on its own line rather than beside the rep:
-                                // with four controls flanking it, one string wrapped
-                                // mid-phrase. The chip strip below repeats the set anyway.
+                                // Only the rep: with four controls flanking it, naming the set
+                                // here too wrapped mid-phrase, and the Sets card below says
+                                // which set this is.
                                 label: sequence.isNested
                                     ? "REP \(sequence.currentRep) OF \(sequence.effortsPerSet)"
                                     : "SET \(sequence.currentSet) OF \(sequence.totalSets)",
-                                sublabel: sequence.isNested
-                                    ? "SET \(sequence.currentSet) OF \(sequence.totalSets)"
-                                    : nil,
                                 labelColor: .primary
                             )
                             .timerCard()
@@ -369,6 +367,13 @@ struct TimerView: View {
         if !performed.isEmpty {
             return .init(loggedSets: performed, durationSeconds: elapsed)
         }
+        // A sequence that ran and confirmed nothing is not the same as one that never ran.
+        // `effortLogs` survives finishing, so its presence is the record that the athlete
+        // was here — and prefilling the plan's counts on top of that claims exactly the work
+        // the line above refuses to claim. Reachable from "Finish here" on the first effort.
+        if !timerManager.effortLogs.isEmpty {
+            return .init(reps: nil, sets: nil, durationSeconds: elapsed)
+        }
         switch exercise.plan {
         case .repBased(let reps, let sets, _, _, _):
             return .init(reps: reps, sets: sets, durationSeconds: elapsed)
@@ -540,10 +545,12 @@ struct TimerView: View {
             
             // Enhanced interval progress display
             if let config = timerManager.configuration, config.hasIntervals {
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
+                // One column at an accessibility type size, where two cards' worth of
+                // "Sets 1 / 4" no longer fits across. Matches the set log panel's rule.
+                LazyVGrid(columns: dynamicTypeSize.isAccessibilitySize
+                    ? [GridItem(.flexible())]
+                    : [GridItem(.flexible()), GridItem(.flexible())],
+                    spacing: 12) {
                     // Iteration Card
                     if config.isRepeating, let repeatCount = config.repeatCount, repeatCount > 1 {
                         // Clamp current ≤ total and ensure total ≥ 1
@@ -1386,7 +1393,10 @@ struct ProgressCard: View {
     let total: Int
     let color: Color
     let icon: String
-    
+    /// Replaces the "current / total" readout where the number is a target rather than a
+    /// position — a flat set's rep count is prescribed, and the timer never counts through it.
+    var detail: String? = nil
+
     var body: some View {
         VStack(spacing: 4) {
             HStack {
@@ -1400,11 +1410,11 @@ struct ProgressCard: View {
                 
                 Spacer()
                 
-                Text("\(current) / \(total)")
+                Text(detail ?? "\(current) / \(total)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            
+
                 let safeTotal = max(1, total)
                 let safeCurrent = min(max(0, current), safeTotal)
                 ProgressView(value: Double(safeCurrent), total: Double(safeTotal))
@@ -1412,7 +1422,11 @@ struct ProgressCard: View {
                 .scaleEffect(y: 1.5)
         }
         .padding(16)
-        .frame(width: 160, height: 80) // Fixed size for consistent appearance
+        // Fills whatever column or stack it is given rather than a fixed 160: two of those
+        // plus spacing overflow the content width of a 393pt phone, and they have to fit the
+        // narrower set log card too. `minHeight` keeps the pair even without clipping the
+        // readout at large Dynamic Type sizes.
+        .frame(maxWidth: .infinity, minHeight: 80)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)

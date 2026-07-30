@@ -7,15 +7,33 @@
 
 import SwiftUI
 
-/// The card under a rep-based timer: a chip per set, and the controls for whichever
-/// one is selected.
+/// The card under a rep-based timer: where you are in the exercise, and — behind a tap —
+/// a chip per set with the controls for whichever one is selected.
 ///
 /// Visible both while waiting on a set and while resting after one, so a weight can
 /// be corrected or the next set dialled in without leaving the screen. The Done
-/// button only appears when a set is actually waiting.
+/// button only appears when a set is actually waiting, and never folds away with the
+/// rest: it is the one thing the screen is for.
 struct SetLogPanel: View {
     let timerManager: TimerManager
     let sequence: TimerManager.SetSequence
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Folded away while a set waits, open while resting — see `body`'s `onChange`. Standing
+    /// on the bar about to pull, the only question is "which one is this?"; what you lifted
+    /// and how hard it felt are answerable only afterwards, which is exactly the rest.
+    @State private var isExpanded: Bool
+
+    /// Seeded from the timer rather than defaulted to collapsed, because this view is built
+    /// from scratch every time the Timer tab is selected — the root is a `switch`, not a
+    /// `TabView`, so nothing survives leaving the tab. Defaulting would shut the log on
+    /// returning mid-rest, and `onChange` would never fire to reopen it: nothing changed.
+    init(timerManager: TimerManager, sequence: TimerManager.SetSequence) {
+        self.timerManager = timerManager
+        self.sequence = sequence
+        _isExpanded = State(initialValue: !timerManager.isAwaitingUser)
+    }
 
     private var editing: LoggedSet? {
         timerManager.effortLogs.indices.contains(timerManager.editingEffortIndex)
@@ -25,35 +43,46 @@ struct SetLogPanel: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            SetChipStrip(timerManager: timerManager, sequence: sequence)
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                summary
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(isExpanded ? "Hide the set log" : "Show the set log")
 
-            if let editing {
-                if sequence.shape.takesLoad {
-                    SetWeightStepper(
+            if isExpanded {
+                SetChipStrip(timerManager: timerManager, sequence: sequence)
+
+                if let editing {
+                    if sequence.shape.takesLoad {
+                        SetWeightStepper(
+                            timerManager: timerManager,
+                            index: timerManager.editingEffortIndex,
+                            weightKg: editing.weightKg,
+                            seedWeightKg: timerManager.seedWeightKg,
+                            status: timerManager.effortStatus(at: timerManager.editingEffortIndex),
+                            caption: sequence.isNested
+                                ? "Rep \(timerManager.editingEffortIndex % sequence.effortsPerSet + 1)"
+                                : "Set \(timerManager.editingEffortIndex + 1)"
+                        )
+                    }
+
+                    SetEffortBar(
                         timerManager: timerManager,
                         index: timerManager.editingEffortIndex,
-                        weightKg: editing.weightKg,
-                        seedWeightKg: timerManager.seedWeightKg,
-                        status: timerManager.effortStatus(at: timerManager.editingEffortIndex),
-                        caption: sequence.isNested
-                            ? "Rep \(timerManager.editingEffortIndex % sequence.effortsPerSet + 1)"
-                            : "Set \(timerManager.editingEffortIndex + 1)"
+                        rpe: editing.rpe,
+                        unit: sequence.isNested ? "rep" : "set"
+                    )
+
+                    SetNoteField(
+                        timerManager: timerManager,
+                        index: timerManager.editingEffortIndex,
+                        note: editing.note,
+                        unit: sequence.isNested ? "rep" : "set"
                     )
                 }
-
-                SetEffortBar(
-                    timerManager: timerManager,
-                    index: timerManager.editingEffortIndex,
-                    rpe: editing.rpe,
-                    unit: sequence.isNested ? "rep" : "set"
-                )
-
-                SetNoteField(
-                    timerManager: timerManager,
-                    index: timerManager.editingEffortIndex,
-                    note: editing.note,
-                    unit: sequence.isNested ? "rep" : "set"
-                )
             }
 
             if timerManager.isAwaitingUser {
@@ -69,23 +98,102 @@ struct SetLogPanel: View {
                         ? "Finish exercise"
                         : "\(sequence.isNested ? "Rep \(sequence.currentRep)" : "Set \(sequence.currentSet)") done, start \(Self.restPhrase(seconds: sequence.restAfterCurrentEffort)) rest"
                 )
+            }
 
-                // Stopping short of the prescription is a normal training decision — the
-                // plan asks for up to five sets, three is what you had today. Without
-                // this the only way out is tapping the chevron past every effort you
-                // aren't going to do.
-                if timerManager.performedEffortCount > 0, !sequence.isFinalEffort {
-                    Button("Finish here") {
-                        timerManager.finishSetSequence()
-                    }
-                    .font(.subheadline)
-                    .accessibilityLabel(
-                        "Finish after \(timerManager.performedEffortCount) of \(sequence.totalEfforts)"
+            // Stopping short of the prescription is a normal training decision — the plan
+            // asks for up to five sets, three is what you had today.
+            //
+            // Offered in every state a live sequence can be in, because deciding you're done
+            // is not something you only do at a prompt. It used to hang off the Done button,
+            // which meant a rest — where that decision is actually made, standing there
+            // knowing there isn't another set in you — had no way out at all except leaving
+            // the tab. `finishSetSequence` banks the elapsed time and completes from any
+            // state, so there is nothing to special-case here.
+            // On the last effort the green button already reads "Finish", and two buttons
+            // both starting with that word do opposite things with it: one counts the effort
+            // you're standing at, this one doesn't. Say which.
+            Button(sequence.isFinalEffort
+                   ? "Finish without this \(sequence.isNested ? "rep" : "set")"
+                   : "Finish here") {
+                timerManager.finishSetSequence()
+            }
+            .font(.subheadline)
+            .accessibilityLabel(
+                "Finish the exercise after \(timerManager.performedEffortCount) of \(sequence.totalEfforts)"
+            )
+        }
+        .timerCard(padding: 16)
+        // The only two states a live sequence occupies are waiting on an effort and resting
+        // after one, so `!awaiting` is "resting". Firing on the transition rather than reading
+        // the state directly is what lets a deliberate tap stick until the timer moves on.
+        .onChange(of: timerManager.isAwaitingUser) { _, awaiting in
+            withAnimation(.easeInOut(duration: 0.2)) { isExpanded = !awaiting }
+        }
+    }
+
+    /// Side by side until the text won't take it. At an accessibility type size "Sets" and
+    /// "1 / 4" want more than half a card between them, and holding the row would truncate
+    /// one to "S… 1…" — exactly the reading the setting exists to prevent. Same rule as the
+    /// interval timer's grid, so the two screens stay in step at every size.
+    private var cardLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+    }
+
+    /// Where you are in the exercise, in the same two cards the interval timer uses — same
+    /// colours, same icons, deliberately. A repeaters protocol and a set of weighted pull-ups
+    /// are the same shape of work, and used to describe it in two unrelated visual languages.
+    private var summary: some View {
+        VStack(spacing: 8) {
+            cardLayout {
+                ProgressCard(
+                    title: "Sets",
+                    current: sequence.currentSet,
+                    total: sequence.totalSets,
+                    color: .purple,
+                    icon: "arrow.clockwise"
+                )
+
+                if let reps = repsTarget {
+                    ProgressCard(
+                        title: "Reps",
+                        current: reps.current,
+                        total: reps.total,
+                        color: .green,
+                        icon: "repeat",
+                        detail: reps.detail
                     )
                 }
             }
+
+            // Centred underneath rather than beside the cards, where it would eat width they
+            // need. No caption: a chevron under a tappable row already reads as "there's more".
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .timerCard(padding: 16)
+    }
+
+    /// What the Reps card shows, or nothing when there are no reps to speak of.
+    ///
+    /// Nested, a rep is an effort the timer counts through, so this is a real position. Flat,
+    /// the whole set is one effort and the rep count is only the prescription — a fraction
+    /// there would claim progress nobody is measuring, so it reads as a bare target. An
+    /// `.attempts` exercise has no rep count at all and gets no card.
+    ///
+    /// Internal rather than private so the three-way branch can be tested without driving
+    /// the view, the same reason `restPhrase` is reachable.
+    var repsTarget: (current: Int, total: Int, detail: String?)? {
+        if sequence.isNested {
+            return (sequence.currentRep, sequence.effortsPerSet, nil)
+        }
+        let index = sequence.currentEffort - 1
+        guard timerManager.effortLogs.indices.contains(index),
+              let reps = timerManager.effortLogs[index].reps,
+              reps >= 1 else { return nil }
+        let count = Int(reps)
+        return (count, count, "\(count)")
     }
 
     /// "30 second" / "3 minute" — integer minutes read fine back when every rest was at
@@ -106,19 +214,10 @@ struct SetChipStrip: View {
     let sequence: TimerManager.SetSequence
 
     var body: some View {
-        if sequence.isNested {
-            // Only the bout you are on. Laying all six out meant twenty-four chips and a
-            // screen you had to scroll to reach Done — and the other five sets are not
-            // actionable anyway. The arrows above move between them.
-            VStack(alignment: .leading, spacing: 6) {
-                Text("SET \(sequence.currentSet) OF \(sequence.totalSets)")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                chips(forSet: sequence.currentSet)
-            }
-        } else {
-            chips(forSet: nil)
-        }
+        // Nested, only the bout you are on. Laying all six out meant twenty-four chips and a
+        // screen you had to scroll to reach Done — and the other five sets are not actionable
+        // anyway. The arrows above move between them, and the Sets card names the one you're in.
+        chips(forSet: sequence.isNested ? sequence.currentSet : nil)
     }
 
     /// The chips for one set, or all of them when the sequence is flat.
@@ -426,7 +525,6 @@ struct SetNavigationRow: View {
     let timerManager: TimerManager
     let sequence: TimerManager.SetSequence
     let label: String
-    var sublabel: String? = nil
     let labelColor: Color
 
     var body: some View {
@@ -439,40 +537,36 @@ struct SetNavigationRow: View {
                 .disabled(sequence.currentEffort <= 1)
             }
 
+            // Flat, one effort is one set, so this is the SET control the nested row puts
+            // on the outside — same glyph, same caption, rather than a second visual
+            // language for the same move.
             SetJumpButton(
-                title: sequence.isNested ? "REP" : nil,
-                systemImage: sequence.isNested ? "backward.fill" : "chevron.left",
+                title: sequence.isNested ? "REP" : "SET",
+                systemImage: sequence.isNested ? "backward.fill" : "backward.end.fill",
                 accessibilityLabel: sequence.isNested ? "Previous rep" : "Previous set"
             ) { timerManager.previousEffort() }
             .disabled(sequence.currentEffort <= 1)
 
             Spacer(minLength: 8)
 
-            VStack(spacing: 2) {
-                // Same gradient the clock wears, so the prompt reads as the thing the
-                // countdown turns into rather than as a different screen's heading.
-                Text(label)
-                    .font(.title3.weight(.semibold).monospaced())
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [labelColor, labelColor.opacity(0.7)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+            // Same gradient the clock wears, so the prompt reads as the thing the
+            // countdown turns into rather than as a different screen's heading.
+            Text(label)
+                .font(.title3.weight(.semibold).monospaced())
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [labelColor, labelColor.opacity(0.7)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                if let sublabel {
-                    Text(sublabel)
-                        .font(.caption2.weight(.medium).monospaced())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .multilineTextAlignment(.center)
+                )
+                .multilineTextAlignment(.center)
 
             Spacer(minLength: 8)
 
             SetJumpButton(
-                title: sequence.isNested ? "REP" : nil,
-                systemImage: sequence.isNested ? "forward.fill" : "chevron.right",
+                title: sequence.isNested ? "REP" : "SET",
+                systemImage: sequence.isNested ? "forward.fill" : "forward.end.fill",
                 accessibilityLabel: sequence.isNested ? "Skip this rep" : "Skip this set"
             ) { timerManager.nextEffort() }
 
@@ -494,9 +588,10 @@ struct SetNavigationRow: View {
 ///
 /// Labelled rather than icon-only because a nested sequence has two things you can move
 /// through, and `forward.fill` beside `forward.end.fill` is not self-explanatory. Flat
-/// sequences pass no title and get the plain chevrons they always had.
+/// sequences are labelled too — one row of controls that reads the same everywhere beats
+/// each timer shape inventing its own glyphs.
 struct SetJumpButton: View {
-    let title: String?
+    let title: String
     let systemImage: String
     let accessibilityLabel: String
     let action: () -> Void
@@ -505,11 +600,8 @@ struct SetJumpButton: View {
         Button(action: action) {
             VStack(spacing: 1) {
                 Image(systemName: systemImage)
-                    .font(title == nil ? .title2 : .body)
-                if let title {
-                    Text(title)
-                        .font(.caption2.weight(.semibold))
-                }
+                Text(title)
+                    .font(.caption2.weight(.semibold))
             }
             // A consistent tap target whether or not there's a caption, and wide enough
             // to stay reachable with one thumb.
