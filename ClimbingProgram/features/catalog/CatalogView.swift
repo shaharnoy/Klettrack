@@ -263,9 +263,12 @@ struct TrainingTypeDetailView: View {
     @State private var draftSets = ""
     @State private var draftDuration = ""
     @State private var draftRest = ""
+    @State private var draftRestBetweenReps = ""
     @State private var draftNotes = ""
     @State private var draftDescription = ""
     @State private var draftAbout = ""
+    @State private var draftTimerTemplateId: UUID? = nil
+    @State private var draftShape: ExerciseShape = .weighted
 
     private var exercisesByArea: [(String, [Exercise])] {
         let grouped = Dictionary(grouping: trainingType.exercises) { $0.area ?? "" }
@@ -440,8 +443,11 @@ struct TrainingTypeDetailView: View {
                     sets: $draftSets,
                     duration: $draftDuration,
                     rest: $draftRest,
+                    restBetweenReps: $draftRestBetweenReps,
                     notes: $draftNotes,
                     description: $draftDescription,
+                    timerTemplateId: $draftTimerTemplateId,
+                    shape: $draftShape,
                     availableAreas: availableAreas
                 ) {
                     let nextOrder = (trainingType.exercises.map { $0.order }.max() ?? 0) + 1
@@ -454,8 +460,11 @@ struct TrainingTypeDetailView: View {
                         durationText: draftDuration.isEmpty ? nil : draftDuration,
                         setsText: draftSets.isEmpty ? nil : draftSets,
                         restText: draftRest.isEmpty ? nil : draftRest,
-                        notes: draftNotes.isEmpty ? nil : draftNotes
+                        notes: draftNotes.isEmpty ? nil : draftNotes,
+                        timerTemplateId: draftTimerTemplateId,
+                        shapeKey: draftShape.rawValue
                     )
+                    ex.restBetweenRepsText = draftRestBetweenReps.isEmpty ? nil : draftRestBetweenReps
                     trainingType.exercises.append(ex)
                     try? context.save()
                 }
@@ -472,8 +481,11 @@ struct TrainingTypeDetailView: View {
                 sets: $draftSets,
                 duration: $draftDuration,
                 rest: $draftRest,
+                restBetweenReps: $draftRestBetweenReps,
                 notes: $draftNotes,
                 description: $draftDescription,
+                timerTemplateId: $draftTimerTemplateId,
+                shape: $draftShape,
                 availableAreas: availableAreas
             ) {
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
@@ -481,27 +493,38 @@ struct TrainingTypeDetailView: View {
                 ex.exerciseDescription = draftDescription.isEmpty ? nil : draftDescription
                 ex.repsText = draftReps.isEmpty ? nil : draftReps
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
-                ex.durationText = draftSets.isEmpty ? nil : draftDuration
+                // Guarded on draftDuration, not draftSets — the old check wiped the
+                // duration whenever sets happened to be empty.
+                ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
+                ex.restBetweenRepsText = draftRestBetweenReps.isEmpty ? nil : draftRestBetweenReps
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
+                ex.timerTemplateId = draftTimerTemplateId
+                // Always written, so nil keeps meaning "never classified".
+                ex.shapeKey = draftShape.rawValue
                 try? context.save()
             }
         }
     }
 
     private func startNewExercise() {
-        draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDuration = "";
+        draftExName = ""; draftArea = ""; draftDescription = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftRestBetweenReps = ""; draftNotes = ""; draftDuration = "";
+        draftTimerTemplateId = nil
+        draftShape = .weighted
         modalRoute = .newExercise
     }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name
         draftArea = ex.area ?? ""
+        draftShape = ex.shape
         draftDescription = ex.exerciseDescription ?? ""
         draftReps = ex.repsText ?? ""
         draftSets = ex.setsText ?? ""
         draftDuration = ex.durationText ?? ""
         draftRest = ex.restText ?? ""
+        draftRestBetweenReps = ex.restBetweenRepsText ?? ""
         draftNotes = ex.notes ?? ""
+        draftTimerTemplateId = ex.timerTemplateId
         editingExercise = ex
     }
 }
@@ -529,9 +552,12 @@ struct CombinationDetailView: View {
     @State private var draftSets = ""
     @State private var draftDuration = ""
     @State private var draftRest = ""
+    @State private var draftRestBetweenReps = ""
     @State private var draftNotes = ""
     @State private var draftDesc = ""
     @State private var draftAbout = ""
+    @State private var draftTimerTemplateId: UUID? = nil
+    @State private var draftShape: ExerciseShape = .attempts
 
 
     var body: some View {
@@ -615,8 +641,11 @@ struct CombinationDetailView: View {
                     sets: $draftSets,
                     duration: $draftDuration,
                     rest: $draftRest,
+                    restBetweenReps: $draftRestBetweenReps,
                     notes: $draftNotes,
                     description: $draftDesc,
+                    timerTemplateId: $draftTimerTemplateId,
+                    shape: $draftShape,
                     availableAreas: []
                 ) {
                     let nextOrder = (combo.exercises.map { $0.order }.max() ?? 0) + 1
@@ -629,8 +658,11 @@ struct CombinationDetailView: View {
                         durationText: draftDuration.isEmpty ? nil : draftDuration,
                         setsText: draftSets.isEmpty ? nil : draftSets,
                         restText: draftRest.isEmpty ? nil : draftRest,
-                        notes: draftNotes.isEmpty ? nil : draftNotes
+                        notes: draftNotes.isEmpty ? nil : draftNotes,
+                        timerTemplateId: draftTimerTemplateId,
+                        shapeKey: draftShape.rawValue
                     )
+                    ex.restBetweenRepsText = draftRestBetweenReps.isEmpty ? nil : draftRestBetweenReps
                     combo.exercises.append(ex)
                     try? context.save()
                 }
@@ -647,8 +679,11 @@ struct CombinationDetailView: View {
                 sets: $draftSets,
                 duration: $draftDuration,
                 rest: $draftRest,
+                restBetweenReps: $draftRestBetweenReps,
                 notes: $draftNotes,
                 description: $draftDesc,
+                timerTemplateId: $draftTimerTemplateId,
+                shape: $draftShape,
                 availableAreas: []
             ) {
                 ex.name = draftExName.trimmingCharacters(in: .whitespaces)
@@ -658,25 +693,35 @@ struct CombinationDetailView: View {
                 ex.setsText = draftSets.isEmpty ? nil : draftSets
                 ex.durationText = draftDuration.isEmpty ? nil : draftDuration
                 ex.restText = draftRest.isEmpty ? nil : draftRest
+                ex.restBetweenRepsText = draftRestBetweenReps.isEmpty ? nil : draftRestBetweenReps
                 ex.notes = draftNotes.isEmpty ? nil : draftNotes
+                ex.timerTemplateId = draftTimerTemplateId
+                // Always written, so nil keeps meaning "never classified".
+                ex.shapeKey = draftShape.rawValue
                 try? context.save()
             }
         }
     }
 
     private func startNewExercise() {
-        draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftNotes = ""; draftDesc = ""; draftDuration = "";
+        draftExName = ""; draftReps = ""; draftSets = ""; draftRest = ""; draftRestBetweenReps = ""; draftNotes = ""; draftDesc = ""; draftDuration = "";
+        draftTimerTemplateId = nil
+        // An exercise added under a bouldering combination is wall work by default.
+        draftShape = .attempts
         modalRoute = .newExercise
     }
     private func openEditor(for ex: Exercise) {
         draftExName = ex.name
         draftArea = ex.area ?? ""
+        draftShape = ex.shape
         draftDesc = ex.exerciseDescription ?? ""
         draftReps = ex.repsText ?? ""
         draftSets = ex.setsText ?? ""
         draftDuration = ex.durationText ?? ""
         draftRest = ex.restText ?? ""
+        draftRestBetweenReps = ex.restBetweenRepsText ?? ""
         draftNotes = ex.notes ?? ""
+        draftTimerTemplateId = ex.timerTemplateId
         editingExercise = ex
     }
 }
@@ -801,13 +846,85 @@ struct ExerciseEditSheet: View {
     @Binding var sets: String
     @Binding var duration: String
     @Binding var rest: String
+    @Binding var restBetweenReps: String
     @Binding var notes: String
     @Binding var description: String
-    
+    @Binding var timerTemplateId: UUID?
+    @Binding var shape: ExerciseShape
+
     let availableAreas: [String]
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
-    
+
+    @Query(sort: [SortDescriptor(\TimerTemplate.name)]) private var timerTemplates: [TimerTemplate]
+
+    /// What the timer button will do if no template is attached.
+    private var derivedTimerSummary: String {
+        let setRest = ExerciseTimerDefaults.parseSeconds(rest)
+        let repRest = ExerciseTimerDefaults.parseSeconds(restBetweenReps)
+        let setCount = ExerciseTimerDefaults.parseCount(sets, upperBound: true) ?? 1
+
+        // Mirrors plan(for:in:)'s attempts fallback: the seeded limit boulders carry
+        // their try count in the exercise name — "3–6 near-maximal boulders" — where
+        // nothing can read it, and without a count the sequence is a single tap.
+        var repCount = ExerciseTimerDefaults.parseCount(reps)
+        if shape == .attempts, repCount == nil, ExerciseTimerDefaults.parseCount(sets) == nil {
+            repCount = 10
+        }
+
+        if shape == .attempts, (setRest ?? 0) > 0 || (repRest ?? 0) > 0 {
+            return nestedSummary(sets: setCount, reps: repCount, setRest: setRest, repRest: repRest)
+        }
+
+        if let work = ExerciseTimerDefaults.parseSeconds(duration), work > 0 {
+            let restPart: String = setRest.map { ", \(readable($0)) rest" } ?? ""
+            return "Duration-based: \(readable(work)) work\(restPart)."
+        }
+
+        if (setRest ?? 0) > 0 || (repRest ?? 0) > 0 {
+            return nestedSummary(sets: setCount, reps: repCount, setRest: setRest, repRest: repRest)
+        }
+
+        return "No timer can be derived — attach a template, or add a duration or rest."
+    }
+
+    /// Says the two-level shape out loud, because a rest in the wrong box is invisible
+    /// until you are mid-session. `reps` is nil exactly when `plan(for:in:)` would leave
+    /// it nil too — printing "1 reps" then would fabricate a number nobody entered.
+    private func nestedSummary(sets: Int, reps: Int?, setRest: Int?, repRest: Int?) -> String {
+        // Mirrors plan(for:in:): with one set, a lone rest separates the reps.
+        var betweenReps = repRest ?? 0
+        var betweenSets = setRest ?? 0
+        if sets == 1, betweenReps == 0, betweenSets > 0 {
+            betweenReps = betweenSets
+            betweenSets = 0
+        }
+
+        let setsPart = reps.map { "\(sets) sets of \($0) reps" } ?? "\(sets) sets"
+
+        if betweenReps > 0 {
+            let setPart = betweenSets > 0 ? ", \(readable(betweenSets)) between sets" : ""
+            return "\(setsPart): \(readable(betweenReps)) between reps\(setPart)."
+        }
+        return "\(setsPart), \(readable(betweenSets)) between sets."
+    }
+
+    private func readable(_ seconds: Int) -> String {
+        seconds >= 60 && seconds % 60 == 0 ? "\(seconds / 60) min" : "\(seconds)s"
+    }
+
+    /// Says what the choice actually changes, rather than restating the label.
+    private var shapeFooter: String {
+        switch shape {
+        case .weighted:
+            return "Weight fields are shown when logging this exercise."
+        case .bodyweight:
+            return "No weight fields — this exercise takes no added load."
+        case .attempts:
+            return "Counted in tries at a problem, and logged as a climb. No weight fields."
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -818,9 +935,16 @@ struct ExerciseEditSheet: View {
                         .textCase(nil)
                 }
                 
-                // Area selection for climbing exercises
-                if !availableAreas.isEmpty {
-                    Section {
+                Section {
+                    Picker("Measured in", selection: $shape) {
+                        ForEach(ExerciseShape.allCases, id: \.self) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    // Area only applies to climbing types; the shape applies to all.
+                    if !availableAreas.isEmpty {
                         Picker("Area", selection: $area) {
                             Text("None").tag("")
                             ForEach(availableAreas, id: \.self) { area in
@@ -828,11 +952,11 @@ struct ExerciseEditSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
-                    } header: {
-                        Text("CATEGORY")
-                    } footer: {
-                        Text("Choose the exercise category (e.g., Fingers, Pull).")
                     }
+                } header: {
+                    Text("CATEGORY")
+                } footer: {
+                    Text(shapeFooter)
                 }
                 
                 Section {
@@ -866,6 +990,13 @@ struct ExerciseEditSheet: View {
                         Label("Rest", systemImage: "hourglass")
                     }
                     .textCase(nil)
+
+                    LabeledContent {
+                        TextField("e.g. 30 sec", text: $restBetweenReps)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        Text("Rest between reps")
+                    }
                 } header: {
                     Text("DISPLAY FIELDS")
                 } footer: {
@@ -878,7 +1009,23 @@ struct ExerciseEditSheet: View {
                               duration: duration.isEmpty ? nil : duration,
                               rest: rest.isEmpty ? nil : rest)
                 }
-                
+
+                Section {
+                    Picker("Timer", selection: $timerTemplateId) {
+                        Text("None — use reps/sets/rest").tag(UUID?.none)
+                        ForEach(timerTemplates) { template in
+                            Text(template.name).tag(UUID?.some(template.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                } header: {
+                    Text("TIMER")
+                } footer: {
+                    Text(timerTemplateId == nil
+                         ? derivedTimerSummary
+                         : "The timer button on a plan day loads this template.")
+                }
+
                 Section("Notes") {
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(1...3)

@@ -32,6 +32,9 @@ private final class PlanDayEditorCache {
         let restText: String?
         let notes: String?
         let durationText: String?
+        /// Pre-resolved by `ExerciseTimerDefaults.blurb(for:)`. Not part of `hasGuidance` —
+        /// it feeds the timer, not the plan row's metric line.
+        var timerBlurb: String? = nil
 
         var hasGuidance: Bool {
             [repsText, setsText, restText, notes, durationText]
@@ -40,7 +43,11 @@ private final class PlanDayEditorCache {
     }
 
     var guidanceByName: [String: ExerciseGuidance] = [:]
-    var boulderingExerciseNames: Set<String> = []
+    var timerPlanByName: [String: ExerciseTimerPlan] = [:]
+    /// Missing name ⇒ `.weighted`, matching `Exercise.shape`'s own default.
+    var shapeByName: [String: ExerciseShape] = [:]
+    /// Names whose shape is `.attempts` — wall work, logged as a climb.
+    var attemptsExerciseNames: Set<String> = []
     var catalogInfoByExerciseName: [String: ExerciseCatalogInfo] = [:]
     var parentPlan: Plan? = nil
     var loggedItemsForDay: [SessionItem] = []
@@ -249,7 +256,7 @@ struct PlansListView: View {
                     )
                     await MainActor.run {
                         importing = false
-                        resultMessage = "Imported \(count) log item(s)."
+                        resultMessage = "Imported \(count) item(s)."
                     }
                 } catch {
                     await MainActor.run {
@@ -792,14 +799,8 @@ struct PlanDayEditor: View {
 
     @State private var sheetRoute: SheetRoute? = nil
 
-    // Quick Log
+    // Quick Log — the form itself lives in ExerciseLogSheet, shared with the timer.
     @State private var loggingExercise: ExerciseSelection? = nil
-    @State private var inputReps: String = ""
-    @State private var inputSets: String = ""
-    @State private var inputDuration: String = ""
-    @State private var inputWeight: String = ""
-    @State private var inputGrade: String = ""
-    @State private var inputNotes: String = ""
     @State private var saveTick = false
     
     // Quick Progress
@@ -824,9 +825,14 @@ struct PlanDayEditor: View {
         self._cache = State(initialValue: PlanDayEditorCache.forDay(day.wrappedValue.id))
     }
     
-    // Helper function to check if an exercise belongs to the Bouldering activity
-    private func isBoulderingExercise(name: String) -> Bool {
-        cache.boulderingExerciseNames.contains(name)
+    /// Whether this exercise is counted in tries at a problem, and so logs as a climb.
+    ///
+    /// Reads the shape the catalog records, replacing a substring match on the parent
+    /// activity's name. That heuristic missed wall work filed elsewhere — "Bouldering",
+    /// "Boulder Campusing" and "Big-Move Boulder Problems" all live under
+    /// "Climbing-Specific Exercises" and were being offered a weight field.
+    private func isAttemptsExercise(name: String) -> Bool {
+        cache.attemptsExerciseNames.contains(name)
     }
 
     
@@ -978,8 +984,8 @@ struct PlanDayEditor: View {
         let exerciseInfo = cache.isWarm
             ? getExerciseInfo(name: name)
             : (repsText: " ", setsText: " ", restText: " ", notes: " ", durationText: " ", hasGuidance: true)
-        // Bouldering detection: tri-state to avoid briefly showing the wrong icon while loading.
-        let isBouldering: Bool? = cache.isWarm ? isBoulderingExercise(name: name) : nil
+        // Attempts detection: tri-state to avoid briefly showing the wrong icon while loading.
+        let isBouldering: Bool? = cache.isWarm ? isAttemptsExercise(name: name) : nil
 
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -1019,12 +1025,22 @@ struct PlanDayEditor: View {
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Show progress for \(name)")
 
+                // Start a timer for this exercise
+                Button {
+                    timerAppState.switchToTimer(with: day, exercise: timerContext(for: name))
+                } label: {
+                    Image(systemName: "timer")
+                }
+                .labelStyle(.iconOnly)
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .foregroundStyle(.orange)
+                .accessibilityLabel("Start timer for \(name)")
+
                 // Conditional logging button based on exercise type (no “wrong icon then swap”)
                 if isBouldering == true {
                     Button {
                         climbLoggingExercise = ExerciseSelection(name: name)
-                        inputGrade = ""
-                        inputReps = ""
                     } label: {
                         Image(systemName: "mountain.2")
                     }
@@ -1036,12 +1052,6 @@ struct PlanDayEditor: View {
                 } else if isBouldering == false {
                     Button {
                         loggingExercise = ExerciseSelection(name: name)
-                        inputReps = ""
-                        inputSets = ""
-                        inputDuration = ""
-                        inputWeight = ""
-                        inputGrade = ""
-                        inputNotes = ""
                     } label: {
                         Image(systemName: "square.and.pencil")
                     }
@@ -1109,6 +1119,21 @@ struct PlanDayEditor: View {
 
     
     // Helper to get exercise information from catalog
+    /// Everything the Timer tab needs for this exercise. The parent plan comes from the
+    /// cache because PlanDay has no back-reference to Plan.
+    private func timerContext(for name: String) -> ExerciseTimerContext {
+        ExerciseTimerContext(
+            exerciseName: name,
+            exerciseDescription: cache.guidanceByName[name]?.timerBlurb,
+            // (resolved at cache-warm time by ExerciseTimerDefaults.blurb)
+            planDayDate: day.date,
+            planId: cache.parentPlan?.id,
+            planName: cache.parentPlan?.name,
+            plan: cache.timerPlanByName[name],
+            shape: cache.shapeByName[name] ?? .weighted
+        )
+    }
+
     private func getExerciseInfo(name: String) -> (repsText: String?, setsText: String?, restText: String?, notes: String?, durationText: String?, hasGuidance: Bool) {
         let g = cache.guidanceByName[name] ?? PlanDayEditorCache.ExerciseGuidance(
             repsText: nil, setsText: nil, restText: nil, notes: nil, durationText: nil
@@ -1147,7 +1172,10 @@ struct PlanDayEditor: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
-                
+
+                LoggedSetsRow(sets: item.loggedSets)
+                    .foregroundStyle(.secondary)
+
                 if let notes = item.notes, !notes.isEmpty {
                     Text(.init(notes))
                         .font(.caption)
@@ -1164,10 +1192,10 @@ struct PlanDayEditor: View {
     
     // Helper to determine if a session item is a climb log
     private func isClimbLog(item: SessionItem) -> Bool {
-        // Check if the notes contain climb log indicators or if it's a bouldering exercise
+        // The notes checks stay for items logged before the shape field existed.
         return item.notes?.contains("Plan climb log") == true ||
                item.notes?.contains("Attempts:") == true ||
-               isBoulderingExercise(name: item.exerciseName)
+               isAttemptsExercise(name: item.exerciseName)
     }
 
     // Break down the chosen activities section into its own component
@@ -1372,19 +1400,14 @@ struct PlanDayEditor: View {
                 }
         // Quick Log sheet
         .sheet(item: $loggingExercise) { sel in
-            NavigationStack {
-                logForm(exerciseName: sel.name)
-                    .listStyle(.insetGrouped)
-                    .navigationTitle("Quick Log")
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Save") {
-                                saveLogEntry(exerciseName: sel.name)
-                            }
-                        }
-                    }
-                    .sensoryFeedback(.success, trigger: saveTick)
-            }
+            ExerciseLogSheet(
+                exerciseName: sel.name,
+                date: day.date,
+                planId: cache.parentPlan?.id,
+                planName: cache.parentPlan?.name,
+                onSaved: { saveTick.toggle() }
+            )
+            .sensoryFeedback(.success, trigger: saveTick)
         }
         .task(id: day.id) {
             if !cache.isWarm {
@@ -1499,16 +1522,39 @@ struct PlanDayEditor: View {
                     setsText: $0.setsText,
                     restText: $0.restText,
                     notes: $0.notes,
-                    durationText: $0.durationText
+                    durationText: $0.durationText,
+                    timerBlurb: ExerciseTimerDefaults.blurb(for: $0)
                 ))
             },
             uniquingKeysWith: { existing, _ in existing } // first wins; no crash
         )
 
-        // 2) Bouldering set (Activities)
+        // 1b) Timer plan per exercise — reuses the fetch above, no extra round trip.
+        cache.timerPlanByName = Dictionary(
+            exercises.compactMap { ex in
+                ExerciseTimerDefaults.plan(for: ex, in: context).map { (ex.name, $0) }
+            },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
+        // 1c) Shape per exercise — same fetch again. Decides whether the timer's log
+        // panel offers added load.
+        cache.shapeByName = Dictionary(
+            exercises.map { ($0.name, $0.shape) },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
+        // 2) Attempts set + activity tints (Activities)
+        //
+        // The attempts set comes from the shape map above, not from matching "boulder"
+        // in the activity name — one source of truth, and it catches wall work filed
+        // under Climbing-Specific.
+        let attemptsSet = Set(
+            cache.shapeByName.filter { $0.value == .attempts }.keys
+        )
+
         let actDesc = FetchDescriptor<Activity>()
         let activities = (try? context.fetch(actDesc)) ?? []
-        var boulderSet: Set<String> = []
 
         var catalogInfoByExerciseName: [String: PlanDayEditorCache.ExerciseCatalogInfo] = [:]
 
@@ -1531,9 +1577,6 @@ struct PlanDayEditor: View {
         for a in activities {
             for t in a.types {
                 for ex in t.exercises {
-                    if a.name.localizedLowercase.contains("boulder") {
-                        boulderSet.insert(ex.name)
-                    }
                     upsertCatalogInfo(
                         exerciseName: ex.name,
                         order: ex.order,
@@ -1543,9 +1586,6 @@ struct PlanDayEditor: View {
                 }
                 for c in t.combinations {
                     for ex in c.exercises {
-                        if a.name.localizedLowercase.contains("boulder") {
-                            boulderSet.insert(ex.name)
-                        }
                         upsertCatalogInfo(
                             exerciseName: ex.name,
                             order: ex.order,
@@ -1556,7 +1596,7 @@ struct PlanDayEditor: View {
                 }
             }
         }
-        cache.boulderingExerciseNames = boulderSet
+        cache.attemptsExerciseNames = attemptsSet
         cache.catalogInfoByExerciseName = catalogInfoByExerciseName
 
         // 3) Parent plan (resolve once)
@@ -1588,38 +1628,6 @@ struct PlanDayEditor: View {
 
 
     
-    private func saveLogEntry(exerciseName: String) {
-        let reps = Double(inputReps.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-        let sets = Double(inputSets.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-        let duration = Double(inputDuration.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-        let weight = Double(inputWeight.replacing(",", with: ".").trimmingCharacters(in: .whitespaces))
-        let grade = inputGrade.trimmingCharacters(in: .whitespaces).isEmpty ? nil : inputGrade.trimmingCharacters(in: .whitespaces)
-
-        let session = findOrCreateSession(for: day.date, in: context)
-        
-        // Using a date range predicate instead of relationship query
-        let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: day.date)
-        let _ = calendar.date(byAdding: .day, value: 1, to: dayStart)!
-        
-        let p = cache.parentPlan
-        
-        session.items.append(SessionItem(
-            exerciseName: exerciseName,
-            planSourceId: p?.id,
-            planName: p?.name,
-            reps: reps,
-            sets: sets,
-            weightKg: weight,
-            grade: grade,
-            notes: inputNotes.isEmpty ? nil : inputNotes,
-            duration: duration
-        ))
-        try? context.save()
-        saveTick.toggle()
-        loggingExercise = nil
-    }
-    
     // Quick log function for tick button - logs exercise without details
     private func quickLogExercise(name: String) {
         let session = findOrCreateSession(for: day.date, in: context)
@@ -1642,74 +1650,6 @@ struct PlanDayEditor: View {
         saveTick.toggle()
     }
     
-    // Break down log form into its own view builder
-    @ViewBuilder
-    private func logForm(exerciseName: String) -> some View {
-        Form {
-            Section { Text(exerciseName).font(.headline) }
-
-            Section {
-                LabeledContent {
-                    TextField("e.g. 10", text: $inputReps)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Reps", systemImage: "repeat")
-                }
-
-                LabeledContent {
-                    TextField("e.g. 3", text: $inputSets)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Sets", systemImage: "square.grid.3x3")
-                }
-                
-                LabeledContent {
-                        TextField("e.g. 20", text: $inputDuration)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                    } label: { Label("Duration (min)", systemImage: "clock") }
-                
-                LabeledContent {
-                    TextField("e.g. 12.5", text: $inputWeight)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Weight (kg)", systemImage: "scalemass")
-                }
-
-                LabeledContent {
-                    TextField("e.g. 6a+", text: $inputGrade)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Grade", systemImage: "star")
-                }
-            } header: {
-                Text("LOG FIELDS").textCase(nil)
-            } footer: {
-                Text("Leave a field empty if it doesn't apply.")
-            }
-
-            Section("Preview") {
-                LogMetricRow(
-                    reps: inputReps.isEmpty ? nil : inputReps,
-                    sets: inputSets.isEmpty ? nil : inputSets,
-                    weight: inputWeight.isEmpty ? nil : inputWeight,
-                    grade: inputGrade.isEmpty ? nil : inputGrade, //tak out, not very useful
-                    duration: inputDuration.isEmpty ? nil : inputDuration
-                )
-            }
-
-            Section("Notes") {
-                TextField("Notes (optional)", text: $inputNotes, axis: .vertical)
-                    .lineLimit(1...3)
-            }
-        }
-    }
-
     private func refreshDayLog() {
         localDayLog = DayLogStore.fetchDayLog(for: day.date, in: context)
     }
@@ -2677,7 +2617,8 @@ private struct MetricRow: View {
 }
 
 
-private struct LogMetricRow: View {
+// Internal (not private): shared with ExerciseLogSheet.
+struct LogMetricRow: View {
     let reps: String?
     let sets: String?
     let weight: String?
@@ -2708,7 +2649,8 @@ private struct LogMetricRow: View {
 
 
 // Helper function to find or create a session for a given date
-private func findOrCreateSession(for date: Date, in context: ModelContext) -> Session {
+// Internal (not private): shared with ExerciseLogSheet.
+func findOrCreateSession(for date: Date, in context: ModelContext) -> Session {
     let calendar = Calendar.current
     let startOfDay = calendar.startOfDay(for: date)
     let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!

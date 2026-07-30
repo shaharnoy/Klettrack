@@ -123,8 +123,11 @@ struct ClimbLogForm: View {
         prefillClimb: ClimbEntry? = nil,
         initialNotes: String? = nil,
         bulkCount: Int = 1,
+        /// Add mode only: how many tries the timer counted. Ignored when editing or
+        /// prefilling from an existing climb, which carry their own attempt count.
+        initialAttempts: Int? = nil,
         onSave: ((ClimbEntry) -> Void)? = nil
-        
+
     ) {
         self.title = title
         self.initialDate = initialDate
@@ -190,7 +193,7 @@ struct ClimbLogForm: View {
         } else {
             // Add mode
             _selectedDate = State(initialValue: initialDate)
-            _attempts = State(initialValue: "1")
+            _attempts = State(initialValue: String(max(1, initialAttempts ?? 1)))
             _mediaPreviews = State(initialValue: [])
         }
     }

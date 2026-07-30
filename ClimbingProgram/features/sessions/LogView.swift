@@ -250,7 +250,7 @@ struct LogView: View {
                     )
                     await MainActor.run {
                         importing = false
-                        resultMessage = "Imported \(count) log item(s)."
+                        resultMessage = "Imported \(count) item(s)."
                     }
                 } catch {
                     await MainActor.run {
@@ -343,6 +343,7 @@ struct SessionItemRow: View {
                         }
             }
             metricsRow
+            LoggedSetsRow(sets: item.loggedSets)
             if let n = item.notes, !n.isEmpty {
                 Text(n).font(.footnote).foregroundStyle(.secondary)
             }
@@ -474,6 +475,15 @@ struct AddSessionItemSheet: View {
     @State private var inputNotes: String = ""
     @State private var inputGrade: String = ""
 
+    /// Hidden for exercises that take no added load. Shown until one is picked, and
+    /// never hidden once something has been typed. Reads `allExercises` rather than
+    /// fetching — the query is already here.
+    private var showsWeight: Bool {
+        guard let name = selectedCatalogName, !name.isEmpty else { return true }
+        if !inputWeight.isEmpty { return true }
+        return (allExercises.first { $0.name == name }?.shape ?? .weighted).takesLoad
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -509,7 +519,9 @@ struct AddSessionItemSheet: View {
                     TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
                     TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
                     TextField("Duration", text: $inputDuration).keyboardType(.decimalPad)
-                    TextField("Weight", text: $inputWeight).keyboardType(.decimalPad)
+                    if showsWeight {
+                        TextField("Weight", text: $inputWeight).keyboardType(.decimalPad)
+                    }
                     TextField("Grade", text: $inputGrade)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
@@ -829,6 +841,15 @@ struct EditSessionItemView: View {
     @State private var inputGrade: String = ""
     @State private var isInitialized = false
 
+    /// Hidden for exercises that take no added load — but an item that already carries
+    /// a weight keeps the field, so an imported or legacy value stays editable rather
+    /// than becoming invisible and stuck.
+    private var showsWeight: Bool {
+        if !inputWeight.isEmpty || item.weightKg != nil { return true }
+        let name = selectedCatalogName ?? item.exerciseName
+        return exerciseShape(named: name, in: context).takesLoad
+    }
+
     var body: some View {
         Group {
             if !isInitialized {
@@ -879,7 +900,9 @@ struct EditSessionItemView: View {
                         TextField("Reps", text: $inputReps).keyboardType(.decimalPad)
                         TextField("Sets", text: $inputSets).keyboardType(.decimalPad)
                         TextField("Duration", text: $inputDuration).keyboardType(.decimalPad)
-                        TextField("Weight", text: $inputWeight).keyboardType(.decimalPad)
+                        if showsWeight {
+                            TextField("Weight", text: $inputWeight).keyboardType(.decimalPad)
+                        }
                         TextField("Grade", text: $inputGrade)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)

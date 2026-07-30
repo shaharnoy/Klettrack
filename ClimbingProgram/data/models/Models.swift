@@ -66,7 +66,14 @@ final class Exercise {
     var durationText: String?
     var setsText: String?
     var restText: String?
+    /// Rest between the reps *inside* a set, where `restText` is the rest between sets.
+    /// nil ⇒ the reps run continuously, which is most exercises.
+    var restBetweenRepsText: String?
     var notes: String?
+    /// Optional explicit timer template; nil falls back to guidance-derived timing.
+    var timerTemplateId: UUID?
+    /// How this exercise is measured and logged. See `ExerciseShape`; nil ⇒ `.weighted`.
+    var shapeKey: String?
 
     init(
         id: UUID = UUID(),
@@ -78,7 +85,10 @@ final class Exercise {
         durationText: String? = nil,
         setsText: String? = nil,
         restText: String? = nil,
-        notes: String? = nil
+        restBetweenRepsText: String? = nil,
+        notes: String? = nil,
+        timerTemplateId: UUID? = nil,
+        shapeKey: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -89,7 +99,10 @@ final class Exercise {
         self.durationText = durationText
         self.setsText = setsText
         self.restText = restText
+        self.restBetweenRepsText = restBetweenRepsText
         self.notes = notes
+        self.timerTemplateId = timerTemplateId
+        self.shapeKey = shapeKey
     }
 }
 
@@ -115,13 +128,17 @@ final class SessionItem {
     var planSourceId: UUID?
     var planName: String?
 
-    // Structured metrics
+    // Structured metrics. These stay the aggregate the whole app reads; when
+    // `loggedSets` is present they are its `rollup`.
     var reps: Double?
     var sets: Double?
     var weightKg: Double?
     var grade: String?
     var notes: String?
     var duration: Double?
+
+    /// Per-set detail, when the timer captured it. Empty for hand-logged items.
+    var loggedSets: [LoggedSet] = []
 
     init(
         id: UUID = UUID(),
@@ -133,7 +150,8 @@ final class SessionItem {
         weightKg: Double? = nil,
         grade: String? = nil,
         notes: String? = nil,
-        duration: Double? = nil
+        duration: Double? = nil,
+        loggedSets: [LoggedSet] = []
     ) {
         self.id = id
         self.exerciseName = exerciseName
@@ -145,6 +163,7 @@ final class SessionItem {
         self.grade = grade
         self.notes = notes
         self.duration = duration
+        self.loggedSets = loggedSets
     }
 }
 
@@ -207,12 +226,16 @@ final class TimerTemplate {
     var isRepeating: Bool
     var repeatCount: Int?
     var restTimeBetweenIntervals: Int?
-    
+
+    /// Non-nil ⇒ rep-based: each set waits for the user to confirm instead of timing the work.
+    /// Pairs with repeatCount (set count) and restTimeBetweenIntervals (rest between sets).
+    var repsPerSet: Int?
+
     // Metadata
     var createdDate: Date
     var lastUsedDate: Date?
     var useCount: Int
-    
+
     init(
         id: UUID = UUID(),
         name: String,
@@ -220,7 +243,8 @@ final class TimerTemplate {
         totalTimeSeconds: Int? = nil,
         isRepeating: Bool = false,
         repeatCount: Int? = nil,
-        restTimeBetweenIntervals: Int? = nil
+        restTimeBetweenIntervals: Int? = nil,
+        repsPerSet: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -229,9 +253,13 @@ final class TimerTemplate {
         self.isRepeating = isRepeating
         self.repeatCount = repeatCount
         self.restTimeBetweenIntervals = restTimeBetweenIntervals
+        self.repsPerSet = repsPerSet
         self.createdDate = Date()
         self.useCount = 0
     }
+
+    /// A rep-based template counts reps and waits for confirmation; a duration-based one times the work.
+    var isRepBased: Bool { repsPerSet != nil }
     
     // Computed property to get the effective total time
     var effectiveTotalTimeSeconds: Int? {
@@ -293,24 +321,28 @@ final class TimerSession {
     var templateId: UUID?
     var templateName: String?
     var planDayId: UUID?
+    /// Set when the timer was started from a specific exercise in a plan day.
+    var exerciseName: String?
     var totalElapsedSeconds: Int
     var completedIntervals: Int
     var laps: [TimerLap] = []
     var wasCompleted: Bool
     var dailynotes: String?
-        
-    
+
+
     init(
         id: UUID = UUID(),
         templateId: UUID? = nil,
         templateName: String? = nil,
-        planDayId: UUID? = nil
+        planDayId: UUID? = nil,
+        exerciseName: String? = nil
     ) {
         self.id = id
         self.startDate = Date()
         self.templateId = templateId
         self.templateName = templateName
         self.planDayId = planDayId
+        self.exerciseName = exerciseName
         self.totalElapsedSeconds = 0
         self.completedIntervals = 0
         self.wasCompleted = false

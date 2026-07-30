@@ -1,0 +1,613 @@
+//
+//  SetLogPanel.swift
+//  Klettrack
+//
+//  Per-set record for a rep-based exercise: pick a set, dial in what you lifted.
+//
+
+import SwiftUI
+
+/// The card under a rep-based timer: where you are in the exercise, and — behind a tap —
+/// a chip per set with the controls for whichever one is selected.
+///
+/// Visible both while waiting on a set and while resting after one, so a weight can
+/// be corrected or the next set dialled in without leaving the screen. The Done
+/// button only appears when a set is actually waiting, and never folds away with the
+/// rest: it is the one thing the screen is for.
+struct SetLogPanel: View {
+    let timerManager: TimerManager
+    let sequence: TimerManager.SetSequence
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Folded away while a set waits, open while resting — see `body`'s `onChange`. Standing
+    /// on the bar about to pull, the only question is "which one is this?"; what you lifted
+    /// and how hard it felt are answerable only afterwards, which is exactly the rest.
+    @State private var isExpanded: Bool
+
+    /// Seeded from the timer rather than defaulted to collapsed, because this view is built
+    /// from scratch every time the Timer tab is selected — the root is a `switch`, not a
+    /// `TabView`, so nothing survives leaving the tab. Defaulting would shut the log on
+    /// returning mid-rest, and `onChange` would never fire to reopen it: nothing changed.
+    init(timerManager: TimerManager, sequence: TimerManager.SetSequence) {
+        self.timerManager = timerManager
+        self.sequence = sequence
+        _isExpanded = State(initialValue: !timerManager.isAwaitingUser)
+    }
+
+    private var editing: LoggedSet? {
+        timerManager.effortLogs.indices.contains(timerManager.editingEffortIndex)
+            ? timerManager.effortLogs[timerManager.editingEffortIndex]
+            : nil
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                summary
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(isExpanded ? "Hide the set log" : "Show the set log")
+
+            if isExpanded {
+                SetChipStrip(timerManager: timerManager, sequence: sequence)
+
+                if let editing {
+                    if sequence.shape.takesLoad {
+                        SetWeightStepper(
+                            timerManager: timerManager,
+                            index: timerManager.editingEffortIndex,
+                            weightKg: editing.weightKg,
+                            seedWeightKg: timerManager.seedWeightKg,
+                            status: timerManager.effortStatus(at: timerManager.editingEffortIndex),
+                            caption: sequence.isNested
+                                ? "Rep \(timerManager.editingEffortIndex % sequence.effortsPerSet + 1)"
+                                : "Set \(timerManager.editingEffortIndex + 1)"
+                        )
+                    }
+
+                    SetEffortBar(
+                        timerManager: timerManager,
+                        index: timerManager.editingEffortIndex,
+                        rpe: editing.rpe,
+                        unit: sequence.isNested ? "rep" : "set"
+                    )
+
+                    SetNoteField(
+                        timerManager: timerManager,
+                        index: timerManager.editingEffortIndex,
+                        note: editing.note,
+                        unit: sequence.isNested ? "rep" : "set"
+                    )
+                }
+            }
+
+            if timerManager.isAwaitingUser {
+                Button {
+                    timerManager.confirmEffort()
+                } label: {
+                    Label(sequence.isFinalEffort ? "Finish" : "Done", systemImage: "checkmark")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(FullWidthTimerButtonStyle(color: .green))
+                .accessibilityLabel(
+                    sequence.isFinalEffort
+                        ? "Finish exercise"
+                        : "\(sequence.isNested ? "Rep \(sequence.currentRep)" : "Set \(sequence.currentSet)") done, start \(Self.restPhrase(seconds: sequence.restAfterCurrentEffort)) rest"
+                )
+            }
+
+            // Stopping short of the prescription is a normal training decision — the plan
+            // asks for up to five sets, three is what you had today.
+            //
+            // Offered in every state a live sequence can be in, because deciding you're done
+            // is not something you only do at a prompt. It used to hang off the Done button,
+            // which meant a rest — where that decision is actually made, standing there
+            // knowing there isn't another set in you — had no way out at all except leaving
+            // the tab. `finishSetSequence` banks the elapsed time and completes from any
+            // state, so there is nothing to special-case here.
+            // On the last effort the green button already reads "Finish", and two buttons
+            // both starting with that word do opposite things with it: one counts the effort
+            // you're standing at, this one doesn't. Say which.
+            Button(sequence.isFinalEffort
+                   ? "Finish without this \(sequence.isNested ? "rep" : "set")"
+                   : "Finish here") {
+                timerManager.finishSetSequence()
+            }
+            .font(.subheadline)
+            .accessibilityLabel(
+                "Finish the exercise after \(timerManager.performedEffortCount) of \(sequence.totalEfforts)"
+            )
+        }
+        .timerCard(padding: 16)
+        // The only two states a live sequence occupies are waiting on an effort and resting
+        // after one, so `!awaiting` is "resting". Firing on the transition rather than reading
+        // the state directly is what lets a deliberate tap stick until the timer moves on.
+        .onChange(of: timerManager.isAwaitingUser) { _, awaiting in
+            withAnimation(.easeInOut(duration: 0.2)) { isExpanded = !awaiting }
+        }
+    }
+
+    /// Side by side until the text won't take it. At an accessibility type size "Sets" and
+    /// "1 / 4" want more than half a card between them, and holding the row would truncate
+    /// one to "S… 1…" — exactly the reading the setting exists to prevent. Same rule as the
+    /// interval timer's grid, so the two screens stay in step at every size.
+    private var cardLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+    }
+
+    /// Where you are in the exercise, in the same two cards the interval timer uses — same
+    /// colours, same icons, deliberately. A repeaters protocol and a set of weighted pull-ups
+    /// are the same shape of work, and used to describe it in two unrelated visual languages.
+    private var summary: some View {
+        VStack(spacing: 8) {
+            cardLayout {
+                ProgressCard(
+                    title: "Sets",
+                    current: sequence.currentSet,
+                    total: sequence.totalSets,
+                    color: .purple,
+                    icon: "arrow.clockwise"
+                )
+
+                if let reps = repsTarget {
+                    ProgressCard(
+                        title: "Reps",
+                        current: reps.current,
+                        total: reps.total,
+                        color: .green,
+                        icon: "repeat",
+                        detail: reps.detail
+                    )
+                }
+            }
+
+            // Centred underneath rather than beside the cards, where it would eat width they
+            // need. No caption: a chevron under a tappable row already reads as "there's more".
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// What the Reps card shows, or nothing when there are no reps to speak of.
+    ///
+    /// Nested, a rep is an effort the timer counts through, so this is a real position. Flat,
+    /// the whole set is one effort and the rep count is only the prescription — a fraction
+    /// there would claim progress nobody is measuring, so it reads as a bare target. An
+    /// `.attempts` exercise has no rep count at all and gets no card.
+    ///
+    /// Internal rather than private so the three-way branch can be tested without driving
+    /// the view, the same reason `restPhrase` is reachable.
+    var repsTarget: (current: Int, total: Int, detail: String?)? {
+        if sequence.isNested {
+            return (sequence.currentRep, sequence.effortsPerSet, nil)
+        }
+        let index = sequence.currentEffort - 1
+        guard timerManager.effortLogs.indices.contains(index),
+              let reps = timerManager.effortLogs[index].reps,
+              reps >= 1 else { return nil }
+        let count = Int(reps)
+        return (count, count, "\(count)")
+    }
+
+    /// "30 second" / "3 minute" — integer minutes read fine back when every rest was at
+    /// least a minute long, but the spec's canonical rep rest is 30 seconds, and dividing
+    /// that by 60 announces "0 minute rest" to VoiceOver.
+    static func restPhrase(seconds: Int) -> String {
+        seconds < 60 ? "\(seconds) second" : "\(seconds / 60) minute"
+    }
+}
+
+/// The run of set chips. Tapping one selects it for editing without touching the timer.
+///
+/// Wraps rather than scrolls: `FlowLayout` sizes to its content, where a horizontal
+/// `ScrollView` is greedy in the cross axis and would push the rest of the card down.
+/// Wrapping also keeps every set on screen instead of hiding the later ones.
+struct SetChipStrip: View {
+    let timerManager: TimerManager
+    let sequence: TimerManager.SetSequence
+
+    var body: some View {
+        // Nested, only the bout you are on. Laying all six out meant twenty-four chips and a
+        // screen you had to scroll to reach Done — and the other five sets are not actionable
+        // anyway. The arrows above move between them, and the Sets card names the one you're in.
+        chips(forSet: sequence.isNested ? sequence.currentSet : nil)
+    }
+
+    /// The chips for one set, or all of them when the sequence is flat.
+    private func chips(forSet set: Int?) -> some View {
+        FlowLayout(spacing: 8, rowSpacing: 8) {
+            ForEach(indices(forSet: set), id: \.self) { index in
+                Button {
+                    timerManager.selectEffort(at: index)
+                } label: {
+                    SetChip(
+                        number: sequence.isNested
+                            ? index % sequence.effortsPerSet + 1
+                            : index + 1,
+                        unit: sequence.isNested ? "REP" : "SET",
+                        log: timerManager.effortLogs[index],
+                        status: timerManager.effortStatus(at: index),
+                        isSelected: index == timerManager.editingEffortIndex
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func indices(forSet set: Int?) -> [Int] {
+        guard let set else { return Array(timerManager.effortLogs.indices) }
+        return timerManager.effortLogs.indices.filter {
+            timerManager.effortLogs[$0].setNumber == set
+        }
+    }
+}
+
+struct SetChip: View {
+    let number: Int
+    var unit: String = "SET"
+    let log: LoggedSet
+    let status: TimerManager.SetStatus
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Text("\(unit) \(number)")
+                    .font(.caption2.weight(.semibold))
+                if status == .done {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
+            }
+            // Tint only the headline text. A blanket tint would drag the weight
+            // caption's `.secondary` down to a faded accent and lose its contrast.
+            .foregroundStyle(isSelected ? Color.accentColor : .primary)
+
+            if let reps = log.reps {
+                Text("\(reps, format: .number.precision(.fractionLength(0))) reps")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(isSelected ? Color.accentColor : .primary)
+            }
+
+            if let weight = log.weightKg, weight > 0 {
+                Text("\(weight, format: .number.precision(.fractionLength(0...1))) kg")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(minWidth: 78)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : Color(.systemGray5))
+        .clipShape(.rect(cornerRadius: 10))
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor, lineWidth: 1.5)
+            }
+        }
+        .accessibilityLabel("\(unit.capitalized) \(number)\(status == .done ? ", done" : "")")
+        .accessibilityHint("Edit this \(unit.lowercased())")
+    }
+}
+
+/// Weight for one set. Shown only where load is part of the exercise — see
+/// `ExerciseShape.takesLoad`, which the catalog now records per exercise. A limit
+/// boulder has no kg to dial in, and an empty box there is a question the athlete
+/// can't answer.
+struct SetWeightStepper: View {
+    let timerManager: TimerManager
+    let index: Int
+    let weightKg: Double?
+    let seedWeightKg: Double?
+    let status: TimerManager.SetStatus
+    /// What this effort is called — "Set 3", or "Rep 2" inside a nested set.
+    let caption: String
+
+    /// Small enough for fingerboard work, coarse enough to reach a working weight fast.
+    private static let step: Double = 2.5
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Resistance +/− (kg)")
+                    .font(.subheadline.weight(.medium))
+
+                HStack(spacing: 0) {
+                    Button("Less", systemImage: "minus") {
+                        adjust(by: -Self.step)
+                    }
+                    .labelStyle(.iconOnly)
+                    .frame(width: 44, height: 34)
+
+                    Divider().frame(height: 22)
+
+                    SetWeightField(timerManager: timerManager, index: index, weightKg: weightKg)
+                        // The field's text is `@State`, and the panel keeps its identity
+                        // across a set change. Without an identity of its own the field
+                        // would go on showing the previous set's digits while committing
+                        // them to the new set's log.
+                        .id(index)
+
+                    Divider().frame(height: 22)
+
+                    Button("More", systemImage: "plus") {
+                        adjust(by: Self.step)
+                    }
+                    .labelStyle(.iconOnly)
+                    .frame(width: 44, height: 34)
+                }
+                // A TextField takes all the width it is offered, which would stretch
+                // this box across the card and push `+` away from `−`. Hugging the
+                // contents keeps the three controls together and still grows with
+                // Dynamic Type.
+                .fixedSize(horizontal: true, vertical: false)
+                .background(Color(.systemGray5))
+                .clipShape(.rect(cornerRadius: 8))
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(caption)
+                        .font(.subheadline)
+                    if status == .done {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                if let seedWeightKg, seedWeightKg > 0 {
+                    Text("Last: \(seedWeightKg, format: .number.precision(.fractionLength(0...1))) kg")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func adjust(by delta: Double) {
+        timerManager.updateSet(at: index) { set in
+            // Never negative: this is added load, and assistance isn't modelled.
+            let updated = max(0, (set.weightKg ?? 0) + delta)
+            set.weightKg = updated
+        }
+    }
+}
+
+/// The editable weight itself. Tapping it opens a decimal pad, so getting from 30 to
+/// 47.5 doesn't mean seven taps on `+`.
+struct SetWeightField: View {
+    let timerManager: TimerManager
+    let index: Int
+    let weightKg: Double?
+
+    @State private var text = ""
+    @FocusState private var isEditing: Bool
+
+    var body: some View {
+        TextField("0", text: $text)
+            .keyboardType(.decimalPad)
+            .focused($isEditing)
+            .multilineTextAlignment(.center)
+            .font(.body.monospacedDigit())
+            .frame(minWidth: 52)
+            .accessibilityLabel("Resistance in kilograms for set \(index + 1)")
+            .onAppear { text = decimalText(weightKg) }
+            .onChange(of: weightKg) { _, newValue in
+                // The +/− buttons edit the same number. Don't fight live typing.
+                guard !isEditing else { return }
+                text = decimalText(newValue)
+            }
+            .onChange(of: text) { _, newValue in
+                commit(newValue)
+            }
+            .toolbar {
+                // A decimal pad has no Return key, so without this there is no way to
+                // put the keyboard away.
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { isEditing = false }
+                }
+            }
+    }
+
+    /// Written through on every keystroke rather than on commit: a decimal pad never
+    /// submits, so waiting for focus to move risks logging the previous weight when
+    /// the user types and taps Done straight away.
+    private func commit(_ input: String) {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            // Cleared means bodyweight, which the model spells as no weight at all.
+            timerManager.updateSet(at: index) { $0.weightKg = nil }
+            return
+        }
+        // Half-typed or unparseable: leave the recorded value alone.
+        guard let value = userDecimal(trimmed) else { return }
+        timerManager.updateSet(at: index) { $0.weightKg = max(0, value) }
+    }
+}
+
+/// "How hard was this set?" — five steps, tap to rate, tap the active one to clear.
+///
+/// The one per-set field that applies to every shape: with no load to record, this and
+/// the note are what the books call the quality of the attempt.
+struct SetEffortBar: View {
+    let timerManager: TimerManager
+    let index: Int
+    let rpe: Int?
+    var unit: String = "set"
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("How hard was this \(unit)?")
+                    .font(.subheadline)
+                Spacer()
+                Text(LoggedSet.effortLabel(for: rpe) ?? "—")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(rpe == nil ? .secondary : .primary)
+            }
+
+            HStack(spacing: 6) {
+                ForEach(LoggedSet.effortLabels.indices, id: \.self) { step in
+                    Button {
+                        rate(step + 1)
+                    } label: {
+                        // A filled bar, not a labelled control: the segment's meaning is
+                        // its position, and the label above names the current rating.
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(step < (rpe ?? 0) ? Color.accentColor : Color(.systemGray5))
+                            .frame(height: 14)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(LoggedSet.effortLabels[step])
+                    .accessibilityAddTraits(step + 1 == rpe ? [.isSelected] : [])
+                }
+            }
+        }
+    }
+
+    private func rate(_ value: Int) {
+        timerManager.updateSet(at: index) { set in
+            set.rpe = (set.rpe == value) ? nil : value
+        }
+    }
+}
+
+/// A note against one set, hidden behind "Add Note" until wanted.
+struct SetNoteField: View {
+    let timerManager: TimerManager
+    let index: Int
+    let note: String?
+    var unit: String = "set"
+
+    @State private var isExpanded = false
+
+    private var text: Binding<String> {
+        Binding(
+            get: { note ?? "" },
+            set: { newValue in
+                timerManager.updateSet(at: index) { set in
+                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    set.note = trimmed.isEmpty ? nil : newValue
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        if isExpanded || !(note ?? "").isEmpty {
+            TextField("Note for this \(unit)", text: text, axis: .vertical)
+                .font(.subheadline)
+                .lineLimit(1...3)
+                .textFieldStyle(.roundedBorder)
+        } else {
+            Button("Add Note", systemImage: "plus") {
+                isExpanded = true
+            }
+            .font(.subheadline)
+        }
+    }
+}
+
+/// Previous / next set, flanking whatever the timer is currently showing.
+struct SetNavigationRow: View {
+    let timerManager: TimerManager
+    let sequence: TimerManager.SetSequence
+    let label: String
+    let labelColor: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if sequence.isNested {
+                SetJumpButton(
+                    title: "SET", systemImage: "backward.end.fill",
+                    accessibilityLabel: "Back to the start of the set"
+                ) { timerManager.jumpToPreviousSet() }
+                .disabled(sequence.currentEffort <= 1)
+            }
+
+            // Flat, one effort is one set, so this is the SET control the nested row puts
+            // on the outside — same glyph, same caption, rather than a second visual
+            // language for the same move.
+            SetJumpButton(
+                title: sequence.isNested ? "REP" : "SET",
+                systemImage: sequence.isNested ? "backward.fill" : "backward.end.fill",
+                accessibilityLabel: sequence.isNested ? "Previous rep" : "Previous set"
+            ) { timerManager.previousEffort() }
+            .disabled(sequence.currentEffort <= 1)
+
+            Spacer(minLength: 8)
+
+            // Same gradient the clock wears, so the prompt reads as the thing the
+            // countdown turns into rather than as a different screen's heading.
+            Text(label)
+                .font(.title3.weight(.semibold).monospaced())
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [labelColor, labelColor.opacity(0.7)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .multilineTextAlignment(.center)
+
+            Spacer(minLength: 8)
+
+            SetJumpButton(
+                title: sequence.isNested ? "REP" : "SET",
+                systemImage: sequence.isNested ? "forward.fill" : "forward.end.fill",
+                accessibilityLabel: sequence.isNested ? "Skip this rep" : "Skip this set"
+            ) { timerManager.nextEffort() }
+
+            if sequence.isNested {
+                SetJumpButton(
+                    title: "SET", systemImage: "forward.end.fill",
+                    accessibilityLabel: sequence.currentSet < sequence.totalSets
+                        ? "Finish this set and start the rest"
+                        : "Finish the exercise"
+                ) { timerManager.jumpToNextSet() }
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.tint)
+    }
+}
+
+/// One navigation control: the glyph with what it moves underneath it.
+///
+/// Labelled rather than icon-only because a nested sequence has two things you can move
+/// through, and `forward.fill` beside `forward.end.fill` is not self-explanatory. Flat
+/// sequences are labelled too — one row of controls that reads the same everywhere beats
+/// each timer shape inventing its own glyphs.
+struct SetJumpButton: View {
+    let title: String
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 1) {
+                Image(systemName: systemImage)
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+            }
+            // A consistent tap target whether or not there's a caption, and wide enough
+            // to stay reachable with one thumb.
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
+}

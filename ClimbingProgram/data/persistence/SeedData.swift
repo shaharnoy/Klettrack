@@ -334,7 +334,96 @@ struct SeedData {
 
             bSE.combinations = dedupPreserveOrder(bSE.combinations)
 
+            applyShapes(ctx, boulder: boulder)
+
             try? ctx.save()
+        }
+    }
+
+    // MARK: - Exercise shape
+
+    /// Which exercises take added load, and which are counted in tries.
+    ///
+    /// Keyed by name rather than by training type because a type mixes shapes:
+    /// "Weighted Pull-Ups" and "Frenchies" sit side by side under Pull. Names absent
+    /// here default to `.weighted`, which is what every exercise did before the field
+    /// existed — so only the exceptions are listed.
+    ///
+    /// ponytail: overwrites on every launch, like every other seeded field (`ensureEx`
+    /// already rewrites order/area/reps/rest). A mis-categorisation is fixed by shipping
+    /// a build, and a user's edit to a *seeded* exercise reverts — exactly as their edit
+    /// to its reps text already does.
+    private static let seededShapes: [String: ExerciseShape] = [
+        // Core — bodyweight holds and raises
+        "Abdominal Crunches": .bodyweight,
+        "Hanging Knee Lifts": .bodyweight,
+        "1-Arm 1-Leg Plank": .bodyweight,
+        "1-Arm Elbow & Side Plank": .bodyweight,
+        "Front Lever": .bodyweight,
+        "Superman": .bodyweight,
+        "Reverse Plank": .bodyweight,
+        "Back Bridge": .bodyweight,
+        "Side Hip Raises": .bodyweight,
+
+        // Mobility — stretches, timed holds with nothing to add
+        "Knee-to-chest": .bodyweight,
+        "Band Hamstring Stretch": .bodyweight,
+        "Butterfly Stretch": .bodyweight,
+        "Seated Single-Leg Hip Adductor": .bodyweight,
+        "Lunges": .bodyweight,
+        "Kneeling Quad and Hip Flexor Stretch": .bodyweight,
+        "Seated Calf Stretch with Band": .bodyweight,
+        "Oblique Knees to One Side": .bodyweight,
+
+        // Antagonist — band tension isn't a kg you can honestly type
+        "Band T": .bodyweight,
+        "Band Y": .bodyweight,
+        "Scapular Push-Up": .bodyweight,
+        "Scapular Pull-Up": .bodyweight,
+        "Push-Up": .bodyweight,
+
+        // General Strength — the two mobility entries among the lifts
+        "Frog Stretch": .bodyweight,
+        "Cossack Squat": .bodyweight,
+
+        // Climbing-specific pull and campus work — bodyweight by protocol
+        "Square Pull-Ups": .bodyweight,
+        "Uneven-Grip Pull-Ups": .bodyweight,
+        "System Wall Isolation": .bodyweight,
+        "Steep Wall Lock-Offs": .bodyweight,
+        "One-Arm Lock-Offs": .bodyweight,
+        "Campus Board Bumps": .bodyweight,
+        "CB Laddering (no skips, small rungs)": .bodyweight,
+        "CB Laddering (larger rungs w/ skips)": .bodyweight,
+        "Campus Switch Hands": .bodyweight,
+        "One-Arm Lunging": .bodyweight,
+        "Pull-Up Intervals": .bodyweight,
+        "Frenchies": .bodyweight,
+
+        // Wall work filed outside the Bouldering activity, so the structural rule
+        // below can't reach it. These are tries at a problem, not loaded sets.
+        "Bouldering": .attempts,
+        "Boulder Campusing": .attempts,
+        "Big-Move Boulder Problems": .attempts,
+    ]
+
+    /// Stamp the seeded shapes, then fill anything under Bouldering that the table missed.
+    private static func applyShapes(_ ctx: ModelContext, boulder: Activity) {
+        for ex in (try? ctx.fetch(FetchDescriptor<Exercise>())) ?? [] {
+            if let shape = seededShapes[ex.name] {
+                ex.shapeKey = shape.rawValue
+            }
+        }
+
+        // ponytail: everything filed under Bouldering is wall-attempt work, so the
+        // activity *is* the classification — drills seeded later need no table entry.
+        // Fills a blank only, so a user's own exercise filed here, or their own
+        // override, sticks.
+        for type in boulder.types {
+            let filed = type.exercises + type.combinations.flatMap(\.exercises)
+            for ex in filed where ex.shapeKey == nil {
+                ex.shapeKey = ExerciseShape.attempts.rawValue
+            }
         }
     }
 

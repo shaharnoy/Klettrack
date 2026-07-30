@@ -20,48 +20,139 @@ struct TimerView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    
+    @Environment(TimerAppState.self) private var timerAppState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     // Keep shared timer manager alive in view state and observe via @Observable tracking
     @State private var sharedTimerManager = SharedTimerManager.shared
-    
+
     @State private var sheetRoute: SheetRoute?
-    
+
+    /// Exercise context we have already applied, so re-entering the tab doesn't reload it.
+    @State private var appliedExercise: ExerciseTimerContext?
+    @State private var loggingExercise: ExerciseTimerContext?
+    /// A different exercise arrived while a timer was in flight — ask before replacing it.
+    @State private var pendingExercise: ExerciseTimerContext?
+
     let planDay: PlanDay?
-    
+    var exercise: ExerciseTimerContext? = nil
+
+    /// The exercise actually loaded, not the one most recently tapped. While a switch is
+    /// pending these differ, and showing the incoming name would misrepresent what's running.
+    private var exerciseName: String? { appliedExercise?.exerciseName }
+
+    /// A timer that is mid-flight and would be lost by loading something else.
+    /// A merely loaded-but-stopped configuration is not busy and can be replaced silently.
+    private var timerIsBusy: Bool {
+        timerManager.isRunning
+            || timerManager.isPaused
+            || timerManager.isGetReady
+            || timerManager.isAwaitingUser
+            || timerManager.hasActiveSetSequence
+    }
+
     // Computed property to access the timer manager
     private var timerManager: TimerManager {
         sharedTimerManager.timerManager
     }
-    
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                // Timer Display
-                timerDisplaySection
-                
-                // Progress Indicators
-                if timerManager.configuration != nil {
-                    progressSection
+            // Scrolls because the content genuinely doesn't fit: with the set log panel
+            // open, a fixed VStack pushed the Pause/Reset row off the bottom of the
+            // screen, so a running rest couldn't be paused at all. Also what keeps the
+            // controls reachable at larger Dynamic Type sizes.
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Exercise context (when launched from a plan day exercise)
+                    if let exerciseName {
+                        VStack(spacing: 4) {
+                            Label(exerciseName, systemImage: "figure.climbing")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+
+                            // Technique cue from the catalog, most useful mid-set.
+                            if let blurb = appliedExercise?.exerciseDescription {
+                                Text(blurb)
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+
+                    if let sequence = timerManager.setSequence {
+                        // Rep-based exercise. Waiting on a set shows no clock — nothing is
+                        // being counted. Resting shows the countdown above the same panel,
+                        // so a weight can still be corrected mid-rest.
+                        if timerManager.isAwaitingUser {
+                            // On the same card the clock uses, in its place — the set
+                            // prompt is what the countdown becomes, not a lesser state.
+                            SetNavigationRow(
+                                timerManager: timerManager,
+                                sequence: sequence,
+                                // Only the rep: with four controls flanking it, naming the set
+                                // here too wrapped mid-phrase, and the Sets card below says
+                                // which set this is.
+                                label: sequence.isNested
+                                    ? "REP \(sequence.currentRep) OF \(sequence.effortsPerSet)"
+                                    : "SET \(sequence.currentSet) OF \(sequence.totalSets)",
+                                labelColor: .primary
+                            )
+                            .timerCard()
+                        } else {
+                            timerDisplaySection
+                            restSkipSection(sequence)
+                        }
+
+                        SetLogPanel(timerManager: timerManager, sequence: sequence)
+                    } else {
+                        timerDisplaySection
+                    }
+
+                    // Progress Indicators
+                    if timerManager.configuration != nil && !timerManager.isAwaitingUser {
+                        progressSection
+                    }
+
+                    // Control Buttons (without Stop & Reset)
+                    controlButtonsSection
+
+                    // Laps Section - only show for total time timers, not interval timers
+                    if !timerManager.laps.isEmpty && timerManager.configuration?.hasIntervals == false {
+                        lapsSection
+                    }
                 }
-                
-                // Control Buttons (without Stop & Reset)
-                controlButtonsSection
-                
-                // Laps Section - only show for total time timers, not interval timers
-                if !timerManager.laps.isEmpty && timerManager.configuration?.hasIntervals == false {
-                    lapsSection
-                }
-                
-                Spacer()
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+                .frame(maxWidth: .infinity)
             }
+            // Only scroll when there is something to scroll to, so a short timer screen
+            // still feels fixed rather than rubber-banding.
+            .scrollBounceBehavior(.basedOnSize)
             //.navigationTitle("TIMER")
             .navigationBarTitleDisplayMode(.large)
-            .padding(.horizontal, 20)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                   
+                    // The timer is a tab, not a pushed view, so there is no back button
+                    // of its own — you arrive from a plan day and get stranded. Switching
+                    // back is enough: the Plans tab keeps its navigation path, so this
+                    // lands on the very day you left, and the timer keeps running.
+                    //
+                    // ponytail: tab 2 hardcoded because both switchToTimer call sites are
+                    // in PlansViews. Record an origin tab on TimerAppState if a third
+                    // entry point ever appears.
+                    if planDay != nil {
+                        Button("Plan", systemImage: "chevron.left") {
+                            timerAppState.selectedTab = 2
+                        }
+                        .accessibilityLabel("Back to the plan day")
+                    }
                 }
-                
+
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 16) {
                         // Main menu
@@ -97,6 +188,7 @@ struct TimerView: View {
                 case .timerSetup:
                     TimerSetupView(planDay: planDay) { config, template in
                         // Load the configuration immediately to display on screen
+                        leaveExercise()
                         timerManager.loadConfiguration(config)
 
                         // Update template usage but don't start the timer
@@ -112,6 +204,58 @@ struct TimerView: View {
         .onAppear {
             // Keep screen on when timer view appears
             updateScreenIdleTimer()
+            applyExerciseIfNeeded()
+        }
+        .onChange(of: exercise) { _, _ in
+            applyExerciseIfNeeded()
+        }
+        .onChange(of: timerManager.isCompleted) { _, completed in
+            // Offer the log form when an exercise-launched timer finishes.
+            guard completed, let exercise, exercise == appliedExercise else { return }
+            loggingExercise = exercise
+        }
+        .confirmationDialog(
+            "Timer in progress",
+            isPresented: Binding(
+                get: { pendingExercise != nil },
+                set: { if !$0 { pendingExercise = nil } }
+            ),
+            presenting: pendingExercise
+        ) { next in
+            Button("Start \(next.exerciseName)", role: .destructive) {
+                timerManager.stop()
+                apply(next)
+                pendingExercise = nil
+            }
+            Button("Keep \(exerciseName ?? "current timer")", role: .cancel) {
+                // Put the running exercise back so the label matches what's actually timing.
+                timerAppState.exerciseContext = appliedExercise
+                pendingExercise = nil
+            }
+        } message: { next in
+            Text("\(exerciseName ?? "A timer") is still going. Starting \(next.exerciseName) will discard it.")
+        }
+        .sheet(item: $loggingExercise) { context in
+            // Wall work logs as a climb — grade, angle, style — which is what the plan
+            // row already opens for it. Anything else logs as a session item.
+            if context.shape == .attempts {
+                // Presented bare: ClimbLogForm brings its own NavigationStack, as every
+                // other call site relies on. The title matches the plan row's wording.
+                ClimbLogForm(
+                    title: "Climb Log for \(context.exerciseName)",
+                    initialDate: context.planDayDate,
+                    initialAttempts: timerManager.effortLogs.count
+                )
+            } else {
+                ExerciseLogSheet(
+                    exerciseName: context.exerciseName,
+                    date: context.planDayDate,
+                    planId: context.planId,
+                    planName: context.planName,
+                    prefill: logPrefill(for: context),
+                    onSaved: {}
+                )
+            }
         }
         .onDisappear {
             // Allow screen to sleep when timer view disappears
@@ -127,6 +271,123 @@ struct TimerView: View {
         }
     }
     
+    // MARK: - Rest between sets
+    private func restSkipSection(_ sequence: TimerManager.SetSequence) -> some View {
+        // Mid-rest, currentEffort is still the one just finished, so this reads the rest
+        // that is actually running rather than the next one.
+        let crossingSets = sequence.isLastRepOfSet
+        let nextEffort = min(sequence.currentEffort + 1, sequence.totalEfforts)
+        let nextSet = (nextEffort - 1) / sequence.effortsPerSet + 1
+        let nextRep = (nextEffort - 1) % sequence.effortsPerSet + 1
+
+        return VStack(spacing: 6) {
+            SetNavigationRow(
+                timerManager: timerManager,
+                sequence: sequence,
+                label: crossingSets && sequence.isNested ? "REST BETWEEN SETS" : "REST",
+                labelColor: crossingSets && sequence.isNested ? .purple : .orange
+            )
+
+            Text(sequence.isNested
+                 ? "Next up: rep \(nextRep) of \(sequence.effortsPerSet) · set \(nextSet) of \(sequence.totalSets)"
+                 : "Next up: set \(nextSet) of \(sequence.totalSets)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Exercise plan application
+
+    /// Load the exercise's timer once. If one is already in flight, ask first
+    /// rather than silently discarding it.
+    private func applyExerciseIfNeeded() {
+        guard let exercise, exercise != appliedExercise else { return }
+        guard !timerIsBusy else {
+            pendingExercise = exercise
+            return
+        }
+        apply(exercise)
+    }
+
+    /// Hand-picking a template or building a custom timer replaces the exercise's own
+    /// protocol, so the screen must stop claiming to be running that exercise: the
+    /// header named it while the clock ran something else, and the set panel stayed on
+    /// screen driving nothing.
+    ///
+    /// Clearing the shared context too, or the tab would re-apply the exercise the next
+    /// time this view appeared and quietly undo the switch.
+    private func leaveExercise() {
+        appliedExercise = nil
+        timerAppState.exerciseContext = nil
+        timerManager.clearSetSequence()
+    }
+
+    private func apply(_ exercise: ExerciseTimerContext) {
+        appliedExercise = exercise
+
+        switch exercise.plan {
+        case .repBased(let reps, let sets, let restBetweenReps, let restBetweenSets, let templateId):
+            let session = TimerSession(
+                templateId: templateId,
+                planDayId: planDay?.id,
+                exerciseName: exercise.exerciseName
+            )
+            context.insert(session)
+            try? context.save()
+            timerManager.startSetSequence(
+                reps: reps,
+                sets: sets,
+                restBetweenReps: restBetweenReps,
+                restBetweenSets: restBetweenSets,
+                seedWeightKg: exercise.shape.takesLoad
+                    ? lastLoggedWeight(for: exercise.exerciseName, in: context)
+                    : nil,
+                shape: exercise.shape,
+                session: session
+            )
+
+        case .durationBased(let config, _):
+            timerManager.loadConfiguration(config)
+
+        case nil:
+            break
+        }
+    }
+
+    /// What the timer knows that the plan row doesn't: how long it actually ran,
+    /// and how many sets were planned. Weight/grade/notes stay blank on purpose.
+    ///
+    /// A rep-based sequence knows more than that — it has a record of each set — so
+    /// it prefills from actuals rather than from the plan's counts.
+    private func logPrefill(for exercise: ExerciseTimerContext) -> ExerciseLogSheet.Prefill {
+        let elapsed = timerManager.session?.totalElapsedSeconds
+        // Performed, not planned: `effortLogs` carries a row per prescribed effort so you
+        // can skip to a pre-filled one, and logging those would claim work never done.
+        let performed = timerManager.performedEffortLogs
+        if !performed.isEmpty {
+            return .init(loggedSets: performed, durationSeconds: elapsed)
+        }
+        // A sequence that ran and confirmed nothing is not the same as one that never ran.
+        // `effortLogs` survives finishing, so its presence is the record that the athlete
+        // was here — and prefilling the plan's counts on top of that claims exactly the work
+        // the line above refuses to claim. Reachable from "Finish here" on the first effort.
+        if !timerManager.effortLogs.isEmpty {
+            return .init(reps: nil, sets: nil, durationSeconds: elapsed)
+        }
+        switch exercise.plan {
+        case .repBased(let reps, let sets, _, _, _):
+            return .init(reps: reps, sets: sets, durationSeconds: elapsed)
+        case .durationBased(let config, _):
+            return .init(
+                reps: config.intervals.first?.repetitions,
+                sets: config.repeatCount,
+                durationSeconds: elapsed
+            )
+        case nil:
+            return .init(reps: nil, sets: nil, durationSeconds: elapsed)
+        }
+    }
+
     // MARK: - Screen Management
     private func updateScreenIdleTimer() {
         // Keep screen on when timer is running or paused (but not stopped)
@@ -219,48 +480,48 @@ struct TimerView: View {
                     .contentTransition(.numericText())
             }
             
-            // Secondary information: total elapsed and remaining time (smaller, less prominent)
-            HStack(spacing: 20) {
-                // Total elapsed time
-                VStack(spacing: 2) {
-                    Text("Elapsed")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text(timerManager.formatTime(timerManager.totalElapsedTime))
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .contentTransition(.numericText())
-                }
-                
-                // Separator
-                Rectangle()
-                    .fill(.secondary.opacity(0.3))
-                    .frame(width: 1, height: 30)
-                
-                // Total time remaining
-                let remaining = timerManager.totalTimeRemaining
-                if remaining > 0 {
+            // Secondary information: total elapsed and remaining time (smaller, less
+            // prominent). Omitted during a rest between sets: there the big countdown
+            // already *is* the remaining time, so "Remaining" just repeats it and
+            // "Elapsed" counts up through a rest nobody is trying to fill.
+            if timerManager.setSequence == nil {
+                HStack(spacing: 20) {
+                    // Total elapsed time
                     VStack(spacing: 2) {
-                        Text("Remaining")
+                        Text("Elapsed")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
-                        Text(timerManager.formatTime(remaining))
+                        Text(timerManager.formatTime(timerManager.totalElapsedTime))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
                             .contentTransition(.numericText())
                     }
-                    .transition(.opacity.combined(with: .scale))
+
+                    // Separator
+                    Rectangle()
+                        .fill(.secondary.opacity(0.3))
+                        .frame(width: 1, height: 30)
+
+                    // Total time remaining
+                    let remaining = timerManager.totalTimeRemaining
+                    if remaining > 0 {
+                        VStack(spacing: 2) {
+                            Text("Remaining")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Text(timerManager.formatTime(remaining))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .contentTransition(.numericText())
+                        }
+                        .transition(.opacity.combined(with: .scale))
+                    }
                 }
             }
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-        )
+        .timerCard()
     }
-    
+
     // MARK: - Progress Section
     private var progressSection: some View {
         VStack(spacing: 16) {
@@ -284,10 +545,12 @@ struct TimerView: View {
             
             // Enhanced interval progress display
             if let config = timerManager.configuration, config.hasIntervals {
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
+                // One column at an accessibility type size, where two cards' worth of
+                // "Sets 1 / 4" no longer fits across. Matches the set log panel's rule.
+                LazyVGrid(columns: dynamicTypeSize.isAccessibilitySize
+                    ? [GridItem(.flexible())]
+                    : [GridItem(.flexible()), GridItem(.flexible())],
+                    spacing: 12) {
                     // Iteration Card
                     if config.isRepeating, let repeatCount = config.repeatCount, repeatCount > 1 {
                         // Clamp current ≤ total and ensure total ≥ 1
@@ -316,12 +579,7 @@ struct TimerView: View {
                 }
             }
         }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        )
+        .timerCard(padding: 12)
     }
     
     // MARK: - Current Interval Section
@@ -435,10 +693,10 @@ struct TimerView: View {
             return
         }
         
-        let session = TimerSession(planDayId: planDay?.id)
+        let session = TimerSession(planDayId: planDay?.id, exerciseName: exerciseName)
         context.insert(session)
         try? context.save()
-        
+
         timerManager.start(with: config, session: session)
     }
     
@@ -457,9 +715,7 @@ struct TimerView: View {
             }
             .frame(maxHeight: 150)
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(.rect(cornerRadius: 12))
+        .timerCard(padding: 16)
     }
     
     // MARK: - Helper Methods
@@ -517,10 +773,15 @@ struct TimerView: View {
     }
     
     private func startTimer(with config: TimerConfiguration, template: TimerTemplate? = nil) {
+        // Only reached from Select Template and Custom Timer — both are the user
+        // choosing timing by hand, which is no longer the exercise's own.
+        leaveExercise()
+
         let session = TimerSession(
             templateId: template?.id,
             templateName: template?.name,
-            planDayId: planDay?.id
+            planDayId: planDay?.id,
+            exerciseName: exerciseName
         )
         
         context.insert(session)
@@ -538,7 +799,7 @@ struct TimerView: View {
     
     private func resumeTimer() {
         guard let config = timerManager.configuration else { return }
-        let session = TimerSession(planDayId: planDay?.id)
+        let session = TimerSession(planDayId: planDay?.id, exerciseName: exerciseName)
         context.insert(session)
         timerManager.start(with: config, session: session)
     }
@@ -585,6 +846,38 @@ struct LapRowView: View {
         let remainingSeconds = seconds % 60
         let paddedSeconds = remainingSeconds.formatted(.number.grouping(.never).precision(.integerLength(2)))
         return "\(minutes):\(paddedSeconds)"
+    }
+}
+
+// MARK: - Card Chrome
+
+/// The timer's one card surface: material, rounded, softly shadowed.
+///
+/// Every panel on this screen wore its own chrome — the clock on `.regularMaterial`
+/// at radius 20, the set log and laps on flat `systemGray6` at 16 and 12. Waiting on
+/// a set therefore looked like a different screen from resting between them, which is
+/// what a plan-launched timer spends most of its time doing. One modifier instead, so
+/// the shading the clock has is the shading everything has.
+struct TimerCard: ViewModifier {
+    var padding: CGFloat = 24
+
+    func body(content: Content) -> some View {
+        content
+            .padding(padding)
+            // Full width for every card, so the surface doesn't resize underneath you
+            // when a rest ends and the clock gives way to the set prompt.
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(.regularMaterial)
+                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+            )
+    }
+}
+
+extension View {
+    func timerCard(padding: CGFloat = 24) -> some View {
+        modifier(TimerCard(padding: padding))
     }
 }
 
@@ -1100,7 +1393,10 @@ struct ProgressCard: View {
     let total: Int
     let color: Color
     let icon: String
-    
+    /// Replaces the "current / total" readout where the number is a target rather than a
+    /// position — a flat set's rep count is prescribed, and the timer never counts through it.
+    var detail: String? = nil
+
     var body: some View {
         VStack(spacing: 4) {
             HStack {
@@ -1114,11 +1410,11 @@ struct ProgressCard: View {
                 
                 Spacer()
                 
-                Text("\(current) / \(total)")
+                Text(detail ?? "\(current) / \(total)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            
+
                 let safeTotal = max(1, total)
                 let safeCurrent = min(max(0, current), safeTotal)
                 ProgressView(value: Double(safeCurrent), total: Double(safeTotal))
@@ -1126,7 +1422,11 @@ struct ProgressCard: View {
                 .scaleEffect(y: 1.5)
         }
         .padding(16)
-        .frame(width: 160, height: 80) // Fixed size for consistent appearance
+        // Fills whatever column or stack it is given rather than a fixed 160: two of those
+        // plus spacing overflow the content width of a 393pt phone, and they have to fit the
+        // narrower set log card too. `minHeight` keeps the pair even without clipping the
+        // readout at large Dynamic Type sizes.
+        .frame(maxWidth: .infinity, minHeight: 80)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
