@@ -793,7 +793,7 @@ private enum PlanCSVCodec {
             if character == "\"" {
                 current.append(character)
                 if quoted, index + 1 < chars.count, chars[index + 1] == "\"" { current.append(chars[index + 1]); index += 1 } else { quoted.toggle() }
-            } else if (character == "\n" || character == "\r") && !quoted {
+            } else if character.isNewline && !quoted {
                 if !current.isEmpty { result.append(current); current = "" }
                 if character == "\r", index + 1 < chars.count, chars[index + 1] == "\n" { index += 1 }
             } else { current.append(character) }
