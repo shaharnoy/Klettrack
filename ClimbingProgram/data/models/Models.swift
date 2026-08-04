@@ -114,6 +114,9 @@ final class SessionItem {
     var sort: Int = 0
     var planSourceId: UUID?
     var planName: String?
+    var planDayId: UUID?
+    var planExerciseID: UUID?
+    var climbEntryId: UUID?
 
     // Structured metrics
     var reps: Double?
@@ -128,6 +131,9 @@ final class SessionItem {
         exerciseName: String,
         planSourceId: UUID? = nil,
         planName: String? = nil,
+        planDayId: UUID? = nil,
+        planExerciseID: UUID? = nil,
+        climbEntryId: UUID? = nil,
         reps: Double? = nil,
         sets: Double? = nil,
         weightKg: Double? = nil,
@@ -139,6 +145,9 @@ final class SessionItem {
         self.exerciseName = exerciseName
         self.planSourceId = planSourceId
         self.planName = planName
+        self.planDayId = planDayId
+        self.planExerciseID = planExerciseID
+        self.climbEntryId = climbEntryId
         self.reps = reps
         self.sets = sets
         self.weightKg = weightKg

@@ -17,10 +17,11 @@ struct ClimbingProgramApp: App {
                 }
         }
         .modelContainer(for: [
-            Activity.self, TrainingType.self, Exercise.self,
+            Activity.self, TrainingType.self, BoulderCombination.self, Exercise.self,
             Session.self, SessionItem.self,
             DayLog.self, DayTag.self,
-            Plan.self, PlanDay.self,
+            Plan.self, PlanDay.self, PlanKindModel.self, DayTypeModel.self,
+            PlanExerciseDefinition.self,
             TimerTemplate.self, TimerInterval.self, TimerSession.self, TimerLap.self,
             ClimbEntry.self, ClimbStyle.self, ClimbGym.self, ClimbMedia.self,
             TB2ClimbMetadata.self, TB2ClimbStatsMetadata.self

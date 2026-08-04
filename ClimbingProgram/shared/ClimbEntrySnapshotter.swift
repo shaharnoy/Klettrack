@@ -39,6 +39,8 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             gym: c.gym,
             notes: c.notes,
             dateLogged: c.dateLogged,
+            planSourceId: c.planSourceId,
+            planDayId: c.planDayId,
             tb2ClimbUUID: c.tb2ClimbUUID,
             kilterLogUuid: c.kilterLogUuid,
             kilterClimbUuid: c.kilterClimbUuid,
@@ -66,6 +68,8 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
             gym: s.gym,
             notes: s.notes,
             dateLogged: s.dateLogged,
+            planSourceId: s.planSourceId,
+            planDayId: s.planDayId,
             tb2ClimbUUID: s.tb2ClimbUUID,
             kilterLogUuid: s.kilterLogUuid,
             kilterClimbUuid: s.kilterClimbUuid
@@ -108,6 +112,8 @@ struct ClimbEntrySnapshotter: UndoSnapshotting {
         let gym: String
         let notes: String?
         let dateLogged: Date
+        let planSourceId: UUID?
+        let planDayId: UUID?
         let tb2ClimbUUID: String?
         let kilterLogUuid: String?
         let kilterClimbUuid: String?

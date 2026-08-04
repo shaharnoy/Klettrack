@@ -124,6 +124,12 @@ struct PlansListView: View {
     @State private var showExporter = false
     @State private var exportDoc: LogCSVDocument? = nil
 
+    @State private var showPlanExporter = false
+    @State private var planExportDoc: PlanCSVDocument? = nil
+    @State private var showPlanImporter = false
+    @State private var planImportTarget: Plan? = nil
+    @State private var pendingPlanImport: PendingPlanImport? = nil
+
     // Import (async with progress)
     @State private var showImporter = false
     @State private var importing = false
@@ -172,6 +178,7 @@ struct PlansListView: View {
                     showExporter: $showExporter,
                     exportDoc: $exportDoc,
                     showImporter: $showImporter,
+                    showPlanImporter: $showPlanImporter,
                     sharePayload: $sharePayload,
                     resultMessage: $resultMessage
                 )
@@ -194,12 +201,42 @@ struct PlansListView: View {
                         resultMessage = "Export failed: \(err.localizedDescription)"
                     }
                 }
+                .fileExporter(
+                    isPresented: $showPlanExporter,
+                    document: planExportDoc,
+                    contentType: .commaSeparatedText,
+                    defaultFilename: "klettrack-plan-\(Date().formatted(.dateTime.year().month().day()))"
+                ) { result in
+                    switch result {
+                    case .success:
+                        resultMessage = "Plan CSV exported."
+                    case .failure(let error):
+                        resultMessage = "Plan export failed: \(error.localizedDescription)"
+                    }
+                }
                 .fileImporter(
                     isPresented: $showImporter,
                     allowedContentTypes: [.commaSeparatedText],
                     allowsMultipleSelection: false
                 ) { result in
                     handleImportResult(result)
+                }
+                .fileImporter(
+                    isPresented: $showPlanImporter,
+                    allowedContentTypes: [.commaSeparatedText],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handlePlanImportResult(result)
+                }
+                .sheet(item: $pendingPlanImport) { pending in
+                    PlanImportPreviewSheet(pending: pending) { result in
+                        switch result {
+                        case .success(let summary):
+                            resultMessage = summary.message
+                        case .failure(let error):
+                            resultMessage = "Plan import failed: \(error.localizedDescription)"
+                        }
+                    }
                 }
                 .sheet(item: $sharePayload) { payload in
                     ShareSheet(items: [payload.url]) {
@@ -219,12 +256,49 @@ struct PlansListView: View {
     private var plansList: some View {
         List {
             ForEach(plans) { plan in
-                Button {
-                    timerAppState.plansNavigationPath.append(PlanNavigationItem(plan: plan))
-                } label: {
-                    PlanRow(plan: plan)
+                HStack(spacing: 12) {
+                    Button {
+                        timerAppState.plansNavigationPath.append(PlanNavigationItem(plan: plan))
+                    } label: {
+                        PlanRow(plan: plan)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+
+                    Menu {
+                        Button {
+                            planExportDoc = PlanCSVExchange.export(plan: plan, in: context)
+                            showPlanExporter = true
+                        } label: {
+                            Label("Export Plan", systemImage: "square.and.arrow.up")
+                        }
+
+                        Button {
+                            planImportTarget = plan
+                            showPlanImporter = true
+                        } label: {
+                            Label("Import into this plan", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .accessibilityLabel("Plan actions")
+                    }
                 }
-                .buttonStyle(.plain)
+                .contextMenu {
+                    Button {
+                        planExportDoc = PlanCSVExchange.export(plan: plan, in: context)
+                        showPlanExporter = true
+                    } label: {
+                        Label("Export Plan", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        planImportTarget = plan
+                        showPlanImporter = true
+                    } label: {
+                        Label("Import into this plan", systemImage: "square.and.arrow.down")
+                    }
+                }
             }
             .onDelete { idx in
                 guard isDataReady else { return }
@@ -270,6 +344,24 @@ struct PlansListView: View {
             }
         } catch {
             resultMessage = "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func handlePlanImportResult(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let data = try Data(contentsOf: url)
+            let exchange = try PlanCSVExchange.parse(String(decoding: data, as: UTF8.self))
+            let mode: PlanCSVExchange.ImportMode = if let target = planImportTarget {
+                .existing(target)
+            } else {
+                .newPlan
+            }
+            pendingPlanImport = PendingPlanImport(exchange: exchange, mode: mode)
+            planImportTarget = nil
+        } catch {
+            resultMessage = "Plan import failed: \(error.localizedDescription)"
+            planImportTarget = nil
         }
     }
 }
@@ -331,6 +423,7 @@ private struct PlansToolbarModifier: ViewModifier {
     @Binding var showExporter: Bool
     @Binding var exportDoc: LogCSVDocument?
     @Binding var showImporter: Bool
+    @Binding var showPlanImporter: Bool
     @Binding var sharePayload: SharePayload?
     @Binding var resultMessage: String?
 
@@ -343,7 +436,7 @@ private struct PlansToolbarModifier: ViewModifier {
                         exportDoc = LogCSV.makeExportCSV(context: context)
                         showExporter = true
                     } label: {
-                        Label("Export logs to CSV", systemImage: "square.and.arrow.up")
+                        Label("Export Logs", systemImage: "square.and.arrow.up")
                     }
 
                     Button {
@@ -363,14 +456,21 @@ private struct PlansToolbarModifier: ViewModifier {
                             resultMessage = "Share prep failed: \(error.localizedDescription)"
                         }
                     } label: {
-                        Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
+                        Label("Share Logs", systemImage: "square.and.arrow.up.on.square")
                     }
 
                     Button {
                         guard isDataReady else { return }
                         showImporter = true
                     } label: {
-                        Label("Import logs from CSV", systemImage: "square.and.arrow.down")
+                        Label("Import Logs", systemImage: "square.and.arrow.down")
+                    }
+
+                    Button {
+                        guard isDataReady else { return }
+                        showPlanImporter = true
+                    } label: {
+                        Label("Import New Plan", systemImage: "arrow.down.document")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -399,6 +499,7 @@ private extension View {
         showExporter: Binding<Bool>,
         exportDoc: Binding<LogCSVDocument?>,
         showImporter: Binding<Bool>,
+        showPlanImporter: Binding<Bool>,
         sharePayload: Binding<SharePayload?>,
         resultMessage: Binding<String?>
     ) -> some View {
@@ -409,6 +510,7 @@ private extension View {
             showExporter: showExporter,
             exportDoc: exportDoc,
             showImporter: showImporter,
+            showPlanImporter: showPlanImporter,
             sharePayload: sharePayload,
             resultMessage: resultMessage
         ))
@@ -1615,6 +1717,20 @@ struct PlanDayEditor: View {
         let plans = (try? context.fetch(planDesc)) ?? []
         cache.parentPlan = plans.first { $0.days.contains(where: { $0.id == day.id }) }
 
+        // Imported plans may carry guidance that intentionally differs from
+        // the global catalog. Prefer the plan-local definition for this view.
+        if let parentPlan = cache.parentPlan {
+            for definition in parentPlan.exerciseDefinitions {
+                cache.guidanceByName[definition.name] = PlanDayEditorCache.ExerciseGuidance(
+                    repsText: definition.repsText,
+                    setsText: definition.setsText,
+                    restText: definition.restText,
+                    notes: definition.notes,
+                    durationText: definition.durationText
+                )
+            }
+        }
+
         // 4) Logged items
         refreshLoggedItemsIntoCache()
     }
@@ -1654,11 +1770,14 @@ struct PlanDayEditor: View {
         let _ = calendar.date(byAdding: .day, value: 1, to: dayStart)!
         
         let p = cache.parentPlan
+        let planExerciseID = p?.exerciseDefinitions.first { $0.name == exerciseName }?.id
         
         session.items.append(SessionItem(
             exerciseName: exerciseName,
             planSourceId: p?.id,
             planName: p?.name,
+            planDayId: day.id,
+            planExerciseID: planExerciseID,
             reps: reps,
             sets: sets,
             weightKg: weight,
@@ -1676,12 +1795,15 @@ struct PlanDayEditor: View {
         let session = findOrCreateSession(for: day.date, in: context)
         
         let p = cache.parentPlan
+        let planExerciseID = p?.exerciseDefinitions.first { $0.name == name }?.id
         
         // Create a simple log entry without metrics - just capture that it was done
         session.items.append(SessionItem(
             exerciseName: name,
             planSourceId: p?.id,
             planName: p?.name,
+            planDayId: day.id,
+            planExerciseID: planExerciseID,
             reps: nil,
             sets: nil,
             weightKg: nil,
@@ -1855,12 +1977,17 @@ private struct PlanClimbLogView: View {
         let p = parentPlan
         let session = findOrCreateSession(for: planDay.date, in: context)
 
+        climbEntry.planSourceId = p?.id
+        climbEntry.planDayId = planDay.id
+
         let attemptsDouble = climbEntry.attempts != nil ? Double(climbEntry.attempts!) : nil
 
         session.items.append(SessionItem(
             exerciseName: exerciseName,
             planSourceId: p?.id,
             planName: p?.name,
+            planDayId: planDay.id,
+            climbEntryId: climbEntry.id,
             reps: attemptsDouble,
             sets: nil,
             weightKg: nil,

@@ -27,6 +27,8 @@ final class ClimbEntry {
     var gym: String
     var notes: String?
     var dateLogged: Date
+    var planSourceId: UUID?
+    var planDayId: UUID?
     var tb2ClimbUUID: String?
     var kilterLogUuid: String?
     var kilterClimbUuid: String?
@@ -50,6 +52,8 @@ final class ClimbEntry {
         gym: String,
         notes: String? = nil,
         dateLogged: Date = Date(),
+        planSourceId: UUID? = nil,
+        planDayId: UUID? = nil,
         tb2ClimbUUID: String? = nil,
         kilterLogUuid: String? = nil,
         kilterClimbUuid: String? = nil
@@ -68,6 +72,8 @@ final class ClimbEntry {
         self.gym = gym
         self.notes = notes
         self.dateLogged = dateLogged
+        self.planSourceId = planSourceId
+        self.planDayId = planDayId
         self.tb2ClimbUUID = tb2ClimbUUID
         self.kilterLogUuid = kilterLogUuid
         self.kilterClimbUuid = kilterClimbUuid

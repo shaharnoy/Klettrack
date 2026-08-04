@@ -111,6 +111,8 @@ struct CatalogView: View {
     @State private var sheetRoute: SheetRoute?
     @State private var draftActivityName = ""
     @State private var renamingActivity: Activity?
+    @State private var pendingDeletion: CatalogDeletion.Request?
+    @State private var deletionError: String?
 
     // Helper function to count total exercises in an activity
     private func totalExerciseCount(for activity: Activity) -> Int {
@@ -172,6 +174,30 @@ struct CatalogView: View {
         }
         .navigationTitle("CATALOG")
         .navigationBarTitleDisplayMode(.large)
+        .confirmationDialog(
+            pendingDeletion?.title ?? "Delete catalog node?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let request = pendingDeletion else { return }
+                performDeletion(request)
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text(pendingDeletion?.message ?? "")
+        }
+        .alert("Couldn’t delete catalog node", isPresented: Binding(
+            get: { deletionError != nil },
+            set: { if !$0 { deletionError = nil } }
+        )) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(deletionError ?? "")
+        }
     }
     
     private func activityCard(for activity: Activity) -> some View {
@@ -198,11 +224,28 @@ struct CatalogView: View {
             }
             Button(role: .destructive) {
                 guard isDataReady else { return }
-                context.delete(activity)
-                try? context.save()
+                requestDeletion(for: .activity(activity))
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        }
+    }
+
+    private func requestDeletion(for target: CatalogDeletion.Target) {
+        let request = CatalogDeletion.request(for: target, in: context)
+        if request.impact.isEmpty {
+            performDeletion(request)
+        } else {
+            pendingDeletion = request
+        }
+    }
+
+    private func performDeletion(_ request: CatalogDeletion.Request) {
+        pendingDeletion = nil
+        do {
+            try CatalogDeletion.delete(request, in: context)
+        } catch {
+            deletionError = error.localizedDescription
         }
     }
 }
@@ -224,6 +267,8 @@ struct ActivityDetailView: View {
     @State private var draftArea = ""
     @State private var draftTypeDesc = ""
     @State private var renamingType: TrainingType?
+    @State private var pendingDeletion: CatalogDeletion.Request?
+    @State private var deletionError: String?
 
     var body: some View {
         List {
@@ -249,11 +294,7 @@ struct ActivityDetailView: View {
                         }
                         Button(role: .destructive) {
                             guard isDataReady else { return }
-
-                            activity.types.removeAll { $0.id == t.id }
-
-                            context.delete(t)
-                            try? context.save()
+                            requestDeletion(for: .trainingType(t))
                         } label: { Label("Delete", systemImage: "trash") }
 
                     }
@@ -261,12 +302,7 @@ struct ActivityDetailView: View {
                 .onDelete { idx in
                     guard isDataReady else { return }
                     let toDelete = idx.map { activity.types[$0] }
-                    let ids = Set(toDelete.map(\.id))
-
-                    activity.types.removeAll { ids.contains($0.id) }
-
-                    toDelete.forEach { context.delete($0) }
-                    try? context.save()
+                    requestDeletion(for: toDelete.map(CatalogDeletion.Target.trainingType))
                 }
 
 
@@ -288,6 +324,30 @@ struct ActivityDetailView: View {
             ToolbarItem(placement: .topBarLeading) {
                 EditButton()
             }
+        }
+        .confirmationDialog(
+            pendingDeletion?.title ?? "Delete catalog node?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let request = pendingDeletion else { return }
+                performDeletion(request)
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text(pendingDeletion?.message ?? "")
+        }
+        .alert("Couldn’t delete catalog node", isPresented: Binding(
+            get: { deletionError != nil },
+            set: { if !$0 { deletionError = nil } }
+        )) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(deletionError ?? "")
         }
 
         // Create Type
@@ -326,6 +386,29 @@ struct ActivityDetailView: View {
             }
         }
     }
+
+    private func requestDeletion(for target: CatalogDeletion.Target) {
+        requestDeletion(for: [target])
+    }
+
+    private func requestDeletion(for targets: [CatalogDeletion.Target]) {
+        guard !targets.isEmpty else { return }
+        let request = CatalogDeletion.request(for: targets, in: context)
+        if request.impact.isEmpty {
+            performDeletion(request)
+        } else {
+            pendingDeletion = request
+        }
+    }
+
+    private func performDeletion(_ request: CatalogDeletion.Request) {
+        pendingDeletion = nil
+        do {
+            try CatalogDeletion.delete(request, in: context)
+        } catch {
+            deletionError = error.localizedDescription
+        }
+    }
 }
 
 // MARK: - Type detail (Exercises or Bouldering combinations)
@@ -339,11 +422,18 @@ struct TrainingTypeDetailView: View {
     }
 
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.editMode) private var editMode
     @Bindable var trainingType: TrainingType
     let tint: Color
 
     @State private var modalRoute: ModalRoute?
     @State private var editingExercise: Exercise?
+    @State private var movingExercise: Exercise?
+    @State private var bulkMoveRequest: CatalogExerciseMoveSelection?
+    @State private var selectedExerciseIDs = Set<UUID>()
+    @State private var pendingDeletion: CatalogDeletion.Request?
+    @State private var deletionError: String?
 
     // Drafts
     @State private var draftExName = ""
@@ -378,6 +468,10 @@ struct TrainingTypeDetailView: View {
     private var ungroupedExercises: [Exercise] {
         trainingType.exercises.filter { $0.area == nil }.sorted { $0.order < $1.order }
     }
+
+    private var selectedExercises: [Exercise] {
+        trainingType.exercises.filter { selectedExerciseIDs.contains($0.id) }
+    }
     
     // Define available areas for climbing exercises
     private var availableAreas: [String] {
@@ -391,7 +485,7 @@ struct TrainingTypeDetailView: View {
     }
 
     var body: some View {
-        List {
+        List(selection: $selectedExerciseIDs) {
             if let d = trainingType.typeDescription, !d.isEmpty {
                 Section("About") {
                     Text(d).textCase(nil)
@@ -411,6 +505,13 @@ struct TrainingTypeDetailView: View {
                                 }
                             }
                         }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                requestDeletion(for: .combination(combo))
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
                     .textCase(nil)
                 }
@@ -428,29 +529,31 @@ struct TrainingTypeDetailView: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button(role: .destructive) {
-                                        // Update UI immediately (source-of-truth is trainingType.exercises)
-                                        trainingType.exercises.removeAll { $0.id == ex.id }
-
-                                        // Persist
-                                        context.delete(ex)
-                                        try? context.save()
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                            .contextMenu {
+                                Button {
+                                    movingExercise = ex
+                                } label: {
+                                    Label("Move to…", systemImage: "folder")
                                 }
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button {
+                                    movingExercise = ex
+                                } label: {
+                                    Label("Move", systemImage: "arrow.up.and.down")
+                                }
+                                .tint(.blue)
+                                Button(role: .destructive) {
+                                    deleteExercise(ex)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .tag(ex.id)
                         }
                         .onDelete { indexes in
                             let toDelete = indexes.map { exercises[$0] }
-                            let ids = Set(toDelete.map(\.id))
-
-                            // Update UI immediately
-                            trainingType.exercises.removeAll { ids.contains($0.id) }
-
-                            // Persist
-                            toDelete.forEach { context.delete($0) }
-                            try? context.save()
+                            deleteExercises(toDelete)
                         }
 
                     }
@@ -468,25 +571,32 @@ struct TrainingTypeDetailView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    trainingType.exercises.removeAll { $0.id == ex.id }
-                                    context.delete(ex)
-                                    try? context.save()
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
+                        .contextMenu {
+                            Button {
+                                movingExercise = ex
+                            } label: {
+                                Label("Move to…", systemImage: "folder")
                             }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                movingExercise = ex
+                            } label: {
+                                Label("Move", systemImage: "arrow.up.and.down")
+                            }
+                            .tint(.blue)
+                            Button(role: .destructive) {
+                                deleteExercise(ex)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .tag(ex.id)
 
                     }
                     .onDelete { indexes in
                         let toDelete = indexes.map { ungroupedExercises[$0] }
-                        let ids = Set(toDelete.map(\.id))
-
-                        trainingType.exercises.removeAll { ids.contains($0.id) }
-
-                        toDelete.forEach { context.delete($0) }
-                        try? context.save()
+                        deleteExercises(toDelete)
                     }
 
                 }
@@ -510,6 +620,55 @@ struct TrainingTypeDetailView: View {
                     modalRoute = .editAbout
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    requestDeletion(for: .trainingType(trainingType))
+                } label: {
+                    Label("Delete Training Type", systemImage: "trash")
+                }
+            }
+            if !selectedExerciseIDs.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        bulkMoveRequest = CatalogExerciseMoveSelection(
+                            exercises: selectedExercises,
+                            sourceType: trainingType,
+                            sourceCombination: nil
+                        )
+                    } label: {
+                        Label("Move Selected", systemImage: "arrow.up.and.down")
+                    }
+                }
+            }
+        }
+        .onChange(of: editMode?.wrappedValue) { _, newValue in
+            if newValue != .active {
+                selectedExerciseIDs.removeAll()
+            }
+        }
+        .confirmationDialog(
+            pendingDeletion?.title ?? "Delete catalog node?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let request = pendingDeletion else { return }
+                performDeletion(request)
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text(pendingDeletion?.message ?? "")
+        }
+        .alert("Couldn’t delete catalog item", isPresented: Binding(
+            get: { deletionError != nil },
+            set: { if !$0 { deletionError = nil } }
+        )) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(deletionError ?? "")
         }
         .sheet(item: $modalRoute) { route in
             switch route {
@@ -588,6 +747,18 @@ struct TrainingTypeDetailView: View {
                 }
             }
         }
+        .sheet(item: $movingExercise) { ex in
+            CatalogExerciseMoveSheet(exercise: ex, sourceType: trainingType, sourceCombination: nil)
+        }
+        .sheet(item: $bulkMoveRequest, onDismiss: {
+            selectedExerciseIDs.removeAll()
+        }) { request in
+            CatalogExerciseMoveSheet(
+                exercises: request.exercises,
+                sourceType: request.sourceType,
+                sourceCombination: request.sourceCombination
+            )
+        }
     }
 
     private func startNewExercise() {
@@ -605,6 +776,55 @@ struct TrainingTypeDetailView: View {
         draftNotes = ex.notes ?? ""
         editingExercise = ex
     }
+
+    private func requestDeletion(for target: CatalogDeletion.Target) {
+        let request = CatalogDeletion.request(for: target, in: context)
+        if request.impact.isEmpty {
+            performDeletion(request)
+        } else {
+            pendingDeletion = request
+        }
+    }
+
+    private func performDeletion(_ request: CatalogDeletion.Request) {
+        pendingDeletion = nil
+        do {
+            let deletesCurrentType = request.targets.contains { target in
+                if case .trainingType(let targetType) = target {
+                    return targetType.id == trainingType.id
+                }
+                return false
+            }
+            try CatalogDeletion.delete(request, in: context)
+            if deletesCurrentType || !CatalogDeletion.exists(.trainingType(trainingType), in: context) {
+                dismiss()
+            }
+        } catch {
+            deletionError = error.localizedDescription
+        }
+    }
+
+    private func deleteExercise(_ exercise: Exercise) {
+        do {
+            try CatalogDeletion.deleteExercisePlacement(
+                exercise,
+                from: trainingType,
+                sourceCombination: nil,
+                in: context
+            )
+            if !CatalogDeletion.exists(.trainingType(trainingType), in: context) {
+                dismiss()
+            }
+        } catch {
+            deletionError = error.localizedDescription
+        }
+    }
+
+    private func deleteExercises(_ exercises: [Exercise]) {
+        for exercise in exercises {
+            deleteExercise(exercise)
+        }
+    }
 }
 
 // MARK: - Combination detail (Bouldering)
@@ -618,11 +838,18 @@ struct CombinationDetailView: View {
     }
 
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.editMode) private var editMode
     @Bindable var combo: BoulderCombination
     let tint: Color
 
     @State private var editingExercise: Exercise?
     @State private var modalRoute: ModalRoute?
+    @State private var movingExercise: Exercise?
+    @State private var bulkMoveRequest: CatalogExerciseMoveSelection?
+    @State private var selectedExerciseIDs = Set<UUID>()
+    @State private var pendingDeletion: CatalogDeletion.Request?
+    @State private var deletionError: String?
 
     @State private var draftExName = ""
     @State private var draftArea = ""
@@ -634,9 +861,12 @@ struct CombinationDetailView: View {
     @State private var draftDesc = ""
     @State private var draftAbout = ""
 
+    private var selectedExercises: [Exercise] {
+        combo.exercises.filter { selectedExerciseIDs.contains($0.id) }
+    }
 
     var body: some View {
-        List {
+        List(selection: $selectedExerciseIDs) {
             if let about = combo.comboDescription, !about.isEmpty {
                 Section("About") { Text(about) }
             }
@@ -649,34 +879,40 @@ struct CombinationDetailView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                combo.exercises.removeAll { $0.id == ex.id }
-                                context.delete(ex)
-                                try? context.save()
-                            } label: { Label("Delete", systemImage: "trash") }
-
+                    .contextMenu {
+                        Button {
+                            movingExercise = ex
+                        } label: {
+                            Label("Move to…", systemImage: "folder")
                         }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button {
+                            movingExercise = ex
+                        } label: {
+                            Label("Move", systemImage: "arrow.up.and.down")
+                        }
+                        .tint(.blue)
+                        Button(role: .destructive) {
+                            deleteExercise(ex)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                         .contextMenu {
                             Button(role: .destructive) {
-                                combo.exercises.removeAll { $0.id == ex.id }
-                                context.delete(ex)
-                                try? context.save()
+                                deleteExercise(ex)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
 
                         }
+                    .tag(ex.id)
                 }
                 .onDelete { idx in
                     let sortedExercises = combo.exercises.sorted { $0.order < $1.order }
                     let toDelete = idx.map { sortedExercises[$0] }
-                    let ids = Set(toDelete.map(\.id))
-
-                    combo.exercises.removeAll { ids.contains($0.id) }
-
-                    toDelete.forEach { context.delete($0) }
-                    try? context.save()
+                    deleteExercises(toDelete)
                 }
 
 
@@ -697,6 +933,55 @@ struct CombinationDetailView: View {
                     modalRoute = .editAbout
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    requestDeletion(for: .combination(combo))
+                } label: {
+                    Label("Delete Combination", systemImage: "trash")
+                }
+            }
+            if !selectedExerciseIDs.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        bulkMoveRequest = CatalogExerciseMoveSelection(
+                            exercises: selectedExercises,
+                            sourceType: nil,
+                            sourceCombination: combo
+                        )
+                    } label: {
+                        Label("Move Selected", systemImage: "arrow.up.and.down")
+                    }
+                }
+            }
+        }
+        .onChange(of: editMode?.wrappedValue) { _, newValue in
+            if newValue != .active {
+                selectedExerciseIDs.removeAll()
+            }
+        }
+        .confirmationDialog(
+            pendingDeletion?.title ?? "Delete catalog node?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let request = pendingDeletion else { return }
+                performDeletion(request)
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text(pendingDeletion?.message ?? "")
+        }
+        .alert("Couldn’t delete catalog item", isPresented: Binding(
+            get: { deletionError != nil },
+            set: { if !$0 { deletionError = nil } }
+        )) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(deletionError ?? "")
         }
         .sheet(item: $modalRoute) { route in
             switch route {
@@ -775,6 +1060,18 @@ struct CombinationDetailView: View {
                 }
             }
         }
+        .sheet(item: $movingExercise) { ex in
+            CatalogExerciseMoveSheet(exercise: ex, sourceType: nil, sourceCombination: combo)
+        }
+        .sheet(item: $bulkMoveRequest, onDismiss: {
+            selectedExerciseIDs.removeAll()
+        }) { request in
+            CatalogExerciseMoveSheet(
+                exercises: request.exercises,
+                sourceType: request.sourceType,
+                sourceCombination: request.sourceCombination
+            )
+        }
     }
 
     private func startNewExercise() {
@@ -791,6 +1088,46 @@ struct CombinationDetailView: View {
         draftRest = ex.restText ?? ""
         draftNotes = ex.notes ?? ""
         editingExercise = ex
+    }
+
+    private func requestDeletion(for target: CatalogDeletion.Target) {
+        let request = CatalogDeletion.request(for: target, in: context)
+        if request.impact.isEmpty {
+            performDeletion(request)
+        } else {
+            pendingDeletion = request
+        }
+    }
+
+    private func performDeletion(_ request: CatalogDeletion.Request) {
+        pendingDeletion = nil
+        do {
+            try CatalogDeletion.delete(request, in: context)
+            if !CatalogDeletion.exists(.combination(combo), in: context) {
+                dismiss()
+            }
+        } catch {
+            deletionError = error.localizedDescription
+        }
+    }
+
+    private func deleteExercise(_ exercise: Exercise) {
+        do {
+            try CatalogDeletion.deleteExercisePlacement(
+                exercise,
+                from: nil,
+                sourceCombination: combo,
+                in: context
+            )
+        } catch {
+            deletionError = error.localizedDescription
+        }
+    }
+
+    private func deleteExercises(_ exercises: [Exercise]) {
+        for exercise in exercises {
+            deleteExercise(exercise)
+        }
     }
 }
 
