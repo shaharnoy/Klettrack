@@ -7,6 +7,95 @@
 import SwiftUI
 import SwiftData
 
+struct CatalogExerciseDraft {
+    let name: String
+    let area: String
+    let reps: String
+    let sets: String
+    let duration: String
+    let rest: String
+    let notes: String
+    let description: String
+
+    private func optionalValue(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var normalizedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var normalizedArea: String? { optionalValue(area) }
+    var normalizedReps: String? { optionalValue(reps) }
+    var normalizedSets: String? { optionalValue(sets) }
+    var normalizedDuration: String? { optionalValue(duration) }
+    var normalizedRest: String? { optionalValue(rest) }
+    var normalizedNotes: String? { optionalValue(notes) }
+    var normalizedDescription: String? { optionalValue(description) }
+
+    func makeExercise(order: Int) -> Exercise {
+        Exercise(
+            name: normalizedName,
+            area: normalizedArea,
+            order: order,
+            exerciseDescription: normalizedDescription,
+            repsText: normalizedReps,
+            durationText: normalizedDuration,
+            setsText: normalizedSets,
+            restText: normalizedRest,
+            notes: normalizedNotes
+        )
+    }
+
+    func apply(to exercise: Exercise) {
+        exercise.name = normalizedName
+        exercise.area = normalizedArea
+        exercise.exerciseDescription = normalizedDescription
+        exercise.repsText = normalizedReps
+        exercise.setsText = normalizedSets
+        exercise.durationText = normalizedDuration
+        exercise.restText = normalizedRest
+        exercise.notes = normalizedNotes
+    }
+}
+
+enum CatalogExercisePersistence {
+    enum Error: Swift.Error, LocalizedError {
+        case exerciseNotFoundAfterSave(UUID)
+
+        var errorDescription: String? {
+            switch self {
+            case .exerciseNotFoundAfterSave(let id):
+                return "Exercise \(id) was not found after saving."
+            }
+        }
+    }
+
+    static func saveNew(_ exercise: Exercise, in context: ModelContext) throws {
+        context.insert(exercise)
+        try saveAndVerify(exercise, in: context, operation: "create")
+    }
+
+    static func saveExisting(_ exercise: Exercise, in context: ModelContext) throws {
+        try saveAndVerify(exercise, in: context, operation: "update")
+    }
+
+    private static func saveAndVerify(_ exercise: Exercise, in context: ModelContext, operation: String) throws {
+        do {
+            try context.save()
+            let id = exercise.id
+            let descriptor = FetchDescriptor<Exercise>(predicate: #Predicate { $0.id == id })
+            guard (try context.fetch(descriptor)).first != nil else {
+                throw Error.exerciseNotFoundAfterSave(id)
+            }
+        } catch {
+            print("Catalog exercise \(operation) failed for '\(exercise.name)': \(error.localizedDescription)")
+            throw error
+        }
+    }
+}
+
 // MARK: - Root Catalog (Categories = Activity)
 
 struct CatalogView: View {
@@ -445,19 +534,24 @@ struct TrainingTypeDetailView: View {
                     availableAreas: availableAreas
                 ) {
                     let nextOrder = (trainingType.exercises.map { $0.order }.max() ?? 0) + 1
-                    let ex = Exercise(
-                        name: draftExName.trimmingCharacters(in: .whitespaces),
-                        area: draftArea.isEmpty ? nil : draftArea,
-                        order: nextOrder,
-                        exerciseDescription: draftDescription.isEmpty ? nil : draftDescription,
-                        repsText: draftReps.isEmpty ? nil : draftReps,
-                        durationText: draftDuration.isEmpty ? nil : draftDuration,
-                        setsText: draftSets.isEmpty ? nil : draftSets,
-                        restText: draftRest.isEmpty ? nil : draftRest,
-                        notes: draftNotes.isEmpty ? nil : draftNotes
+                    let draft = CatalogExerciseDraft(
+                        name: draftExName,
+                        area: draftArea,
+                        reps: draftReps,
+                        sets: draftSets,
+                        duration: draftDuration,
+                        rest: draftRest,
+                        notes: draftNotes,
+                        description: draftDescription
                     )
+                    let ex = draft.makeExercise(order: nextOrder)
                     trainingType.exercises.append(ex)
-                    try? context.save()
+                    do {
+                        try CatalogExercisePersistence.saveNew(ex, in: context)
+                    } catch {
+                        trainingType.exercises.removeAll { $0.id == ex.id }
+                        context.delete(ex)
+                    }
                 }
             }
         }
@@ -476,15 +570,22 @@ struct TrainingTypeDetailView: View {
                 description: $draftDescription,
                 availableAreas: availableAreas
             ) {
-                ex.name = draftExName.trimmingCharacters(in: .whitespaces)
-                ex.area = draftArea.isEmpty ? nil : draftArea
-                ex.exerciseDescription = draftDescription.isEmpty ? nil : draftDescription
-                ex.repsText = draftReps.isEmpty ? nil : draftReps
-                ex.setsText = draftSets.isEmpty ? nil : draftSets
-                ex.durationText = draftSets.isEmpty ? nil : draftDuration
-                ex.restText = draftRest.isEmpty ? nil : draftRest
-                ex.notes = draftNotes.isEmpty ? nil : draftNotes
-                try? context.save()
+                let draft = CatalogExerciseDraft(
+                    name: draftExName,
+                    area: draftArea,
+                    reps: draftReps,
+                    sets: draftSets,
+                    duration: draftDuration,
+                    rest: draftRest,
+                    notes: draftNotes,
+                    description: draftDescription
+                )
+                draft.apply(to: ex)
+                do {
+                    try CatalogExercisePersistence.saveExisting(ex, in: context)
+                } catch {
+                    print("Catalog exercise update could not be committed: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -620,19 +721,24 @@ struct CombinationDetailView: View {
                     availableAreas: []
                 ) {
                     let nextOrder = (combo.exercises.map { $0.order }.max() ?? 0) + 1
-                    let ex = Exercise(
-                        name: draftExName.trimmingCharacters(in: .whitespaces),
-                        area: draftArea.isEmpty ? nil : draftArea,
-                        order: nextOrder,
-                        exerciseDescription: draftDesc.isEmpty ? nil : draftDesc,
-                        repsText: draftReps.isEmpty ? nil : draftReps,
-                        durationText: draftDuration.isEmpty ? nil : draftDuration,
-                        setsText: draftSets.isEmpty ? nil : draftSets,
-                        restText: draftRest.isEmpty ? nil : draftRest,
-                        notes: draftNotes.isEmpty ? nil : draftNotes
+                    let draft = CatalogExerciseDraft(
+                        name: draftExName,
+                        area: draftArea,
+                        reps: draftReps,
+                        sets: draftSets,
+                        duration: draftDuration,
+                        rest: draftRest,
+                        notes: draftNotes,
+                        description: draftDesc
                     )
+                    let ex = draft.makeExercise(order: nextOrder)
                     combo.exercises.append(ex)
-                    try? context.save()
+                    do {
+                        try CatalogExercisePersistence.saveNew(ex, in: context)
+                    } catch {
+                        combo.exercises.removeAll { $0.id == ex.id }
+                        context.delete(ex)
+                    }
                 }
             }
         }
@@ -651,15 +757,22 @@ struct CombinationDetailView: View {
                 description: $draftDesc,
                 availableAreas: []
             ) {
-                ex.name = draftExName.trimmingCharacters(in: .whitespaces)
-                ex.area = draftArea.isEmpty ? nil : draftArea
-                ex.exerciseDescription = draftDesc.isEmpty ? nil : draftDesc
-                ex.repsText = draftReps.isEmpty ? nil : draftReps
-                ex.setsText = draftSets.isEmpty ? nil : draftSets
-                ex.durationText = draftDuration.isEmpty ? nil : draftDuration
-                ex.restText = draftRest.isEmpty ? nil : draftRest
-                ex.notes = draftNotes.isEmpty ? nil : draftNotes
-                try? context.save()
+                let draft = CatalogExerciseDraft(
+                    name: draftExName,
+                    area: draftArea,
+                    reps: draftReps,
+                    sets: draftSets,
+                    duration: draftDuration,
+                    rest: draftRest,
+                    notes: draftNotes,
+                    description: draftDesc
+                )
+                draft.apply(to: ex)
+                do {
+                    try CatalogExercisePersistence.saveExisting(ex, in: context)
+                } catch {
+                    print("Catalog exercise update could not be committed: \(error.localizedDescription)")
+                }
             }
         }
     }
