@@ -39,6 +39,29 @@ enum TB2SyncManager {
 
     typealias ClimbStatsCacheState = ClimbCacheState
 
+    private static let longCacheRefreshIntervalMonths = 6
+
+    /// Returns whether the next TB2 refresh may need to rebuild a large cache.
+    /// Both metadata caches are required for the refreshed climb data to be complete.
+    static func cacheRefreshMayTakeLong(for board: TB2Client.Board, now: Date = Date()) -> Bool {
+        let calendar = Calendar(identifier: .gregorian)
+        guard let cutoff = calendar.date(
+            byAdding: .month,
+            value: -longCacheRefreshIntervalMonths,
+            to: now
+        ) else {
+            return true
+        }
+
+        return [climbCacheState(for: board), climbStatsCacheState(for: board)].contains { state in
+            guard state.isComplete, let lastSynchronizedAt = state.lastSynchronizedAt,
+                  let lastSyncDate = BoardDateParser.parse(lastSynchronizedAt) else {
+                return true
+            }
+            return lastSyncDate < cutoff
+        }
+    }
+
     struct DiffKey: Hashable {
         let uuid: String
         let angle: Int
