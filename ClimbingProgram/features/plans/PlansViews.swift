@@ -353,6 +353,17 @@ struct PlansListView: View {
     private func handlePlanImportResult(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
+
+            // Files selected from Files.app may be outside the app sandbox. The
+            // simulator often permits direct reads, but physical devices require
+            // the security-scoped URL access granted by fileImporter.
+            let didAccessSecurityScopedResource = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccessSecurityScopedResource {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
             let data = try Data(contentsOf: url)
             let exchange = try PlanCSVExchange.parse(String(decoding: data, as: UTF8.self))
             let mode: PlanCSVExchange.ImportMode = if let target = planImportTarget {
