@@ -138,6 +138,26 @@ enum PlanCSVExchange {
         let colorKey: String
     }
 
+    static func exportFilename(for plan: Plan, exportedAt: Date = .now) -> String {
+        let safeName = plan.name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .map { character in
+                character.isLetter || character.isNumber ? String(character) : "_"
+            }
+            .joined()
+            .split(separator: "_", omittingEmptySubsequences: true)
+            .joined(separator: "_")
+
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: exportedAt)
+        let year = components.year ?? 0
+        let month = twoDigit(components.month ?? 0)
+        let day = twoDigit(components.day ?? 0)
+        let date = "\(year)-\(month)-\(day)"
+
+        return "klettrack_\(safeName.isEmpty ? "plan" : safeName)_\(date)"
+    }
+
     private static let headers = [
         "row_type", "plan_id", "plan_name", "start_date", "kind_key", "kind_name",
         "kind_total_weeks", "kind_repeating", "plan_exercise_id", "catalog_exercise_id", "exercise_name",
@@ -716,6 +736,7 @@ enum PlanCSVExchange {
     private static func normalizedHeader(_ value: String) -> String { value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
 
     private static func normalized(_ value: String) -> String { value.trimmingCharacters(in: .whitespacesAndNewlines).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current) }
+    private static func twoDigit(_ value: Int) -> String { value < 10 ? "0\(value)" : String(value) }
     private static func nonEmpty(_ value: String?) -> String? { guard let value else { return nil }; let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines); return trimmed.isEmpty ? nil : trimmed }
     private static func encodeDate(_ date: Date) -> String { ISO8601DateFormatter.planExchange.string(from: date) }
     private static func parseDate(_ raw: String) -> Date? { ISO8601DateFormatter.planExchange.date(from: raw) ?? DateFormatter.planExchange.date(from: raw) }

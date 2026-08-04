@@ -126,6 +126,7 @@ struct PlansListView: View {
 
     @State private var showPlanExporter = false
     @State private var planExportDoc: PlanCSVDocument? = nil
+    @State private var planExportFilename = "klettrack_plan"
     @State private var showPlanImporter = false
     @State private var planImportTarget: Plan? = nil
     @State private var pendingPlanImport: PendingPlanImport? = nil
@@ -205,7 +206,7 @@ struct PlansListView: View {
                     isPresented: $showPlanExporter,
                     document: planExportDoc,
                     contentType: .commaSeparatedText,
-                    defaultFilename: "klettrack-plan-\(Date().formatted(.dateTime.year().month().day()))"
+                    defaultFilename: planExportFilename
                 ) { result in
                     switch result {
                     case .success:
@@ -267,6 +268,7 @@ struct PlansListView: View {
 
                     Menu {
                         Button {
+                            planExportFilename = PlanCSVExchange.exportFilename(for: plan)
                             planExportDoc = PlanCSVExchange.export(plan: plan, in: context)
                             showPlanExporter = true
                         } label: {
@@ -286,6 +288,7 @@ struct PlansListView: View {
                 }
                 .contextMenu {
                     Button {
+                        planExportFilename = PlanCSVExchange.exportFilename(for: plan)
                         planExportDoc = PlanCSVExchange.export(plan: plan, in: context)
                         showPlanExporter = true
                     } label: {

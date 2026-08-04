@@ -47,6 +47,16 @@ final class PlanCSVExchangeTests: XCTestCase {
         XCTAssertEqual(parsed.exercises.first?.name, "Imported Drill")
     }
 
+    func testPlanExportFilenameUsesSanitizedPlanNameAndDate() {
+        let plan = Plan(name: "My Plan / Strength", kind: nil, startDate: Date())
+        let filename = PlanCSVExchange.exportFilename(
+            for: plan,
+            exportedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        XCTAssertNotNil(filename.range(of: #"^klettrack_My_Plan_Strength_\d{4}-\d{2}-\d{2}$"#, options: .regularExpression))
+    }
+
     func testImportNewPlanBackfillsMissingExerciseUnderImportedCatalog() throws {
         let source = Plan(name: "Imported Plan", kind: nil, startDate: Date())
         let day = PlanDay(date: source.startDate)
