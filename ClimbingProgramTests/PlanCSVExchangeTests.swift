@@ -59,6 +59,23 @@ final class PlanCSVExchangeTests: XCTestCase {
         XCTAssertEqual(parsed.plan.name, "BOM Plan")
     }
 
+    func testImportGeneratesPlanIDWhenPlanIDIsMissing() throws {
+        let source = Plan(name: "External Plan", kind: nil, startDate: Date())
+        context.insert(source)
+        try context.save()
+
+        let csv = PlanCSVExchange.export(plan: source, in: context).csv
+            .replacingOccurrences(of: "plan,\(source.id.uuidString),", with: "plan,,")
+        let parsed = try PlanCSVExchange.parse(csv)
+
+        XCTAssertNotEqual(parsed.plan.id, source.id)
+        XCTAssertTrue(parsed.warnings.contains { $0.localizedStandardContains("new ID") })
+
+        _ = try PlanCSVExchange.apply(parsed, mode: .newPlan, in: context)
+        let plans = try context.fetch(FetchDescriptor<Plan>())
+        XCTAssertTrue(plans.contains { $0.id == parsed.plan.id && $0.name == "External Plan" })
+    }
+
     func testPlanExportFilenameUsesSanitizedPlanNameAndDate() {
         let plan = Plan(name: "My Plan / Strength", kind: nil, startDate: Date())
         let filename = PlanCSVExchange.exportFilename(

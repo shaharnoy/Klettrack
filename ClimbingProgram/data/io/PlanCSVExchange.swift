@@ -331,13 +331,19 @@ enum PlanCSVExchange {
         }
 
         guard let planRaw = rows.first(where: { $0["row_type"] == "plan" }),
-              let planID = UUID(uuidString: planRaw["plan_id"] ?? ""),
               let planName = nonEmpty(planRaw["plan_name"]),
               let startDate = parseDate(planRaw["start_date"] ?? "") else {
             throw Error.missingPlanRow
         }
 
         var warnings: [String] = []
+        let planID: UUID
+        if let importedPlanID = UUID(uuidString: planRaw["plan_id"] ?? "") {
+            planID = importedPlanID
+        } else {
+            planID = UUID()
+            warnings.append("The plan row did not contain a valid plan ID; a new ID was generated.")
+        }
         let plan = ParsedExchange.PlanRow(
             id: planID,
             name: planName,
