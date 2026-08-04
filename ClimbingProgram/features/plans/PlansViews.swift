@@ -134,18 +134,28 @@ struct PlansListView: View {
 
     // Alerts
     @State private var resultMessage: String? = nil
+    @FocusState private var focusedDayContextField: DayContextFocusedField?
 
 
     var body: some View {
         NavigationStack(path: Binding(
             get: { timerAppState.plansNavigationPath },
-            set: { timerAppState.plansNavigationPath = $0 }
+            set: { newPath in
+                if newPath.count < timerAppState.plansNavigationPath.count {
+                    focusedDayContextField = nil
+                }
+                timerAppState.plansNavigationPath = newPath
+            }
         )) {
             plansList
                 .listStyle(.insetGrouped)
                 .navigationTitle("TRAIN")
                 .navigationBarTitleDisplayMode(.large)
-                .plansDestinations(plans: plans, timerAppState: timerAppState)
+                .plansDestinations(
+                    plans: plans,
+                    timerAppState: timerAppState,
+                    focusedDayContextField: $focusedDayContextField
+                )
                 .plansToolbar(
                     isDataReady: isDataReady,
                     context: context,
@@ -267,13 +277,17 @@ struct PlansListView: View {
 private struct PlansDestinationsModifier: ViewModifier {
     let plans: [Plan]
     let timerAppState: TimerAppState
+    let focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
 
     func body(content: Content) -> some View {
         content
             .navigationDestination(for: PlanNavigationItem.self) { item in
                 // Resolve plan from current list to avoid relying on PlanNavigationItem's stored property name
                 if let plan = plans.first(where: { $0.id == item.planId }) {
-                    PlanDetailView(plan: plan)
+                    PlanDetailView(
+                        plan: plan,
+                        focusedDayContextField: focusedDayContextField
+                    )
                         .environment(timerAppState)
                 } else {
                     Text("Plan not found")
@@ -283,7 +297,10 @@ private struct PlansDestinationsModifier: ViewModifier {
                 if let plan = plans.first(where: { plan in
                     plan.days.contains(where: { $0.id == dayItem.planDayId })
                 }) {
-                    PlanDetailView(plan: plan)
+                    PlanDetailView(
+                        plan: plan,
+                        focusedDayContextField: focusedDayContextField
+                    )
                         .environment(timerAppState)
                 } else {
                     Text("Plan day not found")
@@ -293,8 +310,16 @@ private struct PlansDestinationsModifier: ViewModifier {
 }
 
 private extension View {
-    func plansDestinations(plans: [Plan], timerAppState: TimerAppState) -> some View {
-        modifier(PlansDestinationsModifier(plans: plans, timerAppState: timerAppState))
+    func plansDestinations(
+        plans: [Plan],
+        timerAppState: TimerAppState,
+        focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
+    ) -> some View {
+        modifier(PlansDestinationsModifier(
+            plans: plans,
+            timerAppState: timerAppState,
+            focusedDayContextField: focusedDayContextField
+        ))
     }
 }
 
@@ -520,9 +545,14 @@ struct PlanDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(TimerAppState.self) private var timerAppState
     @State private var plan: Plan
+    let focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
 
-    init(plan: Plan) {
+    init(
+        plan: Plan,
+        focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
+    ) {
         _plan = State(initialValue: plan)
+        self.focusedDayContextField = focusedDayContextField
     }
 
     private enum ViewMode: Int {
@@ -730,11 +760,19 @@ struct PlanDetailView: View {
             }
             
         }
+        // Keep the view revealed by a back navigation at its full height while
+        // the outgoing editor's keyboard completes its native dismissal.
+        // The editor remains keyboard-aware because this applies only to the
+        // plan overview destination.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .navigationTitle(plan.name)
         .navigationDestination(for: EditablePlanDayNav.self) { nav in
             if nav.planId == plan.id,
                let idx = plan.days.firstIndex(where: { $0.id == nav.planDayId }) {
-                PlanDayEditor(day: $plan.days[idx])
+                PlanDayEditor(
+                    day: $plan.days[idx],
+                    focusedDayContextField: focusedDayContextField
+                )
                     .environment(timerAppState)
             } else {
                 Text("Plan day not found")
@@ -781,6 +819,7 @@ struct PlanDayEditor: View {
     @Environment(TimerAppState.self) private var timerAppState
     @State private var didReorder = false
     @Binding var day: PlanDay
+    let focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
 
     @Environment(\.modelContext) private var context
     @State private var cache: PlanDayEditorCache
@@ -819,8 +858,12 @@ struct PlanDayEditor: View {
     @State private var applyRecurringToExisting = true
     @State private var cloneMessage: String? = nil
 
-    init(day: Binding<PlanDay>) {
+    init(
+        day: Binding<PlanDay>,
+        focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
+    ) {
         self._day = day
+        self.focusedDayContextField = focusedDayContextField
         self._cache = State(initialValue: PlanDayEditorCache.forDay(day.wrappedValue.id))
     }
     
@@ -1263,7 +1306,8 @@ struct PlanDayEditor: View {
         DayContextEditorSection(
             date: day.date,
             dayLog: localDayLog,
-            onDayLogChanged: updateDayLog
+            onDayLogChanged: updateDayLog,
+            focusedField: focusedDayContextField
         )
     }
 
@@ -1291,6 +1335,7 @@ struct PlanDayEditor: View {
             loggedExercisesSection
             dailyNotesSection
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle(day.date.formatted(date: .abbreviated, time: .omitted))
         .listStyle(.insetGrouped)
         .onAppear {
@@ -1402,6 +1447,12 @@ struct PlanDayEditor: View {
         }
         .onChange(of: day.chosenExercises) {
             reconcileExerciseIDFields()
+            // The cache is intentionally reused while editing a day, but the
+            // catalog can change while the editor is open. Rebuild metadata
+            // before the next row render so newly selected exercises get
+            // their activity color immediately.
+            warmCachesIntoCache()
+            cache.isWarm = true
             try? context.save()
         }
         // Quick Progress sheet

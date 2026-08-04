@@ -127,40 +127,59 @@ final class DayLogStoreTests: BaseSwiftDataTestCase {
         XCTAssertEqual(dayLog.note, "Existing shared note")
     }
 
-    func testLogSummaryIncludesActivityOnlyMetadataOnlyAndMixedDays() throws {
+    func testLogSummaryOnlyIncludesDaysWithLoggedActivity() throws {
         let calendar = Calendar.current
-        let activityOnlyDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 24, hour: 10)))
+        let exerciseOnlyDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 24, hour: 10)))
         let metadataOnlyDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 25, hour: 10)))
         let mixedDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 26, hour: 10)))
+        let emptySessionDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 27, hour: 10)))
+        let climbOnlyDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 28, hour: 10)))
 
-        let activitySession = createTestSession(date: activityOnlyDay)
-        activitySession.items.append(SessionItem(exerciseName: "Rows"))
+        let exerciseSession = createTestSession(date: exerciseOnlyDay)
+        exerciseSession.items.append(SessionItem(exerciseName: "Rows"))
 
         let metadataOnlyLog = try XCTUnwrap(DayLogStore.dayLog(for: metadataOnlyDay, in: context))
         metadataOnlyLog.note = "Travel day"
 
+        let emptySession = createTestSession(date: emptySessionDay)
+
+        let climb = ClimbEntry(
+            climbType: .boulder,
+            grade: "6A",
+            style: "",
+            gym: "",
+            dateLogged: climbOnlyDay
+        )
+        context.insert(climb)
+
         let mixedSession = createTestSession(date: mixedDay)
         mixedSession.items.append(SessionItem(exerciseName: "Pullups"))
         let mixedLog = try XCTUnwrap(DayLogStore.dayLog(for: mixedDay, in: context))
+        mixedLog.note = "High volume"
         let tag = try XCTUnwrap(DayLogStore.createTag(name: "Volume", colorKey: "green", in: context))
         DayLogStore.setTag(tag, assigned: true, to: mixedLog)
 
         let grouped = LogDaySummaryBuilder.build(
-            sessions: [activitySession, mixedSession],
-            climbEntries: [],
+            sessions: [exerciseSession, mixedSession, emptySession],
+            climbEntries: [climb],
             dayLogs: [metadataOnlyLog, mixedLog],
             calendar: calendar
         )
 
-        let activityKey = calendar.startOfDay(for: activityOnlyDay)
+        let exerciseKey = calendar.startOfDay(for: exerciseOnlyDay)
         let metadataKey = calendar.startOfDay(for: metadataOnlyDay)
         let mixedKey = calendar.startOfDay(for: mixedDay)
+        let emptySessionKey = calendar.startOfDay(for: emptySessionDay)
+        let climbKey = calendar.startOfDay(for: climbOnlyDay)
 
-        XCTAssertEqual(grouped[activityKey]?.exercises, 1)
-        XCTAssertNil(grouped[activityKey]?.dayLog)
-        XCTAssertEqual(grouped[metadataKey]?.dayLog?.note, "Travel day")
-        XCTAssertEqual(grouped[metadataKey]?.exercises, 0)
+        XCTAssertEqual(grouped[exerciseKey]?.exercises, 1)
+        XCTAssertNil(grouped[exerciseKey]?.dayLog)
+        XCTAssertNil(grouped[metadataKey])
+        XCTAssertNil(grouped[emptySessionKey])
+        XCTAssertEqual(grouped[climbKey]?.climbs, 1)
+        XCTAssertEqual(grouped[climbKey]?.climbEntries.map(\.id), [climb.id])
         XCTAssertEqual(grouped[mixedKey]?.exercises, 1)
+        XCTAssertEqual(grouped[mixedKey]?.dayLog?.note, "High volume")
         XCTAssertEqual(DayLogStore.activeTags(from: grouped[mixedKey]?.dayLog).map(\.name), ["Volume"])
     }
 

@@ -77,6 +77,7 @@ struct ClimbView: View {
     @State private var isSyncStatusVisible = false
     @State private var canDismissSyncStatus = false
     @State private var syncProgressText = "Syncing…"
+    @State private var syncShowsLongCacheNotice = false
     @State private var syncShowsStepProgress = false
     @State private var activeSyncStep: SyncStep? = nil
     @State private var syncVisibleSteps = SyncStep.allCases
@@ -636,6 +637,7 @@ struct ClimbView: View {
         isSyncStatusVisible = false
         canDismissSyncStatus = false
         syncProgressText = "Syncing…"
+        syncShowsLongCacheNotice = false
         syncShowsStepProgress = false
         activeSyncStep = nil
         syncVisibleSteps = SyncStep.allCases
@@ -650,6 +652,18 @@ struct ClimbView: View {
 
     private var syncProgressOverlay: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if syncShowsLongCacheNotice {
+                HStack(alignment: .top, spacing: 4) {
+                    Text("*")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("First refresh or one after 6+ months may take a little longer while the cache is rebuilt.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if syncShowsStepProgress {
                 VStack(spacing: 10) {
                     ForEach(syncVisibleSteps) { step in
@@ -741,6 +755,7 @@ struct ClimbView: View {
         isSyncStatusVisible = true
         canDismissSyncStatus = false
         syncProgressText = "Syncing…"
+        syncShowsLongCacheNotice = board == .tension && TB2SyncManager.cacheRefreshMayTakeLong(for: .tension)
         syncShowsStepProgress = false
         activeSyncStep = nil
         syncVisibleSteps = SyncStep.allCases

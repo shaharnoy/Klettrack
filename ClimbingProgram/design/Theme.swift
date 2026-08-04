@@ -24,6 +24,27 @@ enum CatalogHue: String {
     }
 }
 
+enum CatalogColorResolver {
+    static func hueByExerciseName(from activities: [Activity]) -> [String: CatalogHue] {
+        var result: [String: CatalogHue] = [:]
+
+        for activity in activities {
+            for trainingType in activity.types {
+                for exercise in trainingType.exercises {
+                    result[exercise.name] = activity.hue
+                }
+                for combination in trainingType.combinations {
+                    for exercise in combination.exercises {
+                        result[exercise.name] = activity.hue
+                    }
+                }
+            }
+        }
+
+        return result
+    }
+}
+
 extension Activity {
     var hue: CatalogHue {
         let n = name.lowercased()

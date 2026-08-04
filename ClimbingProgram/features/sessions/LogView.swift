@@ -56,6 +56,7 @@ struct LogView: View {
 
     @State private var modalRoute: ModalRoute?
     @State private var navigationPath = NavigationPath()
+    @FocusState private var focusedDayContextField: DayContextFocusedField?
 
 
     // Export
@@ -73,8 +74,21 @@ struct LogView: View {
     @State private var resultMessage: String? = nil
 
     var body: some View {
-            NavigationStack(path: $navigationPath) {
-                CombinedLogList(sessions: sessions, climbEntries: climbEntries, dayLogs: dayLogs)
+            NavigationStack(path: Binding(
+                get: { navigationPath },
+                set: { newPath in
+                    if newPath.count < navigationPath.count {
+                        focusedDayContextField = nil
+                    }
+                    navigationPath = newPath
+                }
+            )) {
+                CombinedLogList(
+                    sessions: sessions,
+                    climbEntries: climbEntries,
+                    dayLogs: dayLogs,
+                    focusedDayContextField: $focusedDayContextField
+                )
                     .toolbar { trailingToolbar }
                     .sheet(isPresented: newSessionPresentedBinding) {
                         NewSessionSheet { createdDay in
@@ -101,7 +115,8 @@ struct LogView: View {
                             date: dayKey,
                             session: sessionForDay,
                             climbEntries: climbsForDay,
-                            dayLog: dayLogForDay
+                            dayLog: dayLogForDay,
+                            focusedDayContextField: $focusedDayContextField
                         )
                     }
             }
@@ -995,6 +1010,7 @@ private struct CombinedLogList: View {
     let sessions: [Session]
     let climbEntries: [ClimbEntry]
     let dayLogs: [DayLog]
+    let focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
 
     @State private var showFilters = false
     @State private var dateRange = DateRange()
@@ -1045,7 +1061,8 @@ private struct CombinedLogList: View {
                         date: date,
                         session: dayData.session,
                         climbEntries: dayData.climbEntries,
-                        dayLog: dayData.dayLog
+                        dayLog: dayData.dayLog,
+                        focusedDayContextField: focusedDayContextField
                     )
                 } label: {
                     CombinedDayRow(
@@ -1349,6 +1366,7 @@ private struct CombinedDayDetailView: View {
     let session: Session?
     let climbEntries: [ClimbEntry]
     let dayLog: DayLog?
+    let focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
     
     @State private var addRoute: AddRoute? = nil
     @State private var didReorder = false
@@ -1375,7 +1393,8 @@ private struct CombinedDayDetailView: View {
             DayContextEditorSection(
                 date: date,
                 dayLog: resolvedDayLog,
-                onDayLogChanged: updateDayLog
+                onDayLogChanged: updateDayLog,
+                focusedField: focusedDayContextField
             )
 
             // Exercises section
@@ -1452,6 +1471,7 @@ private struct CombinedDayDetailView: View {
                 }
             }
         }
+        .scrollDismissesKeyboard(.interactively)
         .listStyle(.insetGrouped)
         .navigationTitle(date.formatted(date: .abbreviated, time: .omitted))
         .navigationBarTitleDisplayMode(.inline)

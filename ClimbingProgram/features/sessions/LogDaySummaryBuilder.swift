@@ -24,11 +24,14 @@ enum LogDaySummaryBuilder {
         var grouped: [Date: LogDaySummary] = [:]
 
         for session in sessions {
+            let exerciseCount = session.items.count
+            guard exerciseCount > 0 else { continue }
+
             let dateKey = calendar.startOfDay(for: session.date)
             if grouped[dateKey] == nil {
                 grouped[dateKey] = LogDaySummary()
             }
-            grouped[dateKey]?.exercises = Array(session.items).count
+            grouped[dateKey]?.exercises = exerciseCount
             grouped[dateKey]?.session = session
         }
 
@@ -43,9 +46,7 @@ enum LogDaySummaryBuilder {
 
         for dayLog in dayLogs where DayLogStore.hasContext(dayLog) {
             let dateKey = calendar.startOfDay(for: dayLog.date)
-            if grouped[dateKey] == nil {
-                grouped[dateKey] = LogDaySummary()
-            }
+            guard grouped[dateKey] != nil else { continue }
             grouped[dateKey]?.dayLog = dayLog
         }
 

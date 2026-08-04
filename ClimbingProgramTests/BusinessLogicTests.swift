@@ -366,6 +366,54 @@ class BusinessLogicTests: ClimbingProgramTestSuite {
         XCTAssertEqual(state.lastSynchronizedAt, "2026-01-02 00:00:00.000000")
     }
 
+    func testTB2CacheRefreshMayTakeLongForFirstRefresh() {
+        clearTB2CacheRefreshState()
+        defer { clearTB2CacheRefreshState() }
+
+        XCTAssertTrue(TB2SyncManager.cacheRefreshMayTakeLong(for: .tension, now: Date(timeIntervalSince1970: 1_800_000_000)))
+    }
+
+    func testTB2CacheRefreshMayTakeLongWhenEitherCacheIsOlderThanSixMonths() {
+        clearTB2CacheRefreshState()
+        defer { clearTB2CacheRefreshState() }
+
+        UserDefaults.standard.set(true, forKey: "tb2.climbsCache.tension.complete")
+        UserDefaults.standard.set("2026-01-02 00:00:00.000000", forKey: "tb2.climbsCache.tension.lastSynchronizedAt")
+        UserDefaults.standard.set(true, forKey: "tb2.climbStatsCache.tension.complete")
+        UserDefaults.standard.set("2025-01-01 00:00:00.000000", forKey: "tb2.climbStatsCache.tension.lastSynchronizedAt")
+
+        guard let now = BoardDateParser.parse("2026-08-04 00:00:00.000000") else {
+            return XCTFail("Expected test date to parse")
+        }
+        XCTAssertTrue(TB2SyncManager.cacheRefreshMayTakeLong(for: .tension, now: now))
+    }
+
+    func testTB2CacheRefreshDoesNotWarnForRecentCompleteCaches() {
+        clearTB2CacheRefreshState()
+        defer { clearTB2CacheRefreshState() }
+
+        UserDefaults.standard.set(true, forKey: "tb2.climbsCache.tension.complete")
+        UserDefaults.standard.set("2026-07-01 00:00:00.000000", forKey: "tb2.climbsCache.tension.lastSynchronizedAt")
+        UserDefaults.standard.set(true, forKey: "tb2.climbStatsCache.tension.complete")
+        UserDefaults.standard.set("2026-07-01 00:00:00.000000", forKey: "tb2.climbStatsCache.tension.lastSynchronizedAt")
+
+        guard let now = BoardDateParser.parse("2026-08-04 00:00:00.000000") else {
+            return XCTFail("Expected test date to parse")
+        }
+        XCTAssertFalse(TB2SyncManager.cacheRefreshMayTakeLong(for: .tension, now: now))
+    }
+
+    private func clearTB2CacheRefreshState() {
+        for key in [
+            "tb2.climbsCache.tension.complete",
+            "tb2.climbsCache.tension.lastSynchronizedAt",
+            "tb2.climbStatsCache.tension.complete",
+            "tb2.climbStatsCache.tension.lastSynchronizedAt"
+        ] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
     @MainActor
     func testTB2ClimbStatsMetadataCacheInsertsAndUpdatesRows() throws {
         let initial = TB2Client.SyncResponse(
