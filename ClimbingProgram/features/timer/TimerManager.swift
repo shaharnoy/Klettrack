@@ -292,6 +292,7 @@ class TimerManager {
         currentPhase = .work
         refreshDerivedFlags()
         laps.removeAll()
+        lastLapTime = 0
         lastBeepSecondForSegment = [:]
         session = nil
         pausedAtDuringGetReady = false
