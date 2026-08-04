@@ -45,6 +45,7 @@ private func ensurePlanKind(_ ctx: ModelContext, key: String = "weekly", name: S
 }
 
 
+@MainActor
 class ImportExportTests: ClimbingProgramTestSuite {
     
     // MARK: - CSV Export Tests
@@ -78,7 +79,7 @@ class ImportExportTests: ClimbingProgramTestSuite {
         // Verify header
         let header = lines.first!
         let expectedFields = [
-            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs"
+            "date","type","exercise_name","climb_type","grade","feelsLikeGrade","angle","holdColor","rope_type","style","attempts","wip","ispreviouslyClimbed","gym","reps","sets","duration","weight_kg","plan_id","plan_name","day_type","notes","climb_id","tb2_uuid","media_refs","day_note","day_tags"
         ]
         let headerFields = header.components(separatedBy: ",")
         XCTAssertEqual(headerFields.count, expectedFields.count, "Header should have correct number of fields")
@@ -143,12 +144,118 @@ class ImportExportTests: ClimbingProgramTestSuite {
             "Exported numeric values should use deterministic 3-decimal POSIX formatting"
         )
     }
+
+    func testCSVExportIncludesDedicatedDayContextAndEscapesValues() throws {
+        let date = parseDay("2026-08-01")
+        let dayLog = DayLog(date: date)
+        dayLog.note = "Recovery, \"deload\"\nFelt good"
+        let tag = DayTag(name: "Volume, \"high\"", colorKey: "green")
+        dayLog.tags = [tag]
+        context.insert(dayLog)
+        context.insert(tag)
+        try context.save()
+
+        let csv = LogCSV.makeExportCSV(context: context).csv
+        let header = csv.components(separatedBy: "\n").first ?? ""
+
+        XCTAssertEqual(header.components(separatedBy: "," ).count, 27)
+        XCTAssertTrue(csv.contains(",day,"), "Export should contain a dedicated day row")
+        XCTAssertTrue(csv.contains("\"Recovery, \"\"deload\"\"\nFelt good\""))
+        XCTAssertTrue(csv.contains("Volume,"))
+        XCTAssertTrue(csv.contains("\\\""), "Tag JSON should preserve escaped quotes")
+    }
+
+    func testCSVImportDayContextIsMetadataOnlyAndIdempotent() async throws {
+        let date = parseDay("2026-08-02")
+        let dayLog = DayLog(date: date, note: "Travel day\nNo climbing")
+        let existingTag = DayTag(name: "recovery", colorKey: "blue")
+        dayLog.tags = [existingTag]
+        context.insert(dayLog)
+        context.insert(existingTag)
+        try context.save()
+
+        // Change the exported casing to verify case-insensitive tag reuse.
+        let exported = LogCSV.makeExportCSV(context: context).csv
+        let csv = exported.replacingOccurrences(of: "recovery", with: "RECOVERY")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("day_context.csv")
+        try csv.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        context.delete(dayLog)
+        try context.save()
+
+        let firstImport = try await LogCSV.importCSVAsync(from: url, into: context, dedupe: true)
+        let secondImport = try await LogCSV.importCSVAsync(from: url, into: context, dedupe: true)
+
+        XCTAssertEqual(firstImport, 0)
+        XCTAssertEqual(secondImport, 0)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<DayLog>()).count, 1)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<DayTag>()).count, 1)
+
+        let importedLog = try XCTUnwrap(DayLogStore.fetchDayLog(for: date, in: context))
+        XCTAssertEqual(importedLog.note, "Travel day\nNo climbing")
+        XCTAssertEqual(DayLogStore.activeTags(from: importedLog).map(\.name), ["recovery"])
+    }
+
+    func testCSVImportDayContextAlongsideActivities() async throws {
+        let date = parseDay("2026-08-03")
+        let dayLog = DayLog(date: date, note: "Mixed training")
+        let tag = DayTag(name: "Volume", colorKey: "green")
+        dayLog.tags = [tag]
+        context.insert(dayLog)
+        context.insert(tag)
+
+        let session = Session(date: date)
+        session.items.append(SessionItem(exerciseName: "Pull-ups", reps: 10, sets: 3))
+        context.insert(session)
+
+        let climb = ClimbEntry(
+            climbType: .boulder,
+            grade: "V4",
+            style: "Power",
+            gym: "Gym",
+            dateLogged: date
+        )
+        context.insert(climb)
+        try context.save()
+
+        let csv = LogCSV.makeExportCSV(context: context).csv
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("day_and_activity.csv")
+        try csv.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        context.delete(session)
+        context.delete(climb)
+        context.delete(dayLog)
+        context.delete(tag)
+        try context.save()
+
+        let importedCount = try await LogCSV.importCSVAsync(from: url, into: context, dedupe: false)
+
+        XCTAssertEqual(importedCount, 2)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Session>()).flatMap(\.items).count, 1)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<ClimbEntry>()).count, 1)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<DayLog>()).count, 1)
+        XCTAssertEqual(try XCTUnwrap(DayLogStore.fetchDayLog(for: date, in: context)).note, "Mixed training")
+    }
+
+    func testLegacyPositionalCSVImportRemainsSupported() async throws {
+        let legacyCSV = "2026-08-04 10:00:00,exercise,Rows"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("legacy_log.csv")
+        try legacyCSV.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let importedCount = try await LogCSV.importCSVAsync(from: url, into: context, dedupe: false)
+
+        XCTAssertEqual(importedCount, 1)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Session>()).flatMap(\.items).map(\.exerciseName), ["Rows"])
+    }
     
     // MARK: - CSV Import Tests
     
     // Centralized header to avoid duplication & indentation issues
     private let testCSVHeader =
-    "date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs"
+    "date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs,day_note,day_tags"
     
     func testCSVImportBasic() async throws {
         let csvContent = """
