@@ -733,7 +733,12 @@ enum PlanCSVExchange {
         return all.joined(separator: ",")
     }
 
-    private static func normalizedHeader(_ value: String) -> String { value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+    private static func normalizedHeader(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\u{FEFF}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
 
     private static func normalized(_ value: String) -> String { value.trimmingCharacters(in: .whitespacesAndNewlines).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current) }
     private static func twoDigit(_ value: Int) -> String { value < 10 ? "0\(value)" : String(value) }

@@ -47,6 +47,17 @@ final class PlanCSVExchangeTests: XCTestCase {
         XCTAssertEqual(parsed.exercises.first?.name, "Imported Drill")
     }
 
+    func testParseAcceptsUTF8ByteOrderMarkBeforeHeader() throws {
+        let plan = Plan(name: "BOM Plan", kind: nil, startDate: Date())
+        context.insert(plan)
+        try context.save()
+
+        let csv = "\u{FEFF}" + PlanCSVExchange.export(plan: plan, in: context).csv
+        let parsed = try PlanCSVExchange.parse(csv)
+
+        XCTAssertEqual(parsed.plan.name, "BOM Plan")
+    }
+
     func testPlanExportFilenameUsesSanitizedPlanNameAndDate() {
         let plan = Plan(name: "My Plan / Strength", kind: nil, startDate: Date())
         let filename = PlanCSVExchange.exportFilename(
