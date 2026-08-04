@@ -43,6 +43,14 @@ struct LogCSVDocument: FileDocument {
 
 enum LogCSV {
 
+    private static let exportHeader = [
+        "date", "type", "exercise_name", "climb_type", "grade", "feelsLikeGrade",
+        "angle", "holdColor", "rope_type", "style", "attempts", "wip",
+        "ispreviouslyClimbed", "gym", "reps", "sets", "duration", "weight_kg",
+        "plan_id", "plan_name", "day_type", "notes", "climb_id", "tb2_uuid",
+        "media_refs", "day_note", "day_tags"
+    ].joined(separator: ",")
+
     /// Build a CSV snapshot from all Sessions + SessionItems + ClimbEntries in the store.
     static func makeExportCSV(context: ModelContext) -> LogCSVDocument {
         // Fetch sessions oldest → newest for nice reading
@@ -57,9 +65,13 @@ enum LogCSV {
 
         // Fetch all plans to look up day types
         let plans: [Plan] = (try? context.fetch(FetchDescriptor<Plan>())) ?? []
+
+        // Fetch shared day context independently so metadata-only days are exported too.
+        let dayLogs: [DayLog] = (try? context.fetch(
+            FetchDescriptor<DayLog>(sortBy: [SortDescriptor(\.date, order: .forward)])
+        )) ?? []
         
-        // Header extended with climb_id and tb2_uuid at the end (backward compatible)
-        var rows: [String] = ["date,type,exercise_name,climb_type,grade,feelsLikeGrade,angle,holdColor,rope_type,style,attempts,wip,ispreviouslyClimbed,gym,reps,sets,duration,weight_kg,plan_id,plan_name,day_type,notes,climb_id,tb2_uuid,media_refs"]
+        var rows: [String] = [exportHeader]
 
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -68,6 +80,19 @@ enum LogCSV {
 
         var calendar = Calendar.current
         calendar.timeZone = TimeZone.current
+
+        // Export shared day context before activity rows. A day row is keyed by its
+        // normalized date and carries the complete context for that day.
+        for dayLog in dayLogs where hasExportableContext(dayLog) {
+            let tags = activeExportTags(from: dayLog).map {
+                CSVDayTag(name: $0.name, colorKey: $0.colorKey)
+            }
+            var dayRow = [df.string(from: dayLog.date), "day"]
+            dayRow.append(contentsOf: Array(repeating: "", count: 23))
+            dayRow.append(csvEscape(dayLog.note ?? ""))
+            dayRow.append(csvEscape(encodeDayTags(tags)))
+            rows.append(dayRow.joined(separator: ","))
+        }
 
         // Export exercises
         for s in sessions {
@@ -117,7 +142,9 @@ enum LogCSV {
                     csvEscape(i.notes ?? ""),
                     "", // climb_id (exercises don't use this)
                     "",  // tb2_uuid (exercises don't use this)
-                    ""  // media_ref (exercises don't use this)
+                    "", // media_ref (exercises don't use this)
+                    "", // day_note (day rows only)
+                    ""  // day_tags (day rows only)
                 ].joined(separator: ","))
             }
         }
@@ -158,7 +185,9 @@ enum LogCSV {
                 csvEscape(climb.notes ?? ""),
                 climb.id.uuidString,                   // climb_id
                 csvEscape(climb.tb2ClimbUUID ?? ""),   // tb2_uuid
-                csvEscape(mediaRefs)                   // media_refs
+                csvEscape(mediaRefs),                  // media_refs
+                "",                                    // day_note (day rows only)
+                ""                                     // day_tags (day rows only)
             ].joined(separator: ","))
         }
         
@@ -168,9 +197,46 @@ enum LogCSV {
 
 // MARK: - Helpers
 
+struct CSVDayTag: Codable, Equatable, Sendable {
+    let name: String
+    let colorKey: String
+}
+
+private func hasExportableContext(_ dayLog: DayLog) -> Bool {
+    let hasNote = dayLog.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    let hasTags = activeExportTags(from: dayLog).isEmpty == false
+    return hasNote || hasTags
+}
+
+private func activeExportTags(from dayLog: DayLog) -> [DayTag] {
+    (dayLog.tags ?? [])
+        .filter { !$0.isHidden }
+        .sorted { lhs, rhs in
+            if lhs.sort != rhs.sort { return lhs.sort < rhs.sort }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+}
+
+private func encodeDayTags(_ tags: [CSVDayTag]) -> String {
+    guard let data = try? JSONEncoder().encode(tags) else { return "[]" }
+    return String(decoding: data, as: UTF8.self)
+}
+
+private func decodeDayTags(_ raw: String) -> [CSVDayTag] {
+    guard let data = raw.data(using: .utf8),
+          let tags = try? JSONDecoder().decode([CSVDayTag].self, from: data)
+    else { return [] }
+
+    return tags.compactMap { tag in
+        let name = tag.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        return CSVDayTag(name: name, colorKey: tag.colorKey)
+    }
+}
+
 /// Basic CSV escaping (quote if needed; escape inner quotes)
 private func csvEscape(_ s: String) -> String {
-    if s.contains(",") || s.contains("\"") || s.contains("\n") {
+    if s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r") {
         let escaped = s.replacingOccurrences(of: "\"", with: "\"\"")
         return "\"\(escaped)\""
     }
@@ -212,6 +278,46 @@ private func parseCSVLine(_ line: String) -> [String] {
     }
     out.append(cur)
     return out
+}
+
+/// Split CSV text into records without treating newlines inside quoted fields as row breaks.
+private func parseCSVRecords(_ text: String) -> [String] {
+    var records: [String] = []
+    var current = ""
+    var inQuotes = false
+    let chars = Array(text)
+    var index = 0
+
+    while index < chars.count {
+        let character = chars[index]
+
+        if character == "\"" {
+            current.append(character)
+            if inQuotes, index + 1 < chars.count, chars[index + 1] == "\"" {
+                current.append(chars[index + 1])
+                index += 1
+            } else {
+                inQuotes.toggle()
+            }
+        } else if (character == "\n" || character == "\r") && !inQuotes {
+            if !current.isEmpty {
+                records.append(current)
+                current = ""
+            }
+            if character == "\r", index + 1 < chars.count, chars[index + 1] == "\n" {
+                index += 1
+            }
+        } else {
+            current.append(character)
+        }
+
+        index += 1
+    }
+
+    if !current.isEmpty {
+        records.append(current)
+    }
+    return records
 }
 
 /// Build a dedupe signature for an item row
@@ -287,9 +393,9 @@ private extension Array {
 
 extension LogCSV {
     
-    struct Entry {
+    struct Entry: Sendable {
         let date: Date
-        let type: String // "exercise" or "climb"
+        let type: String // "day", "exercise", or "climb"
         let name: String
         let climbType: String?
         let grade: String?
@@ -313,6 +419,8 @@ extension LogCSV {
         let climbId: UUID?
         let tb2UUID: String?
         let mediaRefs: String?
+        let dayNote: String?
+        let dayTags: [CSVDayTag]
     }
     
     @MainActor
@@ -333,7 +441,7 @@ extension LogCSV {
             let data = try Data(contentsOf: url)
             guard let text = String(data: data, encoding: .utf8) else { return [] }
             
-            let lines = text.split(whereSeparator: \.isNewline).map(String.init)
+            let lines = parseCSVRecords(text)
             guard !lines.isEmpty else { return [] }
             
             // --- Header-based mapping ---
@@ -385,6 +493,8 @@ extension LogCSV {
                 static let climbId    = ["climb_id", "climbid"]
                 static let tb2UUID    = ["tb2_uuid", "tb2"]
                 static let mediaRefs  = ["media_refs", "media"]
+                static let dayNote    = ["day_note", "daynote"]
+                static let dayTags    = ["day_tags", "daytags"]
             }
             
             let hasHeader = (idx(Cols.date) != nil && idx(Cols.type) != nil)
@@ -416,7 +526,7 @@ extension LogCSV {
                 }
                 
                 // --- Extract values (header-based or legacy positional fallback) ---
-                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr: String
+                let dateStr, typeStr, exerciseName, climbTypeStr, gradeStr,feelsLikeGradeStr, angleStr, holdColorStr, ropeTypeStr, styleStr, attemptsStr, wipStr,ispreviouslyClimbedStr, gymStr, repsStr, setsStr, durationStr, weightStr, planIdStr, planName, dayTypeStr, notesRaw, climbIdStr, tb2UUIDStr, mediaRefsStr, dayNoteRaw, dayTagsRaw: String
                 
                 if hasHeader {
                     dateStr      = val(parts, Cols.date)
@@ -444,6 +554,8 @@ extension LogCSV {
                     climbIdStr   = val(parts, Cols.climbId)
                     tb2UUIDStr   = val(parts, Cols.tb2UUID)
                     mediaRefsStr = val(parts, Cols.mediaRefs)
+                    dayNoteRaw   = val(parts, Cols.dayNote)
+                    dayTagsRaw   = val(parts, Cols.dayTags)
                 } else {
                     // Legacy positional fallback (will be removed in future)
                     func p(_ i: Int) -> String { parts.indices.contains(i) ? parts[i] : "" }
@@ -472,6 +584,8 @@ extension LogCSV {
                     tb2UUIDStr   = p(22)
                     mediaRefsStr = ""   // no media column in legacy CSV
                     feelsLikeGradeStr = "" //no alternative grade in legacy CSV
+                    dayNoteRaw   = ""   // no day context in legacy CSV
+                    dayTagsRaw   = ""   // no day context in legacy CSV
 
                 }
                 
@@ -512,6 +626,9 @@ extension LogCSV {
                 let tb2uuidOpt = tb2uuid.isEmpty ? nil : tb2uuid
                 let mediaRefsValue = mediaRefsStr.trimmingCharacters(in: .whitespacesAndNewlines)
                 let mediaRefsOpt = mediaRefsValue.isEmpty ? nil : mediaRefsValue
+                let dayNoteValue = dayNoteRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+                let dayNoteOpt = dayNoteValue.isEmpty ? nil : dayNoteValue
+                let dayTags = decodeDayTags(dayTagsRaw.trimmingCharacters(in: .whitespacesAndNewlines))
                 
                 out.append(Entry(
                     date: dayDate,
@@ -538,7 +655,9 @@ extension LogCSV {
                     notes: notesOpt,
                     climbId: climbId,
                     tb2UUID: tb2uuidOpt,
-                    mediaRefs: mediaRefsOpt
+                    mediaRefs: mediaRefsOpt,
+                    dayNote: dayNoteOpt,
+                    dayTags: dayTags
                 ))
             }
             
@@ -582,7 +701,27 @@ extension LogCSV {
             
             let startOfDay = cal.startOfDay(for: e.date)
             
-            if e.type == "exercise" {
+            if e.type == "day" {
+                guard let dayLog = DayLogStore.dayLog(for: startOfDay, in: context) else { continue }
+                DayLogStore.setNote(e.dayNote ?? "", for: dayLog)
+
+                var importedTags: [DayTag] = []
+                for payload in e.dayTags {
+                    let colorKey = DayTypeModel.allowedColorKeys.contains(payload.colorKey)
+                        ? payload.colorKey
+                        : "gray"
+                    guard let tag = DayLogStore.createTag(
+                        name: payload.name,
+                        colorKey: colorKey,
+                        in: context
+                    ) else { continue }
+                    if !importedTags.contains(where: { $0.id == tag.id }) {
+                        importedTags.append(tag)
+                    }
+                }
+                dayLog.tags = importedTags
+                continue
+            } else if e.type == "exercise" {
                 guard !e.name.isEmpty else { continue }
                 
                 // Find or create session for this day
