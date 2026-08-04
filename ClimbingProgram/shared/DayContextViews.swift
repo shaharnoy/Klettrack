@@ -68,12 +68,19 @@ enum DayTagPresentationBuilder {
     }
 }
 
+enum DayContextFocusedField: Hashable {
+    case note
+    case newTag
+}
+
 struct DayContextEditorSection: View {
+
     @Environment(\.modelContext) private var context
 
     let date: Date
     let dayLog: DayLog?
     let onDayLogChanged: (DayLog?) -> Void
+    let focusedField: FocusState<DayContextFocusedField?>.Binding
 
     @Query(
         filter: #Predicate<DayTag> { $0.isHidden == false },
@@ -87,7 +94,6 @@ struct DayContextEditorSection: View {
     @State private var newTagName = ""
     @State private var newTagColorKey = "gray"
     @State private var errorMessage: String?
-    @FocusState private var isNewTagFocused: Bool
 
     private var selectedTags: [DayTag] {
         DayLogStore.activeTags(from: dayLog)
@@ -102,13 +108,26 @@ struct DayContextEditorSection: View {
     }
 
     private var shouldShowNewTagControls: Bool {
-        isNewTagFocused || !trimmedNewTagName.isEmpty
+        focusedField.wrappedValue == .newTag || !trimmedNewTagName.isEmpty
     }
 
     var body: some View {
         Section("Day Context") {
-            TextField("Daily note", text: $noteText, axis: .vertical)
-                .lineLimit(2...6)
+            TextEditor(text: $noteText)
+                .frame(height: 120)
+                .scrollIndicators(.visible, axes: .vertical)
+                .scrollDismissesKeyboard(.interactively)
+                .focused(focusedField, equals: .note)
+                .accessibilityLabel("Daily note")
+                .overlay(alignment: .topLeading) {
+                    if noteText.isEmpty {
+                        Text("Daily note")
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .onChange(of: noteText) { _, _ in
                     saveNote()
                 }
@@ -129,7 +148,7 @@ struct DayContextEditorSection: View {
                     }
 
                     NewLabelChip(name: $newTagName, colorKey: newTagColorKey)
-                        .focused($isNewTagFocused)
+                        .focused(focusedField, equals: .newTag)
                         .onSubmit(addTag)
                 }
 
@@ -147,7 +166,11 @@ struct DayContextEditorSection: View {
             syncNoteText()
         }
         .onChange(of: date) { _, _ in
+            focusedField.wrappedValue = nil
             syncNoteText()
+        }
+        .onDisappear {
+            focusedField.wrappedValue = nil
         }
         .alert(errorMessage ?? "", isPresented: Binding(
             get: { errorMessage != nil },
@@ -209,7 +232,7 @@ struct DayContextEditorSection: View {
     private func resetNewTagInput() {
         newTagName = ""
         newTagColorKey = "gray"
-        isNewTagFocused = false
+        focusedField.wrappedValue = nil
     }
 
     private func addTag() {
