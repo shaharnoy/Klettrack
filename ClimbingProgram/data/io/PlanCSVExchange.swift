@@ -680,7 +680,6 @@ enum PlanCSVExchange {
     private static func applyContexts(_ rows: [ParsedExchange.ContextRow], in context: ModelContext) {
         for row in rows {
             let existing = DayLogStore.fetchDayLog(for: row.date, in: context)
-            if let existing, DayLogStore.hasContext(existing) { continue }
             let dayLog = existing ?? DayLogStore.dayLog(for: row.date, in: context)
             guard let dayLog else { continue }
             DayLogStore.setNote(row.note ?? "", for: dayLog)
