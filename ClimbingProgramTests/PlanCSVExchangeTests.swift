@@ -197,6 +197,44 @@ final class PlanCSVExchangeTests: XCTestCase {
         XCTAssertEqual(DayLogStore.activeTags(from: dayLog).map(\.name), ["CSV"])
     }
 
+    func testImportPreviewReportsProtectedRecordsAndActualChanges() throws {
+        let plan = Plan(name: "Existing", kind: nil, startDate: Date())
+        let day = PlanDay(date: plan.startDate)
+        day.chosenExercises = ["Logged Exercise", "Remove Me"]
+        plan.days = [day]
+        context.insert(plan)
+
+        let session = Session(date: plan.startDate)
+        let loggedItem = SessionItem(
+            exerciseName: "Logged Exercise",
+            planSourceId: plan.id,
+            planName: plan.name,
+            planDayId: day.id
+        )
+        session.items = [loggedItem]
+        context.insert(session)
+        try context.save()
+
+        var edited = try PlanCSVExchange.parse(PlanCSVExchange.export(plan: plan, in: context).csv)
+        let loggedID = try XCTUnwrap(edited.exercises.first { $0.name == "Logged Exercise" }?.id)
+        let newID = UUID()
+        edited.plan.name = "Updated"
+        edited.exercises.append(.init(id: newID, catalogID: nil, name: "New Exercise", area: nil, description: nil, reps: nil, sets: nil, duration: nil, rest: nil, notes: nil))
+        edited.days[0].exerciseRefs = [(newID, 0), (loggedID, 1)]
+        edited.contexts = [.init(date: plan.startDate, note: "CSV context", tags: [])]
+
+        let preview = PlanCSVExchange.preview(edited, mode: .existing(plan), overwriteDayContext: true, in: context)
+
+        XCTAssertEqual(preview.metadataChanges, ["Plan name"])
+        XCTAssertEqual(preview.daysToUpdate, 1)
+        XCTAssertEqual(preview.scheduleEntriesToAdd, 1)
+        XCTAssertEqual(preview.scheduleEntriesToRemove, 1)
+        XCTAssertEqual(preview.protectedLoggedExerciseCount, 1)
+        XCTAssertEqual(preview.existingLogCount, 1)
+        XCTAssertEqual(preview.logsToImport, 0)
+        XCTAssertEqual(preview.dayContextRowsToApply, 1)
+    }
+
     func testRepeatedImportDoesNotDuplicateLogs() throws {
         let source = Plan(name: "Repeatable", kind: nil, startDate: Date())
         let day = PlanDay(date: source.startDate)

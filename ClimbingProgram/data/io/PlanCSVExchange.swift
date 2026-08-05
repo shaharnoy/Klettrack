@@ -34,16 +34,48 @@ enum PlanCSVExchange {
         case existing(Plan)
     }
 
-    struct Summary: Sendable {
+    struct ImportPreview: Sendable {
+        let isNewPlan: Bool
+        let planName: String
+        let targetPlanName: String
+        let metadataChanges: [String]
+        let daysToAdd: Int
+        let daysToUpdate: Int
+        let daysToRemove: Int
+        let protectedDayCount: Int
+        let scheduleEntriesToAdd: Int
+        let scheduleEntriesToRemove: Int
+        let exerciseDefinitionsToAdd: Int
+        let exerciseDefinitionsToUpdate: Int
+        let protectedLoggedExerciseCount: Int
+        let logsToImport: Int
+        let existingLogCount: Int
+        let climbsToImport: Int
+        let existingClimbCount: Int
+        let dayContextRows: Int
+        let dayContextRowsToApply: Int
+        let dayContextRowsIgnored: Int
+        let missingCatalogExerciseCount: Int
+        let warnings: [String]
+    }
+
+    struct Summary: Identifiable, Sendable {
+        let id = UUID()
         let planName: String
         let dayCount: Int
         let exerciseCount: Int
         let logCount: Int
         let climbCount: Int
+        let preview: ImportPreview
+        let existingLogCount: Int
+        let existingClimbCount: Int
+        let dayContextCountApplied: Int
+        let dayContextCountIgnored: Int
         let warnings: [String]
 
         var message: String {
-            var result = "Imported \(planName): \(dayCount) day(s), \(exerciseCount) exercise definition(s), \(logCount) log(s), \(climbCount) climb(s)."
+            let action = preview.isNewPlan ? "Created" : "Updated"
+            var result = "\(action) \(planName): \(preview.daysToAdd) day(s) added, \(preview.daysToUpdate) updated, \(preview.daysToRemove) removed; \(logCount) log(s) and \(climbCount) climb(s) imported."
             if !warnings.isEmpty {
                 result += " \(warnings.count) row warning(s)."
             }
@@ -314,6 +346,123 @@ enum PlanCSVExchange {
         return PlanCSVDocument(csv: rows.joined(separator: "\n"))
     }
 
+    static func preview(
+        _ exchange: ParsedExchange,
+        mode: ImportMode,
+        overwriteDayContext: Bool,
+        in context: ModelContext
+    ) -> ImportPreview {
+        let targetPlan: Plan? = switch mode {
+        case .newPlan: nil
+        case .existing(let plan): plan
+        }
+        let isNewPlan = targetPlan == nil
+        let targetPlanName = targetPlan?.name ?? exchange.plan.name
+        var metadataChanges: [String] = []
+        if let targetPlan {
+            if targetPlan.name != exchange.plan.name { metadataChanges.append("Plan name") }
+            if targetPlan.startDate != exchange.plan.startDate { metadataChanges.append("Start date") }
+            if targetPlan.kind?.key != exchange.plan.kindKey { metadataChanges.append("Plan kind") }
+        }
+
+        let calendar = Calendar.current
+        let persistedExercises = (try? context.fetch(FetchDescriptor<Exercise>())) ?? []
+        let targetDefinitions = targetPlan?.exerciseDefinitions ?? []
+        let currentSessions = (try? context.fetch(FetchDescriptor<Session>())) ?? []
+        let currentItems = targetPlan.map { plan in
+            currentSessions.flatMap(\.items).filter { $0.planSourceId == plan.id }
+        } ?? []
+        let currentClimbs = targetPlan.map { plan in
+            ((try? context.fetch(FetchDescriptor<ClimbEntry>())) ?? []).filter { $0.planSourceId == plan.id }
+        } ?? []
+
+        let targetDays = targetPlan?.days ?? []
+        let matchedDays = exchange.days.compactMap { row in
+            matchingDay(for: row, in: targetDays, calendar: calendar)
+        }
+        let matchedDayIDs = Set(matchedDays.map(\.id))
+        let daysToAdd = isNewPlan ? exchange.days.count : exchange.days.count - matchedDays.count
+        let daysToUpdate = isNewPlan ? 0 : matchedDays.count
+        let daysToRemove = isNewPlan ? 0 : targetDays.filter { day in
+            guard !matchedDayIDs.contains(day.id) else { return false }
+            return !hasProtectedRecords(on: day, items: currentItems, climbs: currentClimbs, in: currentSessions, calendar: calendar)
+        }.count
+        let protectedDayCount = targetDays.filter {
+            hasProtectedRecords(on: $0, items: currentItems, climbs: currentClimbs, in: currentSessions, calendar: calendar)
+        }.count
+
+        let definitionsByID = Dictionary(uniqueKeysWithValues: targetDefinitions.map { ($0.id, $0) })
+        let definitionsByName = Dictionary(targetDefinitions.map { (normalized($0.name), $0) }, uniquingKeysWith: { first, _ in first })
+        let incomingDefinitionsByID = Dictionary(uniqueKeysWithValues: exchange.exercises.map { ($0.id, $0) })
+        let exerciseDefinitionsToAdd = exchange.exercises.filter { row in
+            matchingDefinition(for: row, byID: definitionsByID, byName: definitionsByName) == nil
+        }.count
+        let exerciseDefinitionsToUpdate = exchange.exercises.compactMap { row -> PlanExerciseDefinition? in
+            matchingDefinition(for: row, byID: definitionsByID, byName: definitionsByName)
+        }.filter { definition in
+            guard let row = exchange.exercises.first(where: { $0.id == definition.id })
+                ?? exchange.exercises.first(where: { normalized($0.name) == normalized(definition.name) }) else { return false }
+            return definitionNeedsUpdate(definition, from: row)
+        }.count
+
+        var scheduleEntriesToAdd = 0
+        var scheduleEntriesToRemove = 0
+        if isNewPlan {
+            scheduleEntriesToAdd = exchange.days.reduce(0) { $0 + $1.exerciseRefs.count }
+        } else {
+            for row in exchange.days {
+                guard let targetDay = matchingDay(for: row, in: targetDays, calendar: calendar) else { continue }
+                let incomingNames = row.exerciseRefs.compactMap { incomingDefinitionsByID[$0.0]?.name }
+                let incomingNamesByNormalized = Set(incomingNames.map(normalized))
+                let existingNamesByNormalized = Set(targetDay.chosenExercises.map(normalized))
+                let loggedNames = Set(currentItems.filter {
+                    itemBelongs(to: targetDay, item: $0, sessions: currentSessions, calendar: calendar)
+                }.map { normalized($0.exerciseName) })
+                scheduleEntriesToAdd += incomingNames.filter { !existingNamesByNormalized.contains(normalized($0)) }.count
+                scheduleEntriesToRemove += targetDay.chosenExercises.filter {
+                    let normalizedName = normalized($0)
+                    return !incomingNamesByNormalized.contains(normalizedName) && !loggedNames.contains(normalizedName)
+                }.count
+            }
+        }
+
+        let existingLogIDs = Set(currentSessions.flatMap(\.items).map(\.id))
+        let allClimbs = (try? context.fetch(FetchDescriptor<ClimbEntry>())) ?? []
+        let existingClimbIDs = Set(allClimbs.map(\.id))
+        let existingLogCount = isNewPlan ? 0 : exchange.logs.filter { existingLogIDs.contains($0.id) }.count
+        let existingClimbCount = isNewPlan ? 0 : exchange.climbs.filter { existingClimbIDs.contains($0.id) }.count
+        let missingCatalogExerciseCount = exchange.exercises.filter { row in
+            let hasCatalogID = row.catalogID.map { catalogID in persistedExercises.contains { $0.id == catalogID } } ?? false
+            let hasNameMatch = persistedExercises.contains { normalized($0.name) == normalized(row.name) }
+            return !hasCatalogID && !hasNameMatch
+        }.count
+
+        return ImportPreview(
+            isNewPlan: isNewPlan,
+            planName: exchange.plan.name,
+            targetPlanName: targetPlanName,
+            metadataChanges: metadataChanges,
+            daysToAdd: daysToAdd,
+            daysToUpdate: daysToUpdate,
+            daysToRemove: daysToRemove,
+            protectedDayCount: protectedDayCount,
+            scheduleEntriesToAdd: scheduleEntriesToAdd,
+            scheduleEntriesToRemove: scheduleEntriesToRemove,
+            exerciseDefinitionsToAdd: isNewPlan ? exchange.exercises.count : exerciseDefinitionsToAdd,
+            exerciseDefinitionsToUpdate: isNewPlan ? 0 : exerciseDefinitionsToUpdate,
+            protectedLoggedExerciseCount: isNewPlan ? 0 : currentItems.count,
+            logsToImport: isNewPlan ? exchange.logs.count : exchange.logs.count - existingLogCount,
+            existingLogCount: existingLogCount,
+            climbsToImport: isNewPlan ? exchange.climbs.count : exchange.climbs.count - existingClimbCount,
+            existingClimbCount: existingClimbCount,
+            dayContextRows: exchange.contexts.count,
+            dayContextRowsToApply: overwriteDayContext ? exchange.contexts.count : 0,
+            dayContextRowsIgnored: overwriteDayContext ? 0 : exchange.contexts.count,
+            missingCatalogExerciseCount: missingCatalogExerciseCount,
+            warnings: exchange.warnings
+        )
+    }
+
     static func parse(_ csv: String) throws -> ParsedExchange {
         let records = PlanCSVCodec.records(csv)
         guard let headerRecord = records.first else { throw Error.emptyFile }
@@ -454,6 +603,7 @@ enum PlanCSVExchange {
         overwriteDayContext: Bool = false,
         in context: ModelContext
     ) throws -> Summary {
+        let importPreview = preview(exchange, mode: mode, overwriteDayContext: overwriteDayContext, in: context)
         let targetPlan: Plan
         let isNew: Bool
         switch mode {
@@ -610,6 +760,11 @@ enum PlanCSVExchange {
             exerciseCount: exchange.exercises.count,
             logCount: insertedLogs,
             climbCount: insertedClimbs,
+            preview: importPreview,
+            existingLogCount: importPreview.existingLogCount,
+            existingClimbCount: importPreview.existingClimbCount,
+            dayContextCountApplied: overwriteDayContext ? exchange.contexts.count : 0,
+            dayContextCountIgnored: overwriteDayContext ? 0 : exchange.contexts.count,
             warnings: exchange.warnings
         )
     }
@@ -745,6 +900,61 @@ enum PlanCSVExchange {
             }
         }
         return result
+    }
+
+    private static func matchingDay(
+        for row: ParsedExchange.DayRow,
+        in days: [PlanDay],
+        calendar: Calendar
+    ) -> PlanDay? {
+        days.first(where: { $0.id == row.id })
+            ?? days.first(where: { calendar.startOfDay(for: $0.date) == calendar.startOfDay(for: row.date) })
+    }
+
+    private static func itemBelongs(
+        to day: PlanDay,
+        item: SessionItem,
+        sessions: [Session],
+        calendar: Calendar
+    ) -> Bool {
+        if let planDayID = item.planDayId {
+            return planDayID == day.id
+        }
+        return sessionsDate(for: item, in: sessions, calendar: calendar) == calendar.startOfDay(for: day.date)
+    }
+
+    private static func hasProtectedRecords(
+        on day: PlanDay,
+        items: [SessionItem],
+        climbs: [ClimbEntry],
+        in sessions: [Session],
+        calendar: Calendar
+    ) -> Bool {
+        items.contains { itemBelongs(to: day, item: $0, sessions: sessions, calendar: calendar) }
+            || climbs.contains { calendar.startOfDay(for: $0.dateLogged) == calendar.startOfDay(for: day.date) }
+    }
+
+    private static func matchingDefinition(
+        for row: ParsedExchange.ExerciseRow,
+        byID definitionsByID: [UUID: PlanExerciseDefinition],
+        byName definitionsByName: [String: PlanExerciseDefinition]
+    ) -> PlanExerciseDefinition? {
+        definitionsByID[row.id] ?? definitionsByName[normalized(row.name)]
+    }
+
+    private static func definitionNeedsUpdate(
+        _ definition: PlanExerciseDefinition,
+        from row: ParsedExchange.ExerciseRow
+    ) -> Bool {
+        definition.catalogExerciseID != row.catalogID
+            || definition.name != row.name
+            || definition.area != row.area
+            || definition.exerciseDescription != row.description
+            || definition.repsText != row.reps
+            || definition.setsText != row.sets
+            || definition.durationText != row.duration
+            || definition.restText != row.rest
+            || definition.notes != row.notes
     }
 
     private static func sessionsDate(for item: SessionItem, in sessions: [Session], calendar: Calendar) -> Date? {

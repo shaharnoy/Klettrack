@@ -130,6 +130,7 @@ struct PlansListView: View {
     @State private var showPlanImporter = false
     @State private var planImportTarget: Plan? = nil
     @State private var pendingPlanImport: PendingPlanImport? = nil
+    @State private var planImportSummary: PlanCSVExchange.Summary? = nil
 
     // Import (async with progress)
     @State private var showImporter = false
@@ -233,11 +234,14 @@ struct PlansListView: View {
                     PlanImportPreviewSheet(pending: pending) { result in
                         switch result {
                         case .success(let summary):
-                            resultMessage = summary.message
+                            planImportSummary = summary
                         case .failure(let error):
                             resultMessage = "Plan import failed: \(error.localizedDescription)"
                         }
                     }
+                }
+                .sheet(item: $planImportSummary) { summary in
+                    PlanImportSummarySheet(summary: summary)
                 }
                 .sheet(item: $sharePayload) { payload in
                     ShareSheet(items: [payload.url]) {
