@@ -21,6 +21,7 @@ struct PlanImportPreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @State private var isApplying = false
+    @State private var overwriteDayContext = false
 
     var body: some View {
         NavigationStack {
@@ -34,8 +35,17 @@ struct PlanImportPreviewSheet: View {
                     LabeledContent("Climbs", value: pending.exchange.climbs.count.formatted())
                 }
 
+                if !pending.exchange.contexts.isEmpty {
+                    Section("Day context") {
+                        Toggle("Overwrite existing day context", isOn: $overwriteDayContext)
+                        Text("When enabled, notes and tags from the CSV replace the existing context for those dates. When disabled, CSV day context is ignored.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section {
-                    Text("Already logged exercises, climbs, and non-empty day context will be preserved. Unlogged schedule changes from the CSV will be applied.")
+                    Text("Only logged exercises and linked climbs are protected. Other plan metadata and schedule changes from the CSV will be applied.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -75,7 +85,12 @@ struct PlanImportPreviewSheet: View {
     private func applyImport() {
         isApplying = true
         do {
-            let summary = try PlanCSVExchange.apply(pending.exchange, mode: pending.mode, in: context)
+            let summary = try PlanCSVExchange.apply(
+                pending.exchange,
+                mode: pending.mode,
+                overwriteDayContext: overwriteDayContext,
+                in: context
+            )
             onComplete(.success(summary))
             dismiss()
         } catch {

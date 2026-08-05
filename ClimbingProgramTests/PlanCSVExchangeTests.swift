@@ -133,6 +133,70 @@ final class PlanCSVExchangeTests: XCTestCase {
         XCTAssertEqual(plan.name, "Edited Existing")
     }
 
+    func testExistingImportAppliesScheduleMetadataAroundProtectedRecords() throws {
+        let plan = Plan(name: "Existing", kind: nil, startDate: Date())
+        let day = PlanDay(date: plan.startDate)
+        day.chosenExercises = ["Logged Exercise", "Remove Me"]
+        plan.days = [day]
+        context.insert(plan)
+
+        let session = Session(date: plan.startDate)
+        let loggedItem = SessionItem(
+            exerciseName: "Logged Exercise",
+            planSourceId: plan.id,
+            planName: plan.name,
+            planDayId: day.id,
+            reps: 5,
+            notes: "Original"
+        )
+        session.items = [loggedItem]
+        context.insert(session)
+        try context.save()
+
+        var edited = try PlanCSVExchange.parse(PlanCSVExchange.export(plan: plan, in: context).csv)
+        let loggedID = try XCTUnwrap(edited.exercises.first { $0.name == "Logged Exercise" }?.id)
+        let newID = UUID()
+        edited.exercises.append(.init(id: newID, catalogID: nil, name: "New Exercise", area: nil, description: nil, reps: nil, sets: nil, duration: nil, rest: nil, notes: nil))
+        edited.days[0].dayTypeKey = "updated"
+        edited.days[0].dayTypeName = "Updated"
+        edited.days[0].dayTypeColor = "purple"
+        edited.days[0].dailyNotes = "Updated notes"
+        edited.days[0].exerciseRefs = [(newID, 0), (loggedID, 1)]
+
+        _ = try PlanCSVExchange.apply(edited, mode: .existing(plan), in: context)
+
+        XCTAssertEqual(day.type?.key, "updated")
+        XCTAssertEqual(day.dailyNotes, "Updated notes")
+        XCTAssertEqual(day.chosenExercises, ["New Exercise", "Logged Exercise"])
+        XCTAssertEqual(day.exerciseOrder["New Exercise"], 0)
+        XCTAssertEqual(day.exerciseOrder["Logged Exercise"], 1)
+        XCTAssertEqual(loggedItem.reps, 5)
+        XCTAssertEqual(loggedItem.notes, "Original")
+    }
+
+    func testExistingImportCanOverwriteDayContextByExplicitChoice() throws {
+        let plan = Plan(name: "Context Plan", kind: nil, startDate: Date())
+        plan.days = [PlanDay(date: plan.startDate)]
+        context.insert(plan)
+        let dayLog = try XCTUnwrap(DayLogStore.dayLog(for: plan.startDate, in: context))
+        DayLogStore.setNote("Original context", for: dayLog)
+        let originalTag = try XCTUnwrap(DayLogStore.createTag(name: "Original", colorKey: "red", in: context))
+        DayLogStore.setTag(originalTag, assigned: true, to: dayLog)
+        try context.save()
+
+        var edited = try PlanCSVExchange.parse(PlanCSVExchange.export(plan: plan, in: context).csv)
+        edited.contexts[0].note = "CSV context"
+        edited.contexts[0].tags = [.init(name: "CSV", colorKey: "blue")]
+
+        _ = try PlanCSVExchange.apply(edited, mode: .existing(plan), in: context)
+        XCTAssertEqual(dayLog.note, "Original context")
+        XCTAssertEqual(DayLogStore.activeTags(from: dayLog).map(\.name), ["Original"])
+
+        _ = try PlanCSVExchange.apply(edited, mode: .existing(plan), overwriteDayContext: true, in: context)
+        XCTAssertEqual(dayLog.note, "CSV context")
+        XCTAssertEqual(DayLogStore.activeTags(from: dayLog).map(\.name), ["CSV"])
+    }
+
     func testRepeatedImportDoesNotDuplicateLogs() throws {
         let source = Plan(name: "Repeatable", kind: nil, startDate: Date())
         let day = PlanDay(date: source.startDate)

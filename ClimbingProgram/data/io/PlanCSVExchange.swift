@@ -448,7 +448,12 @@ enum PlanCSVExchange {
         return ParsedExchange(plan: plan, exercises: exercises, days: days, contexts: contexts, logs: logs, climbs: climbs, warnings: warnings)
     }
 
-    static func apply(_ exchange: ParsedExchange, mode: ImportMode, in context: ModelContext) throws -> Summary {
+    static func apply(
+        _ exchange: ParsedExchange,
+        mode: ImportMode,
+        overwriteDayContext: Bool = false,
+        in context: ModelContext
+    ) throws -> Summary {
         let targetPlan: Plan
         let isNew: Bool
         switch mode {
@@ -467,13 +472,21 @@ enum PlanCSVExchange {
         if isNew == false {
             targetPlan.name = exchange.plan.name
             targetPlan.startDate = exchange.plan.startDate
-            if targetPlan.kind == nil { targetPlan.kind = resolvePlanKind(exchange.plan, in: context) }
+            targetPlan.kind = resolvePlanKind(exchange.plan, in: context)
         }
 
         let persistedExercises = (try? context.fetch(FetchDescriptor<Exercise>())) ?? []
         let existingDefinitionIDs = Set(((try? context.fetch(FetchDescriptor<PlanExerciseDefinition>())) ?? []).map(\.id))
         var definitionsBySourceID: [UUID: PlanExerciseDefinition] = [:]
         var definitionsByName: [String: PlanExerciseDefinition] = [:]
+        var definitionsByID: [UUID: PlanExerciseDefinition] = [:]
+
+        // Keep existing definitions available when a CSV removes an exercise
+        // that still has a protected logged record on one of the plan days.
+        for definition in targetPlan.exerciseDefinitions {
+            definitionsByName[normalized(definition.name)] = definition
+            definitionsByID[definition.id] = definition
+        }
 
         for row in exchange.exercises {
             let matched = row.catalogID.flatMap { catalogID in persistedExercises.first(where: { $0.id == catalogID }) }
@@ -501,6 +514,7 @@ enum PlanCSVExchange {
             }
             definitionsBySourceID[row.id] = definition
             definitionsByName[normalized(row.name)] = definition
+            definitionsByID[definition.id] = definition
         }
 
         let calendar = Calendar.current
@@ -525,13 +539,8 @@ enum PlanCSVExchange {
                 if let planDayId = item.planDayId { return planDayId == day.id }
                 return sessionsDate(for: item, in: currentSessions, calendar: calendar) == dayDate
             }
-            let dayClimbs = currentClimbs.filter { calendar.startOfDay(for: $0.dateLogged) == dayDate }
-            let hasProtectedRecords = !dayItems.isEmpty || !dayClimbs.isEmpty
-
-            if !hasProtectedRecords || isNew {
-                day.type = resolveDayType(key: dayRow.dayTypeKey, name: dayRow.dayTypeName, color: dayRow.dayTypeColor, in: context)
-                day.dailyNotes = dayRow.dailyNotes
-            }
+            day.type = resolveDayType(key: dayRow.dayTypeKey, name: dayRow.dayTypeName, color: dayRow.dayTypeColor, in: context)
+            day.dailyNotes = dayRow.dailyNotes
 
             let incomingDefinitions = dayRow.exerciseRefs.compactMap { sourceID, order in
                 if let definition = definitionsBySourceID[sourceID] {
@@ -539,29 +548,40 @@ enum PlanCSVExchange {
                 }
                 return nil
             }
-            if !hasProtectedRecords || isNew {
-                day.planExerciseIDs = incomingDefinitions.map { $0.0.id }
-                day.chosenExercises = incomingDefinitions.map { $0.0.name }
-                day.exerciseOrder = Dictionary(uniqueKeysWithValues: incomingDefinitions.map { ($0.0.name, $0.1) })
-                day.chosenExerciseIDs = incomingDefinitions.compactMap { $0.0.catalogExerciseID }
-                day.exerciseOrderByID = Dictionary(uniqueKeysWithValues: incomingDefinitions.compactMap { definition, order in
-                    guard let catalogID = definition.catalogExerciseID else { return nil }
-                    return (catalogID.uuidString, order)
-                })
-            } else {
-                var names = incomingDefinitions.map { $0.0.name }
-                var planIDs = incomingDefinitions.map { $0.0.id }
-                for item in dayItems where !names.contains(item.exerciseName) {
-                    names.append(item.exerciseName)
-                    if let id = item.planExerciseID {
-                        planIDs.append(id)
-                    } else if let definition = definitionsByName[normalized(item.exerciseName)] {
-                        planIDs.append(definition.id)
-                    }
+            var names = incomingDefinitions.map { $0.0.name }
+            var planIDs = incomingDefinitions.map { $0.0.id }
+            var exerciseOrder = Dictionary(uniqueKeysWithValues: incomingDefinitions.map { ($0.0.name, $0.1) })
+            var chosenExerciseIDs = incomingDefinitions.compactMap { $0.0.catalogExerciseID }
+            var exerciseOrderByID: [String: Int] = Dictionary(uniqueKeysWithValues: incomingDefinitions.compactMap { definition, order in
+                guard let catalogID = definition.catalogExerciseID else { return nil }
+                return (catalogID.uuidString, order)
+            })
+            let nextOrderStart = (incomingDefinitions.map { $0.1 }.max() ?? -1) + 1
+            var nextProtectedOrder = nextOrderStart
+
+            // A logged exercise is retained when it was removed from the CSV,
+            // but all other schedule data follows the CSV, including ordering.
+            for item in dayItems where !names.contains(where: { normalized($0) == normalized(item.exerciseName) }) {
+                names.append(item.exerciseName)
+                if let id = item.planExerciseID {
+                    planIDs.append(id)
+                } else if let definition = definitionsByName[normalized(item.exerciseName)] {
+                    planIDs.append(definition.id)
                 }
-                day.chosenExercises = names
-                day.planExerciseIDs = planIDs
+                exerciseOrder[item.exerciseName] = nextProtectedOrder
+                if let definition = item.planExerciseID.flatMap({ definitionsByID[$0] })
+                    ?? definitionsByName[normalized(item.exerciseName)],
+                   let catalogID = definition.catalogExerciseID {
+                    chosenExerciseIDs.append(catalogID)
+                    exerciseOrderByID[catalogID.uuidString] = nextProtectedOrder
+                }
+                nextProtectedOrder += 1
             }
+            day.planExerciseIDs = planIDs
+            day.chosenExercises = names
+            day.exerciseOrder = exerciseOrder
+            day.chosenExerciseIDs = chosenExerciseIDs
+            day.exerciseOrderByID = exerciseOrderByID
         }
 
         if !isNew {
@@ -573,11 +593,13 @@ enum PlanCSVExchange {
                     return sessionsDate(for: item, in: currentSessions, calendar: calendar) == date
                 }
                 let hasClimbs = currentClimbs.contains { calendar.startOfDay(for: $0.dateLogged) == date }
-                return !hasItems && !hasClimbs && !DayLogStore.hasContext(DayLogStore.fetchDayLog(for: date, in: context))
+                return !hasItems && !hasClimbs
             }
         }
 
-        applyContexts(exchange.contexts, in: context)
+        if overwriteDayContext {
+            applyContexts(exchange.contexts, in: context)
+        }
         let insertedLogs = importLogs(exchange.logs, into: targetPlan, definitions: definitionsBySourceID, isNew: isNew, in: context, calendar: calendar)
         let insertedClimbs = importClimbs(exchange.climbs, into: targetPlan, isNew: isNew, in: context, calendar: calendar)
         try context.save()
