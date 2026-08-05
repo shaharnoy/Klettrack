@@ -69,7 +69,7 @@ final class PlanCSVExchangeTests: XCTestCase {
         let parsed = try PlanCSVExchange.parse(csv)
 
         XCTAssertNotEqual(parsed.plan.id, source.id)
-        XCTAssertTrue(parsed.warnings.contains { $0.localizedStandardContains("new ID") })
+        XCTAssertTrue(parsed.warnings.isEmpty)
 
         _ = try PlanCSVExchange.apply(parsed, mode: .newPlan, in: context)
         let plans = try context.fetch(FetchDescriptor<Plan>())

@@ -491,7 +491,6 @@ enum PlanCSVExchange {
             planID = importedPlanID
         } else {
             planID = UUID()
-            warnings.append("The plan row did not contain a valid plan ID; a new ID was generated.")
         }
         let plan = ParsedExchange.PlanRow(
             id: planID,
