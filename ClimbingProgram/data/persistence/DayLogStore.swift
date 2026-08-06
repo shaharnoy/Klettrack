@@ -23,7 +23,7 @@ enum DayLogStore {
 
     static func hasContext(_ dayLog: DayLog?) -> Bool {
         guard let dayLog else { return false }
-        let hasNote = dayLog.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        let hasNote = dayLog.note?.isEmpty == false
         return hasNote || !activeTags(from: dayLog).isEmpty
     }
 
@@ -51,8 +51,7 @@ enum DayLogStore {
     }
 
     static func setNote(_ rawNote: String, for dayLog: DayLog) {
-        let trimmed = rawNote.trimmingCharacters(in: .whitespacesAndNewlines)
-        dayLog.note = trimmed.isEmpty ? nil : trimmed
+        dayLog.note = rawNote.isEmpty ? nil : rawNote
     }
 
     static func activeTag(named rawName: String, in context: ModelContext, excluding id: UUID? = nil) -> DayTag? {

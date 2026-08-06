@@ -114,7 +114,7 @@ struct DayContextEditorSection: View {
     var body: some View {
         Section("Day Context") {
             TextEditor(text: $noteText)
-                .frame(height: 120)
+                .frame(height: 90)
                 .scrollIndicators(.visible, axes: .vertical)
                 .scrollDismissesKeyboard(.interactively)
                 .focused(focusedField, equals: .note)
@@ -218,10 +218,9 @@ struct DayContextEditorSection: View {
     }
 
     private func saveNote() {
-        let trimmed = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || dayLog != nil else { return }
+        guard !noteText.isEmpty || dayLog != nil else { return }
         guard let editable = editableDayLog() else { return }
-        if editable.note != trimmed {
+        if editable.note != noteText {
             DayLogStore.setNote(noteText, for: editable)
             try? context.save()
             onDayLogChanged(editable)
