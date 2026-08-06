@@ -106,17 +106,30 @@ enum CatalogDeletion {
         let trainingTypes = fetchTrainingTypes(in: context)
         let combinations = fetchCombinations(in: context)
         let exercises = fetchExercises(in: context)
+        var survivingTypePlacements: [(TrainingType, Exercise)] = []
+        var survivingCombinationPlacements: [(BoulderCombination, Exercise)] = []
 
         for activity in activities {
             activity.types.removeAll { graph.typeIDs.contains($0.id) }
         }
         for trainingType in trainingTypes {
             trainingType.combinations.removeAll { graph.combinationIDs.contains($0.id) }
-            trainingType.exercises.removeAll { graph.exerciseIDs.contains($0.id) && graph.typeIDs.contains(trainingType.id) }
+            for exercise in trainingType.exercises where graph.exerciseIDs.contains(exercise.id) && !graph.typeIDs.contains(trainingType.id) {
+                survivingTypePlacements.append((trainingType, exercise))
+            }
+            trainingType.exercises.removeAll { graph.exerciseIDs.contains($0.id) }
         }
-        for combination in combinations where graph.combinationIDs.contains(combination.id) {
+        for combination in combinations {
+            for exercise in combination.exercises where graph.exerciseIDs.contains(exercise.id) && !graph.combinationIDs.contains(combination.id) {
+                survivingCombinationPlacements.append((combination, exercise))
+            }
             combination.exercises.removeAll { graph.exerciseIDs.contains($0.id) }
         }
+
+        // Persist relationship detachment before deleting catalog nodes. SwiftData can
+        // otherwise cascade-delete a shared Exercise from the node's prior relationship
+        // snapshot even when that exercise is still placed in another node.
+        try context.save()
 
         for combination in combinations where graph.combinationIDs.contains(combination.id) {
             context.delete(combination)
@@ -126,6 +139,13 @@ enum CatalogDeletion {
         }
         for activity in activities where graph.activityIDs.contains(activity.id) {
             context.delete(activity)
+        }
+
+        for (trainingType, exercise) in survivingTypePlacements where !trainingType.exercises.contains(where: { $0.id == exercise.id }) {
+            trainingType.exercises.append(exercise)
+        }
+        for (combination, exercise) in survivingCombinationPlacements where !combination.exercises.contains(where: { $0.id == exercise.id }) {
+            combination.exercises.append(exercise)
         }
 
         let remainingExerciseIDs = catalogExerciseIDs(in: context)

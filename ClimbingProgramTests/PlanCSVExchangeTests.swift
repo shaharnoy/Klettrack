@@ -225,7 +225,7 @@ final class PlanCSVExchangeTests: XCTestCase {
 
         let preview = PlanCSVExchange.preview(edited, mode: .existing(plan), overwriteDayContext: true, in: context)
 
-        XCTAssertEqual(preview.metadataChanges, ["Plan name"])
+        XCTAssertEqual(preview.metadataChanges, ["Plan name", "Start date"])
         XCTAssertEqual(preview.daysToUpdate, 1)
         XCTAssertEqual(preview.scheduleEntriesToAdd, 1)
         XCTAssertEqual(preview.scheduleEntriesToRemove, 1)
