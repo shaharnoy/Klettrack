@@ -207,19 +207,19 @@ struct LogView: View {
             exportDoc = LogCSV.makeExportCSV(context: context)
             modalRoute = .exportCSV
         } label: {
-            Label("Export logs to CSV", systemImage: "square.and.arrow.up")
+            Label("Export Logs", systemImage: "square.and.arrow.up")
         }
     }
 
     private var shareButton: some View {
         Button { prepareShare() } label: {
-            Label("Share logs (CSV)…", systemImage: "square.and.arrow.up.on.square")
+            Label("Share Logs", systemImage: "square.and.arrow.up.on.square")
         }
     }
 
     private var importButton: some View {
         Button { modalRoute = .importCSV } label: {
-            Label("Import logs from CSV", systemImage: "square.and.arrow.down")
+            Label("Import Logs", systemImage: "square.and.arrow.down")
         }
     }
 

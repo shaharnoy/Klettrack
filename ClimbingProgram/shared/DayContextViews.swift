@@ -114,7 +114,7 @@ struct DayContextEditorSection: View {
     var body: some View {
         Section("Day Context") {
             TextEditor(text: $noteText)
-                .frame(height: 120)
+                .frame(height: 90)
                 .scrollIndicators(.visible, axes: .vertical)
                 .scrollDismissesKeyboard(.interactively)
                 .focused(focusedField, equals: .note)
@@ -128,8 +128,14 @@ struct DayContextEditorSection: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .onChange(of: noteText) { _, _ in
-                    saveNote()
+                .task(id: noteText) {
+                    guard noteText != (dayLog?.note ?? "") else { return }
+                    do {
+                        try await Task.sleep(for: .milliseconds(350))
+                        saveNote()
+                    } catch {
+                        // The task is cancelled when another keystroke arrives.
+                    }
                 }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -171,6 +177,7 @@ struct DayContextEditorSection: View {
         }
         .onDisappear {
             focusedField.wrappedValue = nil
+            saveNote()
         }
         .alert(errorMessage ?? "", isPresented: Binding(
             get: { errorMessage != nil },
@@ -211,10 +218,9 @@ struct DayContextEditorSection: View {
     }
 
     private func saveNote() {
-        let trimmed = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || dayLog != nil else { return }
+        guard !noteText.isEmpty || dayLog != nil else { return }
         guard let editable = editableDayLog() else { return }
-        if editable.note != trimmed {
+        if editable.note != noteText {
             DayLogStore.setNote(noteText, for: editable)
             try? context.save()
             onDayLogChanged(editable)

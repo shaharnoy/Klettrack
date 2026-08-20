@@ -58,7 +58,7 @@ final class CatalogPersistenceTests: BaseSwiftDataTestCase {
         let descriptor = FetchDescriptor<Exercise>(
             predicate: #Predicate { $0.id == exerciseID }
         )
-        let reloaded = try XCTUnwrap(try context.fetch(descriptor).first)
+        let reloaded: Exercise = try XCTUnwrap(try context.fetch(descriptor).first)
         XCTAssertNil(reloaded.setsText)
         XCTAssertEqual(reloaded.durationText, "60 sec")
         XCTAssertEqual(reloaded.restText, "90 sec")
