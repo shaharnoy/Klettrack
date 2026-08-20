@@ -112,6 +112,9 @@ final class Plan {
     var startDate: Date
     @Relationship(deleteRule: .nullify) var kind: PlanKindModel?
     var days: [PlanDay] = []
+    // Plan-local exercise definitions allow imported plans to carry guidance
+    // without changing the global catalog exercise.
+    var exerciseDefinitions: [PlanExerciseDefinition] = []
 
     // Weekly recurrence templates keyed by Calendar weekday (1...7).
     // Copies only the "setup" (chosen exercises + order + day type).
@@ -127,6 +130,44 @@ final class Plan {
     }
 }
 
+@Model
+final class PlanExerciseDefinition {
+    @Attribute(.unique) var id: UUID
+    var catalogExerciseID: UUID?
+    var name: String
+    var area: String?
+    var exerciseDescription: String?
+    var repsText: String?
+    var durationText: String?
+    var setsText: String?
+    var restText: String?
+    var notes: String?
+
+    init(
+        id: UUID = UUID(),
+        catalogExerciseID: UUID? = nil,
+        name: String,
+        area: String? = nil,
+        exerciseDescription: String? = nil,
+        repsText: String? = nil,
+        durationText: String? = nil,
+        setsText: String? = nil,
+        restText: String? = nil,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.catalogExerciseID = catalogExerciseID
+        self.name = name
+        self.area = area
+        self.exerciseDescription = exerciseDescription
+        self.repsText = repsText
+        self.durationText = durationText
+        self.setsText = setsText
+        self.restText = restText
+        self.notes = notes
+    }
+}
+
 
 @Model
 final class PlanDay {
@@ -135,6 +176,7 @@ final class PlanDay {
     // Relationship to DayTypeModel (replaces enum/raw storage)
     @Relationship(deleteRule: .nullify) var type: DayTypeModel?
     var chosenExerciseIDs: [UUID] = []
+    var planExerciseIDs: [UUID] = []
     var exerciseOrderByID: [String:Int] = [:]
     var chosenExercises: [String] = []
     var exerciseOrder: [String:Int] = [:]

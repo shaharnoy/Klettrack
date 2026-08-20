@@ -16,13 +16,16 @@ final class DayLogStoreTests: BaseSwiftDataTestCase {
         XCTAssertEqual(first.date, calendar.startOfDay(for: morning))
     }
 
-    func testSetNoteTrimsEmptyValuesToNil() throws {
+    func testSetNotePreservesWhitespaceAndTreatsOnlyEmptyStringAsNil() throws {
         let dayLog = try XCTUnwrap(DayLogStore.dayLog(for: Date(), in: context))
 
         DayLogStore.setNote("  Good session  ", for: dayLog)
-        XCTAssertEqual(dayLog.note, "Good session")
+        XCTAssertEqual(dayLog.note, "  Good session  ")
 
         DayLogStore.setNote("   \n ", for: dayLog)
+        XCTAssertEqual(dayLog.note, "   \n ")
+
+        DayLogStore.setNote("", for: dayLog)
         XCTAssertNil(dayLog.note)
     }
 

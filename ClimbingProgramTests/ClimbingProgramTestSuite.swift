@@ -24,7 +24,7 @@ class ClimbingProgramTestSuite: XCTestCase {
             Exercise.self,
 
             // Plans
-            Plan.self,
+            Plan.self, PlanKindModel.self, DayTypeModel.self, PlanExerciseDefinition.self,
             PlanDay.self,
 
             // Sessions (log)
