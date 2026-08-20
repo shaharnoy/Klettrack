@@ -37,7 +37,7 @@ final class CatalogPersistenceTests: BaseSwiftDataTestCase {
     }
 
     func testEditingExercisePersistsDurationWhenSetsAreEmpty() throws {
-        let exercise = Exercise(name: "Existing", setsText: "3", durationText: "10 sec")
+        let exercise = Exercise(name: "Existing", durationText: "10 sec", setsText: "3")
         context.insert(exercise)
         try context.save()
 
@@ -54,8 +54,9 @@ final class CatalogPersistenceTests: BaseSwiftDataTestCase {
         draft.apply(to: exercise)
         try CatalogExercisePersistence.saveExisting(exercise, in: context)
 
+        let exerciseID = exercise.id
         let descriptor = FetchDescriptor<Exercise>(
-            predicate: #Predicate { $0.id == exercise.id }
+            predicate: #Predicate { $0.id == exerciseID }
         )
         let reloaded = try XCTUnwrap(try context.fetch(descriptor).first)
         XCTAssertNil(reloaded.setsText)

@@ -1855,7 +1855,9 @@ private struct PlanClimbLogView: View {
         let p = parentPlan
         let session = findOrCreateSession(for: planDay.date, in: context)
 
-        let attemptsDouble = climbEntry.attempts != nil ? Double(climbEntry.attempts!) : nil
+        let attemptsDouble = Double(
+            ClimbAttemptsOption.statisticsCount(forStoredValue: climbEntry.attempts)
+        )
 
         session.items.append(SessionItem(
             exerciseName: exerciseName,

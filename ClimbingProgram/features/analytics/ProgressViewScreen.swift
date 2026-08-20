@@ -945,9 +945,7 @@ fileprivate final class ClimbStatsVM {
 
 
     private func parseAttempts(_ s: String?) -> Int {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return 1 }
-        let digits = s.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-        return Int(digits) ?? 1
+        ClimbAttemptsOption.statisticsCount(forStoredValue: s)
     }
     private func fullDateRange() -> (start: Date, end: Date) {
         let cal = Calendar.current

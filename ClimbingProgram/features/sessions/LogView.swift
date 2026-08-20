@@ -1378,6 +1378,7 @@ private struct CombinedDayDetailView: View {
     //multi-exercise add flow
     @State private var shouldProcessMultiSelectionOnDismiss = false
     @State private var multiSelectedExercises: [String] = []
+    @State private var exerciseSessionForSheet: Session? = nil
     
     // Pre-sorted climbs so we don't re-sort inside the body repeatedly
     private var sortedClimbs: [ClimbEntry] {
@@ -1526,8 +1527,8 @@ private struct CombinedDayDetailView: View {
         }) { route in
             switch route {
             case .exercise:
-                if let session = session {
-                    AddSessionItemSheet(session: session)
+                if let exerciseSessionForSheet {
+                    AddSessionItemSheet(session: exerciseSessionForSheet)
                 }
             case .climb:
                 AddClimbView()
@@ -1576,13 +1577,13 @@ private struct CombinedDayDetailView: View {
     
     private func addExercise() {
         guard isDataReady else { return }
-        
-        // Create session if it doesn't exist
-        if session == nil {
-            let newSession = Session(date: date)
-            context.insert(newSession)
-            try? context.save()
-        }
+
+        let preparation = try? DayDetailExerciseLogFlow.prepare(
+            existingSession: session,
+            date: date,
+            in: context
+        )
+        exerciseSessionForSheet = preparation?.sessionForSheet
         
         shouldProcessMultiSelectionOnDismiss = false
         addRoute = .exercise
