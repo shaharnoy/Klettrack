@@ -57,6 +57,10 @@ struct PlanDayNavigationItem: Hashable {
     }
 }
 
+struct ActivePlanSelectionNavigationItem: Hashable {
+    let currentPlanID: UUID?
+}
+
 struct RootTabView: View {
     private enum SheetRoute: String, Identifiable {
         case settings

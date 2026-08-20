@@ -119,6 +119,11 @@ struct PlansListView: View {
     @Query(sort: [SortDescriptor<Plan>(\Plan.startDate, order: .reverse)]) private var plans: [Plan]
 
     @State private var sheetRoute: SheetRoute?
+    @State private var activePlanID: UUID?
+    @State private var requiresActivePlanSelection = false
+    @State private var showingAllPlans = false
+    @AppStorage(ActivePlanPreference.userDefaultsKey) private var activePlanIDRawValue = ""
+    @AppStorage(ActivePlanPreference.optedOutKey) private var activePlanOptedOut = false
 
     // Plan export / import state
     @State private var showPlanExporter = false
@@ -144,29 +149,23 @@ struct PlansListView: View {
                 timerAppState.plansNavigationPath = newPath
             }
         )) {
-            plansList
-                .listStyle(.insetGrouped)
-                .navigationTitle("TRAIN")
-                .navigationBarTitleDisplayMode(.large)
+            mainContent
+                .task(id: planIDs) {
+                    resolveActivePlan()
+                }
+                .onChange(of: isDataReady) { _, _ in
+                    resolveActivePlan()
+                }
+                .onChange(of: activePlanIDRawValue) { _, _ in
+                    resolveActivePlan()
+                }
+                .onChange(of: activePlanOptedOut) { _, _ in
+                    resolveActivePlan()
+                }
                 .plansDestinations(
                     plans: plans,
                     timerAppState: timerAppState,
                     focusedDayContextField: $focusedDayContextField
-                )
-                .plansToolbar(
-                    isDataReady: isDataReady,
-                    showingNew: Binding(
-                        get: { sheetRoute == .newPlan },
-                        set: { newValue in
-                            if newValue {
-                                sheetRoute = .newPlan
-                            } else if sheetRoute == .newPlan {
-                                sheetRoute = nil
-                            }
-                        }
-                    ),
-                    showPlanImporter: $showPlanImporter,
-                    planImportTarget: $planImportTarget
                 )
                 .sheet(item: $sheetRoute) { route in
                     switch route {
@@ -216,6 +215,74 @@ struct PlansListView: View {
         }
     }
 
+    @ViewBuilder
+    private var mainContent: some View {
+        if requiresActivePlanSelection {
+            ActivePlanSelectionView { selectedPlanID in
+                if let selectedPlanID {
+                    setActivePlan(selectedPlanID)
+                } else {
+                    setNoActivePlan()
+                }
+            }
+        } else if showingAllPlans {
+            plansList
+                .listStyle(.insetGrouped)
+        } else if let activePlan = plans.first(where: { $0.id == activePlanID }) {
+            PlanDetailView(
+                plan: activePlan,
+                focusedDayContextField: $focusedDayContextField,
+                onPlansTapped: showAllPlans
+            )
+        } else {
+            plansList
+                .listStyle(.insetGrouped)
+        }
+    }
+
+    private var planIDs: [UUID] {
+        plans.map(\.id)
+    }
+
+    private func resolveActivePlan() {
+        guard isDataReady else { return }
+
+        switch ActivePlanResolver.resolve(
+            plans: plans,
+            storedPlanID: UUID(uuidString: activePlanIDRawValue),
+            isOptedOut: activePlanOptedOut
+        ) {
+        case .active(let planID):
+            activePlanID = planID
+            requiresActivePlanSelection = false
+            ActivePlanPreference.save(planID: planID)
+        case .choose:
+            activePlanID = nil
+            requiresActivePlanSelection = true
+        case .none:
+            activePlanID = nil
+            requiresActivePlanSelection = false
+        }
+    }
+
+    private func setActivePlan(_ planID: UUID) {
+        activePlanID = planID
+        requiresActivePlanSelection = false
+        showingAllPlans = false
+        ActivePlanPreference.save(planID: planID)
+    }
+
+    private func setNoActivePlan() {
+        activePlanID = nil
+        requiresActivePlanSelection = false
+        showingAllPlans = true
+    }
+
+    private func showAllPlans() {
+        timerAppState.plansNavigationPath = NavigationPath()
+        showingAllPlans = true
+    }
+
     private var plansList: some View {
         List {
             ForEach(plans) { plan in
@@ -223,7 +290,7 @@ struct PlansListView: View {
                     Button {
                         timerAppState.plansNavigationPath.append(PlanNavigationItem(plan: plan))
                     } label: {
-                        PlanRow(plan: plan)
+                        PlanRow(plan: plan, isActive: activePlanID == plan.id)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
@@ -271,6 +338,30 @@ struct PlansListView: View {
                 try? context.save()
             }
         }
+        .navigationTitle("TRAIN")
+        .navigationBarTitleDisplayMode(.large)
+        .plansToolbar(
+            isDataReady: isDataReady,
+            onChangeActivePlan: changeActivePlan,
+            showingNew: Binding(
+                get: { sheetRoute == .newPlan },
+                set: { newValue in
+                    if newValue {
+                        sheetRoute = .newPlan
+                    } else if sheetRoute == .newPlan {
+                        sheetRoute = nil
+                    }
+                }
+            ),
+            showPlanImporter: $showPlanImporter,
+            planImportTarget: $planImportTarget
+        )
+    }
+
+    private func changeActivePlan() {
+        timerAppState.plansNavigationPath.append(
+            ActivePlanSelectionNavigationItem(currentPlanID: activePlanID)
+        )
     }
 
     
@@ -336,6 +427,11 @@ private struct PlansDestinationsModifier: ViewModifier {
                     Text("Plan day not found")
                 }
             }
+            .navigationDestination(for: ActivePlanSelectionNavigationItem.self) { item in
+                ActivePlanSelectionView(initialSelectionID: item.currentPlanID) { _ in
+                    timerAppState.plansNavigationPath = NavigationPath()
+                }
+            }
     }
 }
 
@@ -355,6 +451,7 @@ private extension View {
 
 private struct PlansToolbarModifier: ViewModifier {
     let isDataReady: Bool
+    let onChangeActivePlan: () -> Void
 
     @Binding var showingNew: Bool
     @Binding var showPlanImporter: Bool
@@ -362,6 +459,17 @@ private struct PlansToolbarModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    guard isDataReady else { return }
+                    onChangeActivePlan()
+                } label: {
+                    Image(systemName: "bolt.badge.clock.fill")
+                        .accessibilityLabel("Change active plan")
+                }
+                .disabled(!isDataReady)
+            }
+
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
@@ -391,12 +499,14 @@ private struct PlansToolbarModifier: ViewModifier {
 private extension View {
     func plansToolbar(
         isDataReady: Bool,
+        onChangeActivePlan: @escaping () -> Void,
         showingNew: Binding<Bool>,
         showPlanImporter: Binding<Bool>,
         planImportTarget: Binding<Plan?>
     ) -> some View {
         modifier(PlansToolbarModifier(
             isDataReady: isDataReady,
+            onChangeActivePlan: onChangeActivePlan,
             showingNew: showingNew,
             showPlanImporter: showPlanImporter,
             planImportTarget: planImportTarget
@@ -411,15 +521,28 @@ struct EditablePlanDayNav: Hashable {
 }
 
 // Small, explicit row view reduces type inference work
-private struct PlanRow: View {
+struct PlanRow: View {
     let plan: Plan
+    let isActive: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(plan.name)
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.tail)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(plan.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if isActive {
+                    Text("ACTIVE")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.green, in: Capsule())
+                        .accessibilityLabel("Active plan")
+                }
+            }
             Text(subtitle)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -535,13 +658,16 @@ struct PlanDetailView: View {
     @Environment(TimerAppState.self) private var timerAppState
     @State private var plan: Plan
     let focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
+    let onPlansTapped: (() -> Void)?
 
     init(
         plan: Plan,
-        focusedDayContextField: FocusState<DayContextFocusedField?>.Binding
+        focusedDayContextField: FocusState<DayContextFocusedField?>.Binding,
+        onPlansTapped: (() -> Void)? = nil
     ) {
         _plan = State(initialValue: plan)
         self.focusedDayContextField = focusedDayContextField
+        self.onPlansTapped = onPlansTapped
     }
 
     private enum ViewMode: Int {
@@ -644,14 +770,25 @@ struct PlanDetailView: View {
     // Break down toolbar into smaller components
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Add more week") {
-                        weeksToAdd = ""
-                        showingDupPrompt = true
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    if let onPlansTapped {
+                        onPlansTapped()
+                    } else if !timerAppState.plansNavigationPath.isEmpty {
+                        timerAppState.plansNavigationPath.removeLast()
                     }
                 } label: {
-                    Label("Duplicate weeks", systemImage: "plus.square.on.square")
+                    Label("Plans", systemImage: "chevron.backward")
+                }
+                .accessibilityLabel("Back to Plans")
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    weeksToAdd = ""
+                    showingDupPrompt = true
+                } label: {
+                    Label("Add more weeks", systemImage: "plus")
                 }
             }
     }
@@ -755,6 +892,7 @@ struct PlanDetailView: View {
         // plan overview destination.
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .navigationTitle(plan.name)
+        .navigationBarBackButtonHidden(true)
         .navigationDestination(for: EditablePlanDayNav.self) { nav in
             if nav.planId == plan.id,
                let idx = plan.days.firstIndex(where: { $0.id == nav.planDayId }) {
@@ -1869,8 +2007,6 @@ private struct PlanClimbLogView: View {
         )
         climbEntry.planSourceId = p?.id
         climbEntry.planDayId = planDay.id
-
-        let attemptsDouble = climbEntry.attempts != nil ? Double(climbEntry.attempts!) : nil
 
         session.items.append(SessionItem(
             exerciseName: exerciseName,
