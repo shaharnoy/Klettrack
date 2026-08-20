@@ -1864,6 +1864,9 @@ private struct PlanClimbLogView: View {
         let p = parentPlan
         let session = findOrCreateSession(for: planDay.date, in: context)
 
+        let attemptsDouble = Double(
+            ClimbAttemptsOption.statisticsCount(forStoredValue: climbEntry.attempts)
+        )
         climbEntry.planSourceId = p?.id
         climbEntry.planDayId = planDay.id
 

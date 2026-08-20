@@ -40,7 +40,7 @@ struct ClimbLogForm: View {
     @State private var grade: String = ""
     @State private var angleDegrees: String = ""
     @State private var selectedStyle: String = ""
-    @State private var attempts: String = "1"
+    @State private var attempts: ClimbAttemptsOption = .flash
     @State private var isWorkInProgress: Bool = false
     @State private var selectedGym: String = ""
     @State private var selectedDate: Date
@@ -94,6 +94,13 @@ struct ClimbLogForm: View {
         if !live.isEmpty { return Array(Set(live)).sorted() }
         return Array(Set(ClimbingDefaults.defaultGyms)).sorted()
     }
+
+    private var attemptsPickerOptions: [ClimbAttemptsOption] {
+        if case .legacy = attempts {
+            return [attempts] + ClimbAttemptsOption.standardOptions
+        }
+        return ClimbAttemptsOption.standardOptions
+    }
     
     private var climbTypeColor: Color {
         switch selectedClimbType {
@@ -108,7 +115,7 @@ struct ClimbLogForm: View {
         !grade.isEmpty ||
         !angleDegrees.isEmpty ||
         !selectedStyle.isEmpty ||
-        !attempts.isEmpty ||
+        !attempts.storedValue.isEmpty ||
         !selectedGym.isEmpty ||
         !inputNotes.isEmpty ||
         !feelsLikeGrade.isEmpty ||
@@ -142,7 +149,7 @@ struct ClimbLogForm: View {
             _feelsLikeGrade = State(initialValue: climb.feelsLikeGrade ?? "")
             _angleDegrees = State(initialValue: climb.angleDegrees.map { String($0) } ?? "")
             _selectedStyle = State(initialValue: climb.style == "Unknown" ? "" : climb.style)
-            _attempts = State(initialValue: (climb.attempts?.isEmpty == false) ? climb.attempts ?? "1" : "1")
+            _attempts = State(initialValue: ClimbAttemptsOption.fromStoredValue(climb.attempts))
             _isWorkInProgress = State(initialValue: climb.isWorkInProgress)
             _isPreviouslyClimbed = State(initialValue: climb.isPreviouslyClimbed ?? false)
             _selectedHoldColor = State(initialValue: climb.holdColor ?? .none)
@@ -169,7 +176,7 @@ struct ClimbLogForm: View {
             _feelsLikeGrade = State(initialValue: climb.feelsLikeGrade ?? "")
             _angleDegrees = State(initialValue: climb.angleDegrees.map { String($0) } ?? "")
             _selectedStyle = State(initialValue: climb.style == "Unknown" ? "" : climb.style)
-            _attempts = State(initialValue: (climb.attempts?.isEmpty == false) ? climb.attempts ?? "1" : "1")
+            _attempts = State(initialValue: ClimbAttemptsOption.fromStoredValue(climb.attempts))
             _isWorkInProgress = State(initialValue: climb.isWorkInProgress)
             _isPreviouslyClimbed = State(initialValue: climb.isPreviouslyClimbed ?? false)
             _selectedHoldColor = State(initialValue: climb.holdColor ?? .none)
@@ -190,18 +197,11 @@ struct ClimbLogForm: View {
         } else {
             // Add mode
             _selectedDate = State(initialValue: initialDate)
-            _attempts = State(initialValue: "1")
+            _attempts = State(initialValue: .flash)
             _mediaPreviews = State(initialValue: [])
         }
     }
 
-    
-    private var attemptsIntBinding: Binding<Int> {
-        Binding(
-            get: { Int(attempts) ?? 1 },
-            set: { attempts = String(max(0, $0)) }   // never go below 0
-        )
-    }
     
     private var angleOptionalBinding: Binding<Int?> {
         Binding<Int?>(
@@ -588,9 +588,9 @@ struct ClimbLogForm: View {
                 .font(.headline)
                 .padding(.top, 16)
 
-            Picker("Attempts", selection: attemptsIntBinding) {
-                ForEach(1..<100, id: \.self) { n in
-                    Text("\(n)").tag(n)
+            Picker("Attempts", selection: $attempts) {
+                ForEach(attemptsPickerOptions) { option in
+                    Text(option.displayName).tag(option)
                 }
             }
             .pickerStyle(.wheel)
@@ -737,7 +737,7 @@ struct ClimbLogForm: View {
             showAttemptsPickerSheet = true
         } label: {
             HStack(spacing: 4) {
-                Text("\(attemptsIntBinding.wrappedValue)")
+                Text(attempts.displayName)
                     .font(.body)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2)
@@ -780,7 +780,7 @@ struct ClimbLogForm: View {
         defer { isSaving = false }
 
         let angleInt      = angleDegrees.isEmpty ? nil : Int(angleDegrees)
-        let attemptsText  = attempts.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "1" : attempts
+        let attemptsText  = attempts.storedValue
         let notesText     = inputNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil
             : inputNotes.trimmingCharacters(in: .whitespacesAndNewlines)
