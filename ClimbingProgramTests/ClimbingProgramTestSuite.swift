@@ -22,6 +22,7 @@ class ClimbingProgramTestSuite: XCTestCase {
             TrainingType.self,
             BoulderCombination.self,
             Exercise.self,
+            DeletedCatalogSeed.self,
 
             // Plans
             Plan.self, PlanKindModel.self, DayTypeModel.self, PlanExerciseDefinition.self,

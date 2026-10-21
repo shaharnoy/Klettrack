@@ -132,12 +132,15 @@ enum CatalogDeletion {
         try context.save()
 
         for combination in combinations where graph.combinationIDs.contains(combination.id) {
+            recordDeletion(of: combination, in: context)
             context.delete(combination)
         }
         for trainingType in trainingTypes where graph.typeIDs.contains(trainingType.id) {
+            recordDeletion(of: trainingType, in: context)
             context.delete(trainingType)
         }
         for activity in activities where graph.activityIDs.contains(activity.id) {
+            recordDeletion(of: activity, in: context)
             context.delete(activity)
         }
 
@@ -151,6 +154,7 @@ enum CatalogDeletion {
         let remainingExerciseIDs = catalogExerciseIDs(in: context)
         for exercise in exercises where graph.exerciseIDs.contains(exercise.id) && !remainingExerciseIDs.contains(exercise.id) {
             clearPlanCatalogReferences(for: exercise.id, in: context)
+            recordDeletion(of: exercise, in: context)
             context.delete(exercise)
         }
 
@@ -169,6 +173,7 @@ enum CatalogDeletion {
         let remainingExerciseIDs = catalogExerciseIDs(in: context)
         if !remainingExerciseIDs.contains(exercise.id) {
             clearPlanCatalogReferences(for: exercise.id, in: context)
+            recordDeletion(of: exercise, in: context)
             context.delete(exercise)
         }
 
@@ -183,6 +188,29 @@ enum CatalogDeletion {
     ) {
         sourceType?.exercises.removeAll { $0.id == exercise.id }
         sourceCombination?.exercises.removeAll { $0.id == exercise.id }
+    }
+
+    private static func recordDeletion(of activity: Activity, in context: ModelContext) {
+        recordDeletion(seedKey: activity.seedKey, in: context)
+    }
+
+    private static func recordDeletion(of trainingType: TrainingType, in context: ModelContext) {
+        recordDeletion(seedKey: trainingType.seedKey, in: context)
+    }
+
+    private static func recordDeletion(of combination: BoulderCombination, in context: ModelContext) {
+        recordDeletion(seedKey: combination.seedKey, in: context)
+    }
+
+    private static func recordDeletion(of exercise: Exercise, in context: ModelContext) {
+        recordDeletion(seedKey: exercise.seedKey, in: context)
+    }
+
+    private static func recordDeletion(seedKey: String?, in context: ModelContext) {
+        guard let seedKey else { return }
+        let descriptor = FetchDescriptor<DeletedCatalogSeed>(predicate: #Predicate { $0.seedKey == seedKey })
+        guard ((try? context.fetch(descriptor)) ?? []).isEmpty else { return }
+        context.insert(DeletedCatalogSeed(seedKey: seedKey))
     }
 
     static func removeEmptyImportedContainers(in context: ModelContext) {

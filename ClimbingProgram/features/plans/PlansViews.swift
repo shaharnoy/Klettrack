@@ -1870,8 +1870,6 @@ private struct PlanClimbLogView: View {
         climbEntry.planSourceId = p?.id
         climbEntry.planDayId = planDay.id
 
-        let attemptsDouble = climbEntry.attempts != nil ? Double(climbEntry.attempts!) : nil
-
         session.items.append(SessionItem(
             exerciseName: exerciseName,
             planSourceId: p?.id,

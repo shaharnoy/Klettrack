@@ -18,6 +18,7 @@ struct ClimbingProgramApp: App {
         }
         .modelContainer(for: [
             Activity.self, TrainingType.self, BoulderCombination.self, Exercise.self,
+            DeletedCatalogSeed.self,
             Session.self, SessionItem.self,
             DayLog.self, DayTag.self,
             Plan.self, PlanDay.self, PlanKindModel.self, DayTypeModel.self,

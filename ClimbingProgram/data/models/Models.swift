@@ -10,11 +10,14 @@ import SwiftData
 @Model
 final class Activity {
     @Attribute(.unique) var id: UUID
+    /// Stable identifier for app-provided catalog data. Nil for user-created categories.
+    var seedKey: String?
     var name: String
     var types: [TrainingType] = []
 
-    init(id: UUID = UUID(), name: String) {
+    init(id: UUID = UUID(), seedKey: String? = nil, name: String) {
         self.id = id
+        self.seedKey = seedKey
         self.name = name
     }
 }
@@ -22,6 +25,8 @@ final class Activity {
 @Model
 final class TrainingType {
     @Attribute(.unique) var id: UUID
+    /// Stable identifier for app-provided catalog data. Nil for user-created types.
+    var seedKey: String?
     var name: String
     var area: String?
     var typeDescription: String?
@@ -30,11 +35,13 @@ final class TrainingType {
 
     init(
         id: UUID = UUID(),
+        seedKey: String? = nil,
         name: String,
         area: String? = nil,
         typeDescription: String? = nil
     ) {
         self.id = id
+        self.seedKey = seedKey
         self.name = name
         self.area = area
         self.typeDescription = typeDescription
@@ -44,12 +51,15 @@ final class TrainingType {
 @Model
 final class BoulderCombination {
     @Attribute(.unique) var id: UUID
+    /// Stable identifier for app-provided catalog data. Nil for user-created combinations.
+    var seedKey: String?
     var name: String
     var comboDescription: String?
     var exercises: [Exercise] = []
 
-    init(id: UUID = UUID(), name: String, comboDescription: String? = nil) {
+    init(id: UUID = UUID(), seedKey: String? = nil, name: String, comboDescription: String? = nil) {
         self.id = id
+        self.seedKey = seedKey
         self.name = name
         self.comboDescription = comboDescription
     }
@@ -58,6 +68,8 @@ final class BoulderCombination {
 @Model
 final class Exercise {
     @Attribute(.unique) var id: UUID
+    /// Stable identifier for app-provided catalog data. Nil for user-created exercises.
+    var seedKey: String?
     var name: String
     var area: String?
     var order: Int = 0  // maintain exercise order
@@ -70,6 +82,7 @@ final class Exercise {
 
     init(
         id: UUID = UUID(),
+        seedKey: String? = nil,
         name: String,
         area: String? = nil,
         order: Int = 0,
@@ -81,6 +94,7 @@ final class Exercise {
         notes: String? = nil
     ) {
         self.id = id
+        self.seedKey = seedKey
         self.name = name
         self.area = area
         self.order = order
@@ -90,6 +104,16 @@ final class Exercise {
         self.setsText = setsText
         self.restText = restText
         self.notes = notes
+    }
+}
+
+/// Remembers that a user intentionally deleted an app-provided catalog item.
+@Model
+final class DeletedCatalogSeed {
+    var seedKey: String = ""
+
+    init(seedKey: String) {
+        self.seedKey = seedKey
     }
 }
 

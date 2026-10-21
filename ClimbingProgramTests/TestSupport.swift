@@ -11,6 +11,7 @@ class BaseSwiftDataTestCase: XCTestCase {
         try super.setUpWithError()
         let types: [any PersistentModel.Type] = [
             Activity.self, TrainingType.self, Exercise.self, BoulderCombination.self,
+            DeletedCatalogSeed.self,
             Session.self, SessionItem.self,
             DayLog.self, DayTag.self,
             Plan.self, PlanDay.self, PlanKindModel.self, DayTypeModel.self, PlanExerciseDefinition.self,
