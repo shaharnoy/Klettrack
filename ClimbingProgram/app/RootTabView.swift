@@ -142,7 +142,12 @@ struct RootTabView: View {
             try await Task.sleep(for: .milliseconds(300))
 
             //runDayTypesRepairIfNeeded(context)  // delete duplicate days and reseed
-            SeedData.loadIfNeeded(context)      // Always seed - logic in place to not overwrite existing data
+            let catalogSeedReport = SeedData.loadIfNeeded(context)
+            print(catalogSeedReport.summary)
+            for issue in catalogSeedReport.issues {
+                let key = issue.seedKey.map { " [\($0)]" } ?? ""
+                print("Catalog seed issue\(key): \(issue.message)")
+            }
             
         
             runOnce(per: "session_item_sort_backfill_2025-10-20") {

@@ -102,59 +102,50 @@ enum CatalogDeletion {
         guard !targets.isEmpty else { return }
 
         let graph = deletionGraph(for: targets)
-        let activities = fetchActivities(in: context)
-        let trainingTypes = fetchTrainingTypes(in: context)
-        let combinations = fetchCombinations(in: context)
-        let exercises = fetchExercises(in: context)
-        var survivingTypePlacements: [(TrainingType, Exercise)] = []
-        var survivingCombinationPlacements: [(BoulderCombination, Exercise)] = []
+        let activities = try context.fetch(FetchDescriptor<Activity>())
+        let trainingTypes = try context.fetch(FetchDescriptor<TrainingType>())
+        let combinations = try context.fetch(FetchDescriptor<BoulderCombination>())
+        let exercises = try context.fetch(FetchDescriptor<Exercise>())
 
         for activity in activities {
             activity.types.removeAll { graph.typeIDs.contains($0.id) }
         }
         for trainingType in trainingTypes {
             trainingType.combinations.removeAll { graph.combinationIDs.contains($0.id) }
-            for exercise in trainingType.exercises where graph.exerciseIDs.contains(exercise.id) && !graph.typeIDs.contains(trainingType.id) {
-                survivingTypePlacements.append((trainingType, exercise))
+            if graph.typeIDs.contains(trainingType.id) {
+                trainingType.exercises.removeAll()
+                trainingType.combinations.removeAll()
             }
-            trainingType.exercises.removeAll { graph.exerciseIDs.contains($0.id) }
         }
-        for combination in combinations {
-            for exercise in combination.exercises where graph.exerciseIDs.contains(exercise.id) && !graph.combinationIDs.contains(combination.id) {
-                survivingCombinationPlacements.append((combination, exercise))
-            }
-            combination.exercises.removeAll { graph.exerciseIDs.contains($0.id) }
+        for combination in combinations where graph.combinationIDs.contains(combination.id) {
+            combination.exercises.removeAll()
         }
 
-        // Persist relationship detachment before deleting catalog nodes. SwiftData can
-        // otherwise cascade-delete a shared Exercise from the node's prior relationship
-        // snapshot even when that exercise is still placed in another node.
+        // Persist only target-side relationship detachment. Surviving placements stay
+        // attached throughout so SwiftData never observes a shared exercise as orphaned.
         try context.save()
 
         for combination in combinations where graph.combinationIDs.contains(combination.id) {
+            try recordDeletion(of: combination, in: context)
             context.delete(combination)
         }
         for trainingType in trainingTypes where graph.typeIDs.contains(trainingType.id) {
+            try recordDeletion(of: trainingType, in: context)
             context.delete(trainingType)
         }
         for activity in activities where graph.activityIDs.contains(activity.id) {
+            try recordDeletion(of: activity, in: context)
             context.delete(activity)
         }
 
-        for (trainingType, exercise) in survivingTypePlacements where !trainingType.exercises.contains(where: { $0.id == exercise.id }) {
-            trainingType.exercises.append(exercise)
-        }
-        for (combination, exercise) in survivingCombinationPlacements where !combination.exercises.contains(where: { $0.id == exercise.id }) {
-            combination.exercises.append(exercise)
-        }
-
-        let remainingExerciseIDs = catalogExerciseIDs(in: context)
+        let remainingExerciseIDs = try catalogExerciseIDs(in: context)
         for exercise in exercises where graph.exerciseIDs.contains(exercise.id) && !remainingExerciseIDs.contains(exercise.id) {
-            clearPlanCatalogReferences(for: exercise.id, in: context)
+            try clearPlanCatalogReferences(for: exercise.id, in: context)
+            try recordDeletion(of: exercise, in: context)
             context.delete(exercise)
         }
 
-        removeEmptyImportedContainers(in: context)
+        try removeEmptyImportedContainers(in: context)
         try context.save()
     }
 
@@ -166,13 +157,14 @@ enum CatalogDeletion {
     ) throws {
         detachExercise(exercise, from: sourceType, sourceCombination: sourceCombination)
 
-        let remainingExerciseIDs = catalogExerciseIDs(in: context)
+        let remainingExerciseIDs = try catalogExerciseIDs(in: context)
         if !remainingExerciseIDs.contains(exercise.id) {
-            clearPlanCatalogReferences(for: exercise.id, in: context)
+            try clearPlanCatalogReferences(for: exercise.id, in: context)
+            try recordDeletion(of: exercise, in: context)
             context.delete(exercise)
         }
 
-        removeEmptyImportedContainers(in: context)
+        try removeEmptyImportedContainers(in: context)
         try context.save()
     }
 
@@ -185,8 +177,29 @@ enum CatalogDeletion {
         sourceCombination?.exercises.removeAll { $0.id == exercise.id }
     }
 
-    static func removeEmptyImportedContainers(in context: ModelContext) {
-        let activities = fetchActivities(in: context)
+    private static func recordDeletion(of activity: Activity, in context: ModelContext) throws {
+        try recordDeletion(seedKey: activity.seedKey, in: context)
+    }
+
+    private static func recordDeletion(of trainingType: TrainingType, in context: ModelContext) throws {
+        try recordDeletion(seedKey: trainingType.seedKey, in: context)
+    }
+
+    private static func recordDeletion(of combination: BoulderCombination, in context: ModelContext) throws {
+        try recordDeletion(seedKey: combination.seedKey, in: context)
+    }
+
+    private static func recordDeletion(of exercise: Exercise, in context: ModelContext) throws {
+        try recordDeletion(seedKey: exercise.seedKey, in: context)
+    }
+
+    private static func recordDeletion(seedKey: String?, in context: ModelContext) throws {
+        guard let seedKey else { return }
+        try CatalogSeedTombstoneStore.record(seedKey, in: context)
+    }
+
+    static func removeEmptyImportedContainers(in context: ModelContext) throws {
+        let activities = try context.fetch(FetchDescriptor<Activity>())
         for activity in activities where normalized(activity.name) == normalized("Imported") {
             let importedTypes = activity.types.filter { normalized($0.name) == normalized("Imported Plans") }
             for trainingType in importedTypes where trainingType.exercises.isEmpty && trainingType.combinations.isEmpty {
@@ -255,21 +268,21 @@ enum CatalogDeletion {
         return graph
     }
 
-    private static func clearPlanCatalogReferences(for exerciseID: UUID, in context: ModelContext) {
-        let definitions = (try? context.fetch(FetchDescriptor<PlanExerciseDefinition>())) ?? []
+    private static func clearPlanCatalogReferences(for exerciseID: UUID, in context: ModelContext) throws {
+        let definitions = try context.fetch(FetchDescriptor<PlanExerciseDefinition>())
         for definition in definitions where definition.catalogExerciseID == exerciseID {
             definition.catalogExerciseID = nil
         }
 
-        let days = (try? context.fetch(FetchDescriptor<PlanDay>())) ?? []
+        let days = try context.fetch(FetchDescriptor<PlanDay>())
         for day in days {
             day.chosenExerciseIDs.removeAll { $0 == exerciseID }
             day.exerciseOrderByID.removeValue(forKey: exerciseID.uuidString)
         }
     }
 
-    private static func catalogExerciseIDs(in context: ModelContext) -> Set<UUID> {
-        let activities = fetchActivities(in: context)
+    private static func catalogExerciseIDs(in context: ModelContext) throws -> Set<UUID> {
+        let activities = try context.fetch(FetchDescriptor<Activity>())
         var ids = Set<UUID>()
         for activity in activities {
             for trainingType in activity.types {
@@ -292,10 +305,6 @@ enum CatalogDeletion {
 
     private static func fetchCombinations(in context: ModelContext) -> [BoulderCombination] {
         (try? context.fetch(FetchDescriptor<BoulderCombination>())) ?? []
-    }
-
-    private static func fetchExercises(in context: ModelContext) -> [Exercise] {
-        (try? context.fetch(FetchDescriptor<Exercise>())) ?? []
     }
 
     private static func normalized(_ value: String) -> String {

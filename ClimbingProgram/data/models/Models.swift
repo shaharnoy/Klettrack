@@ -10,11 +10,15 @@ import SwiftData
 @Model
 final class Activity {
     @Attribute(.unique) var id: UUID
+    /// Stable identifier for app-provided catalog data. Nil for user-created categories.
+    var seedKey: String?
     var name: String
+    @Relationship(deleteRule: .nullify)
     var types: [TrainingType] = []
 
-    init(id: UUID = UUID(), name: String) {
+    init(id: UUID = UUID(), seedKey: String? = nil, name: String) {
         self.id = id
+        self.seedKey = seedKey
         self.name = name
     }
 }
@@ -22,19 +26,25 @@ final class Activity {
 @Model
 final class TrainingType {
     @Attribute(.unique) var id: UUID
+    /// Stable identifier for app-provided catalog data. Nil for user-created types.
+    var seedKey: String?
     var name: String
     var area: String?
     var typeDescription: String?
+    @Relationship(deleteRule: .nullify, inverse: \Exercise.trainingTypes)
     var exercises: [Exercise] = []
+    @Relationship(deleteRule: .nullify)
     var combinations: [BoulderCombination] = []
 
     init(
         id: UUID = UUID(),
+        seedKey: String? = nil,
         name: String,
         area: String? = nil,
         typeDescription: String? = nil
     ) {
         self.id = id
+        self.seedKey = seedKey
         self.name = name
         self.area = area
         self.typeDescription = typeDescription
@@ -44,12 +54,16 @@ final class TrainingType {
 @Model
 final class BoulderCombination {
     @Attribute(.unique) var id: UUID
+    /// Stable identifier for app-provided catalog data. Nil for user-created combinations.
+    var seedKey: String?
     var name: String
     var comboDescription: String?
+    @Relationship(deleteRule: .nullify, inverse: \Exercise.combinations)
     var exercises: [Exercise] = []
 
-    init(id: UUID = UUID(), name: String, comboDescription: String? = nil) {
+    init(id: UUID = UUID(), seedKey: String? = nil, name: String, comboDescription: String? = nil) {
         self.id = id
+        self.seedKey = seedKey
         self.name = name
         self.comboDescription = comboDescription
     }
@@ -58,6 +72,8 @@ final class BoulderCombination {
 @Model
 final class Exercise {
     @Attribute(.unique) var id: UUID
+    /// Stable identifier for app-provided catalog data. Nil for user-created exercises.
+    var seedKey: String?
     var name: String
     var area: String?
     var order: Int = 0  // maintain exercise order
@@ -67,9 +83,12 @@ final class Exercise {
     var setsText: String?
     var restText: String?
     var notes: String?
+    var trainingTypes: [TrainingType]?
+    var combinations: [BoulderCombination]?
 
     init(
         id: UUID = UUID(),
+        seedKey: String? = nil,
         name: String,
         area: String? = nil,
         order: Int = 0,
@@ -81,6 +100,7 @@ final class Exercise {
         notes: String? = nil
     ) {
         self.id = id
+        self.seedKey = seedKey
         self.name = name
         self.area = area
         self.order = order
@@ -90,9 +110,10 @@ final class Exercise {
         self.setsText = setsText
         self.restText = restText
         self.notes = notes
+        self.trainingTypes = []
+        self.combinations = []
     }
 }
-
 
 // User logging (sessions & what they did)
 @Model

@@ -8,14 +8,7 @@ final class PlanCSVExchangeTests: XCTestCase {
     private var context: ModelContext { container.mainContext }
 
     override func setUpWithError() throws {
-        let schema = Schema([
-            Activity.self, TrainingType.self, BoulderCombination.self, Exercise.self,
-            Plan.self, PlanDay.self, PlanKindModel.self, DayTypeModel.self, PlanExerciseDefinition.self,
-            Session.self, SessionItem.self, DayLog.self, DayTag.self,
-            ClimbEntry.self, ClimbStyle.self, ClimbGym.self, ClimbMedia.self,
-            TB2ClimbMetadata.self, TB2ClimbStatsMetadata.self
-        ])
-        container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        container = try TestModelContainerFactory.make()
     }
 
     override func tearDownWithError() throws {
@@ -389,6 +382,58 @@ final class PlanCSVExchangeTests: XCTestCase {
         XCTAssertTrue(secondType.exercises.contains { $0.id == sharedExercise.id })
         XCTAssertNotNil(try context.fetch(FetchDescriptor<Exercise>()).first { $0.id == sharedExercise.id })
         XCTAssertNil(try context.fetch(FetchDescriptor<TrainingType>()).first { $0.id == firstType.id })
+    }
+
+    func testDeletingCombinationPreservesExerciseSharedByAnotherCombination() throws {
+        let activity = Activity(name: "Shared Activity")
+        let type = TrainingType(name: "Shared Type")
+        let firstCombination = BoulderCombination(name: "First")
+        let secondCombination = BoulderCombination(name: "Second")
+        let sharedExercise = Exercise(name: "Shared Exercise")
+        firstCombination.exercises.append(sharedExercise)
+        secondCombination.exercises.append(sharedExercise)
+        type.combinations = [firstCombination, secondCombination]
+        activity.types.append(type)
+        context.insert(activity)
+        try context.save()
+
+        try CatalogDeletion.delete(.combination(firstCombination), in: context)
+
+        XCTAssertTrue(secondCombination.exercises.contains { $0.id == sharedExercise.id })
+        XCTAssertNotNil(try context.fetch(FetchDescriptor<Exercise>()).first { $0.id == sharedExercise.id })
+        XCTAssertNil(try context.fetch(FetchDescriptor<BoulderCombination>()).first { $0.id == firstCombination.id })
+    }
+
+    func testDeletingTypePreservesExerciseSharedWithCombinationAndPlanLink() throws {
+        let activity = Activity(name: "Shared Activity")
+        let deletedType = TrainingType(name: "Deleted Type")
+        let survivingType = TrainingType(name: "Surviving Type")
+        let combination = BoulderCombination(name: "Surviving Combination")
+        let sharedExercise = Exercise(name: "Shared Exercise")
+        deletedType.exercises.append(sharedExercise)
+        combination.exercises.append(sharedExercise)
+        survivingType.combinations.append(combination)
+        activity.types = [deletedType, survivingType]
+        context.insert(activity)
+
+        let definition = PlanExerciseDefinition(
+            catalogExerciseID: sharedExercise.id,
+            name: sharedExercise.name
+        )
+        let day = PlanDay(date: Date())
+        day.chosenExerciseIDs = [sharedExercise.id]
+        day.exerciseOrderByID = [sharedExercise.id.uuidString: 0]
+        context.insert(definition)
+        context.insert(day)
+        try context.save()
+
+        try CatalogDeletion.delete(.trainingType(deletedType), in: context)
+
+        XCTAssertTrue(combination.exercises.contains { $0.id == sharedExercise.id })
+        XCTAssertEqual(definition.catalogExerciseID, sharedExercise.id)
+        XCTAssertEqual(day.chosenExerciseIDs, [sharedExercise.id])
+        XCTAssertEqual(day.exerciseOrderByID[sharedExercise.id.uuidString], 0)
+        XCTAssertNotNil(try context.fetch(FetchDescriptor<Exercise>()).first { $0.id == sharedExercise.id })
     }
 
     func testFinalCatalogPlacementClearsPlanLinkButPreservesPlanAndLogs() throws {
