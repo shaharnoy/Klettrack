@@ -12,9 +12,10 @@ import Foundation
 //  Klettrack
 //
 struct SeedData {
-    static func loadIfNeeded(_ context: ModelContext) {
+    @discardableResult
+    static func loadIfNeeded(_ context: ModelContext) -> CatalogSeedReport {
         // ---------- Catalog (idempotent upsert) ----------
-        upsertCatalog(context)
+        let report = CatalogSeeder.reconcile(catalogManifest(), in: context)
 
         // ---------- Other seeds ----------
         SeedClimbingData.loadIfNeeded(context) // only seeds if all gym and styles and days are empty
@@ -25,6 +26,7 @@ struct SeedData {
         seedDayTypes(context)                      // only upsert missing default day types, don't overwrite custom days and don't make unhidden ones hidden
         reconcilePlanDayTypesIfNeeded(context)     // keep plans aligned
         try? context.save()
+        return report
     }
 
     static func nukeAndReseed(_ context: ModelContext) {
@@ -48,33 +50,34 @@ struct SeedData {
 
     // MARK: - Catalog seeding via ensure (idempotent)
     // Upsert concept allow us to update content freely between builds without duplicating or nuking user data
-    private static func upsertCatalog(_ ctx: ModelContext) {
+    static func catalogManifest() -> CatalogSeedManifest {
+        let builder = CatalogSeedManifestBuilder()
         // ===== CORE =====
-        let core = CatalogSeeder.ensureActivity("Core", seedKey: "activity.core", in: ctx)
+        let core = builder.activity("Core", key: "activity.core")
         do {
-            let anterior = CatalogSeeder.ensureType("Anterior Core", seedKey: "type.core.anterior_core", typeDescription: "", in: core)
+            let anterior = core.type("Anterior Core", key: "type.core.anterior_core", typeDescription: "")
             ensureEx("Abdominal Crunches", into: anterior, seedKey: "exercise.core.anterior_core.abdominal_crunches", order: 1, reps: "25-100", sets: "2", rest: "3 min")
             ensureEx("Hanging Knee Lifts", into: anterior, seedKey: "exercise.core.anterior_core.hanging_knee_lifts", order: 2, reps: "15-20", sets: "2-3", rest: "3 min")
             ensureEx("1-Arm 1-Leg Plank", into: anterior, seedKey: "exercise.core.anterior_core.one_arm_one_leg_plank", order: 3, duration: "1 min", sets: "2", rest: "3 min")
             ensureEx("1-Arm Elbow & Side Plank", into: anterior, seedKey: "exercise.core.anterior_core.one_arm_elbow_side_plank", order: 4, duration: "2 min", sets: "1")
             ensureEx("Front Lever", into: anterior, seedKey: "exercise.core.anterior_core.front_lever", order: 5, reps: "2-5", sets: "1-2", rest: "3 min")
 
-            let posterior = CatalogSeeder.ensureType("Posterior Core", seedKey: "type.core.posterior_core", typeDescription: "", in: core)
+            let posterior = core.type("Posterior Core", key: "type.core.posterior_core", typeDescription: "")
             ensureEx("Superman", into: posterior, seedKey: "exercise.core.posterior_core.superman", order: 1, reps: "20", sets: "2", rest: "3 min")
             ensureEx("Reverse Plank", into: posterior, seedKey: "exercise.core.posterior_core.reverse_plank", order: 2, duration: "20-60 sec", sets: "1-2", rest: "3 min")
             ensureEx("Back Bridge", into: posterior, seedKey: "exercise.core.posterior_core.back_bridge", order: 3, reps: "15-20", sets: "1-2", rest: "3 min")
             ensureEx("Side Hip Raises", into: posterior, seedKey: "exercise.core.posterior_core.side_hip_raises", order: 4, reps: "10-20", sets: "2", rest: "1 min")
 
-            let chain = CatalogSeeder.ensureType("Total Posterior Chain", seedKey: "type.core.total_posterior_chain", typeDescription: "", in: core)
+            let chain = core.type("Total Posterior Chain", key: "type.core.total_posterior_chain", typeDescription: "")
             ensureEx("Sumo Deadlift", into: chain, seedKey: "exercise.core.total_posterior_chain.sumo_deadlift", order: 1, reps: "10-15", sets: "2", rest: "3 min")
             ensureEx("Dumbbell Snatch", into: chain, seedKey: "exercise.core.total_posterior_chain.dumbbell_snatch", order: 2, reps: "5-8", sets: "2-3", rest: "3 min")
             ensureEx("Barbell Deadlift", into: chain, seedKey: "exercise.core.total_posterior_chain.barbell_deadlift", order: 3, reps: "3-6", sets: "2-4", rest: "3 min")
         }
 
         // ===== Mobility =====
-        let mobility = CatalogSeeder.ensureActivity("Mobility", seedKey: "activity.mobility", in: ctx)
+        let mobility = builder.activity("Mobility", key: "activity.mobility")
         do {
-            let bottom = CatalogSeeder.ensureType("Lower body", seedKey: "type.mobility.lower_body", typeDescription: "", in: mobility)
+            let bottom = mobility.type("Lower body", key: "type.mobility.lower_body", typeDescription: "")
             ensureEx("Knee-to-chest", into: bottom, seedKey: "exercise.mobility.lower_body.knee_to_chest", order: 1, reps: "2 each leg", duration: "30 sec")
             ensureEx("Band Hamstring Stretch", into: bottom, seedKey: "exercise.mobility.lower_body.band_hamstring_stretch", order: 2,reps: "3 each leg", duration: "30 sec")
             ensureEx("Butterfly Stretch", into: bottom, seedKey: "exercise.mobility.lower_body.butterfly_stretch", order: 3,reps: "2", duration: "30-60 sec")
@@ -86,16 +89,16 @@ struct SeedData {
 
         }
         // ===== ANTAGONIST & STABILIZER =====
-        let ant = CatalogSeeder.ensureActivity("Antagonist & Stabilizer", seedKey: "activity.antagonist_stabilizer", in: ctx)
+        let ant = builder.activity("Antagonist & Stabilizer", key: "activity.antagonist_stabilizer")
         do {
-            let wrist = CatalogSeeder.ensureType("Wrist Stabilizers", seedKey: "type.antagonist_stabilizer.wrist_stabilizers", typeDescription: "", in: ant)
+            let wrist = ant.type("Wrist Stabilizers", key: "type.antagonist_stabilizer.wrist_stabilizers", typeDescription: "")
             ensureEx("Reverse Wrist Curls", into: wrist, seedKey: "exercise.antagonist_stabilizer.wrist_stabilizers.reverse_wrist_curls", order: 1, reps: "15–25", sets: "2–3", rest: "3 min")
             ensureEx("Pronator Isolation", into: wrist, seedKey: "exercise.antagonist_stabilizer.wrist_stabilizers.pronator_isolation", order: 2, reps: "20–25", sets: "2 in each hand", rest: "2 min")
             ensureEx("Wrist Extension Isometric", into: wrist, seedKey: "exercise.antagonist_stabilizer.wrist_stabilizers.wrist_extension_isometric", order: 3, duration: "1 min", sets: "2 each arm", rest: "2 min")
             ensureEx("Reverse Arm Curl", into: wrist, seedKey: "exercise.antagonist_stabilizer.wrist_stabilizers.reverse_arm_curl", order: 4, reps: "15–20", sets: "1–2", rest: "3 min")
             ensureEx("Wide Pinch Wrist Extention", into: wrist, seedKey: "exercise.antagonist_stabilizer.wrist_stabilizers.wide_pinch_wrist_extention", order: 5, duration: "30 sec", sets: "3–5", rest: "2 min")
 
-            let cuff = CatalogSeeder.ensureType("Rotator Cuff & Scap Stabilizers", seedKey: "type.antagonist_stabilizer.rotator_cuff_scap_stabilizers", typeDescription: "", in: ant)
+            let cuff = ant.type("Rotator Cuff & Scap Stabilizers", key: "type.antagonist_stabilizer.rotator_cuff_scap_stabilizers", typeDescription: "")
             ensureEx("DB Internal Rotation", into: cuff, seedKey: "exercise.antagonist_stabilizer.rotator_cuff_scap_stabilizers.db_internal_rotation", order: 1, reps: "25", sets: "2 each hand")
             ensureEx("DB External Rotation", into: cuff, seedKey: "exercise.antagonist_stabilizer.rotator_cuff_scap_stabilizers.db_external_rotation", order: 2, reps: "25", sets: "2 each hand")
             ensureEx("Band T", into: cuff, seedKey: "exercise.antagonist_stabilizer.rotator_cuff_scap_stabilizers.band_t", order: 3, reps: "20", sets: "2", rest: "2 min")
@@ -103,18 +106,18 @@ struct SeedData {
             ensureEx("Scapular Push-Up", into: cuff, seedKey: "exercise.antagonist_stabilizer.rotator_cuff_scap_stabilizers.scapular_push_up", order: 5, reps: "15–20", sets: "1")
             ensureEx("Scapular Pull-Up", into: cuff, seedKey: "exercise.antagonist_stabilizer.rotator_cuff_scap_stabilizers.scapular_pull_up", order: 6, reps: "8–12", sets: "1")
 
-            let push = CatalogSeeder.ensureType("Antagonist (Push) Muscles", seedKey: "type.antagonist_stabilizer.antagonist_push_muscles", typeDescription: "", in: ant)
+            let push = ant.type("Antagonist (Push) Muscles", key: "type.antagonist_stabilizer.antagonist_push_muscles", typeDescription: "")
             ensureEx("Shoulder Press", into: push, seedKey: "exercise.antagonist_stabilizer.antagonist_push_muscles.shoulder_press", order: 1, reps: "15–20", sets: "1–2", rest: "3 min")
             ensureEx("Push-Up", into: push, seedKey: "exercise.antagonist_stabilizer.antagonist_push_muscles.push_up", order: 2, reps: "15–25", sets: "1–2", rest: "3 min")
         }
        
         // ===== GENERAL STRENGTH =====
-        let strength = CatalogSeeder.ensureActivity("General Strength", seedKey: "activity.general_strength", in: ctx)
+        let strength = builder.activity("General Strength", key: "activity.general_strength")
         do {
-            let pull  = CatalogSeeder.ensureType("Pull", seedKey: "type.general_strength.pull", in: strength)
-            let push  = CatalogSeeder.ensureType("Push", seedKey: "type.general_strength.push", in: strength)
-            let hinge = CatalogSeeder.ensureType("Hinge", seedKey: "type.general_strength.hinge", in: strength)
-            let squat = CatalogSeeder.ensureType("Squat", seedKey: "type.general_strength.squat", in: strength)
+            let pull = strength.type("Pull", key: "type.general_strength.pull")
+            let push = strength.type("Push", key: "type.general_strength.push")
+            let hinge = strength.type("Hinge", key: "type.general_strength.hinge")
+            let squat = strength.type("Squat", key: "type.general_strength.squat")
 
             // Hinge
             ensureEx("Deadlift", into: hinge, seedKey: "exercise.general_strength.hinge.deadlift", order: 1, reps: "4", duration: nil, sets: "3", rest: "3-5 mins", notes: "RPE 6-7-8 after two warmup sets")
@@ -148,9 +151,9 @@ struct SeedData {
         }
 
         // ===== CLIMBING-SPECIFIC (non-bouldering) =====
-        let climb = CatalogSeeder.ensureActivity("Climbing-Specific Exercises", seedKey: "activity.climbing_specific", in: ctx)
+        let climb = builder.activity("Climbing-Specific Exercises", key: "activity.climbing_specific")
         do {
-            let maxStrength = CatalogSeeder.ensureType("Maximum & Contact Strength", seedKey: "type.climbing_specific.maximum_contact_strength", area: nil, typeDescription: "Maximum and contact strength for fingers and pull muscles", in: climb)
+            let maxStrength = climb.type("Maximum & Contact Strength", key: "type.climbing_specific.maximum_contact_strength", area: nil, typeDescription: "Maximum and contact strength for fingers and pull muscles")
             // Fingers
             ensureEx("FB \"Minimum Edge\" Hangs", into: maxStrength, seedKey: "exercise.climbing_specific.maximum_contact_strength.fb_minimum_edge_hangs", order: 1, area: "Fingers",
                      reps: "5", sets: "2–5", notes: "12s work, 3min rest", description: "Smallest edge you can hold ~12s")
@@ -178,7 +181,7 @@ struct SeedData {
             ensureEx("One-Arm Lock-Offs", into: maxStrength, seedKey: "exercise.climbing_specific.maximum_contact_strength.one_arm_lock_offs", order: 6, area: "Pull",
                      reps: "2–3", sets: "2–3", rest: "2 min")
 
-            let contactPower = CatalogSeeder.ensureType("Contact Strength & Power", seedKey: "type.climbing_specific.contact_strength_power", typeDescription: "Contact strength, explosive recruitment, and pulling power", in: climb)
+            let contactPower = climb.type("Contact Strength & Power", key: "type.climbing_specific.contact_strength_power", typeDescription: "Contact strength, explosive recruitment, and pulling power")
             // Fingers
             ensureEx("Campus Board Bumps", into: contactPower, seedKey: "exercise.climbing_specific.contact_strength_power.campus_board_bumps", order: 1, area: "Fingers",
                      reps: "2–4 sets each side", rest: "2 min")
@@ -196,7 +199,7 @@ struct SeedData {
             ensureEx("Big-Move Boulder Problems", into: contactPower, seedKey: "exercise.climbing_specific.contact_strength_power.big_move_boulder_problems", order: 3, area: "Pull",
                      reps: "6–10 moves", sets: "5 ascents", rest: "3 min")
 
-            let strengthEndurance = CatalogSeeder.ensureType("Strength-Endurance", seedKey: "type.climbing_specific.strength_endurance", typeDescription: "Endurance work for fingers and pull muscles", in: climb)
+            let strengthEndurance = climb.type("Strength-Endurance", key: "type.climbing_specific.strength_endurance", typeDescription: "Endurance work for fingers and pull muscles")
             // Fingers
             ensureEx("Short-Duration Fingerboard Repeaters", into: strengthEndurance, seedKey: "exercise.climbing_specific.strength_endurance.short_duration_fingerboard_repeaters", order: 1, area: "Fingers",
                      reps: "6", sets: "3–5", rest: "1 min",
@@ -213,9 +216,9 @@ struct SeedData {
         }
 
         // ===== BOULDERING with COMBINATIONS =====
-        let boulder = CatalogSeeder.ensureActivity("Bouldering", seedKey: "activity.bouldering", in: ctx)
+        let boulder = builder.activity("Bouldering", key: "activity.bouldering")
         do {
-            let bMax = CatalogSeeder.ensureType("Maximum & contact Strength", seedKey: "type.bouldering.maximum_contact_strength", typeDescription: "Bouldering", in: boulder)
+            let bMax = boulder.type("Maximum & contact Strength", key: "type.bouldering.maximum_contact_strength", typeDescription: "Bouldering")
 
             let comb1 = ensureCombo("Limit combo", seedKey: "combination.bouldering.maximum_contact.limit", desc: "Limit and casual bouldering; 1:30 hours", in: bMax, deletingLegacyNames: ["Combination 1"])
             ensureComboEx("3–6 near-maximal boulders", into: comb1, seedKey: "exercise.bouldering.maximum_contact.limit.near_maximal_boulders", order: 1, duration: "30 min", rest: "3 min/asc")
@@ -238,9 +241,7 @@ struct SeedData {
             ensureComboEx("Work on 1–3 limit boulders", into: comb4, seedKey: "exercise.bouldering.maximum_contact.board_limit.work_limit_boulders", order: 1, duration: "30 min", rest: "3 min/asc")
             ensureComboEx("Board", into: comb4, seedKey: "exercise.bouldering.maximum_contact.board_limit.board", order: 2, duration: "60 min", rest: "3 min/asc")
 
-            bMax.combinations = dedupPreserveOrder(bMax.combinations)
-
-            let bSE = CatalogSeeder.ensureType("Strength-Endurance", seedKey: "type.bouldering.strength_endurance", typeDescription: "SE circuits", in: boulder)
+            let bSE = boulder.type("Strength-Endurance", key: "type.bouldering.strength_endurance", typeDescription: "SE circuits")
 
             let combSE3 = ensureCombo("Grades combo", seedKey: "combination.bouldering.strength_endurance.grades", desc: "Alternating grade blocks with no rest between sends; 1:30 hours", in: bSE, deletingLegacyNames: ["Combination 3"])
             ensureComboEx("V0–V2", into: combSE3, seedKey: "exercise.bouldering.strength_endurance.grades.v0_v2", order: 1, reps:"6", rest: "45 sec/asc", notes: "rest block 2 min",  deletingLegacyNames: ["1. 6 problems V0–V2"])
@@ -291,7 +292,7 @@ struct SeedData {
             ensureEx("10 moves boulder 3 times in a row", into: bSE, seedKey: "exercise.bouldering.strength_endurance.ten_moves_boulder_three_times", order: 4, reps: "3", duration: nil, sets: "1", rest: "no rest between ascents", notes: "As the name suggests, do 10 moves boulder in a row with only a brief rest between. Make sure you find a problem that you can send")
             
             // ===== SKILL TRAINING =====
-            let skill = CatalogSeeder.ensureType("Skill training", seedKey: "type.bouldering.skill_training", typeDescription: "", in: boulder)
+            let skill = boulder.type("Skill training", key: "type.bouldering.skill_training", typeDescription: "")
 
             ensureEx("Same Problem-Different Solution", into: skill, seedKey: "exercise.bouldering.skill_training.same_problem_different_solution", order: 1, reps: nil, duration: nil, sets: nil, rest: nil, notes: nil)
 
@@ -323,18 +324,15 @@ struct SeedData {
 
             ensureEx("10 Mins Takedown", into: skill, seedKey: "exercise.bouldering.skill_training.ten_mins_takedown", order: 15, reps: nil, duration: nil, sets: nil, rest: nil, notes: "https://www.youtube.com/watch?v=WtxZElPjzZ8")
 
-            bSE.combinations = dedupPreserveOrder(bSE.combinations)
-
-            try? ctx.save()
         }
+        return builder.manifest
     }
 
-    // MARK: - Helpers
-    /// Ensure an exercise exists, but never overwrite fields on an existing row.
+    // MARK: - Manifest helpers
     @discardableResult
     private static func ensureEx(
         _ name: String,
-        into type: TrainingType,
+        into type: CatalogTypeSeed,
         seedKey explicitSeedKey: String? = nil,
         order: Int,
         area: String? = nil,
@@ -344,84 +342,46 @@ struct SeedData {
         rest: String? = nil,
         notes: String? = nil,
         description: String? = nil
-    ) -> Exercise {
-        let seedKey = explicitSeedKey ?? "\(type.seedKey ?? "type.unknown").exercise.\(stableSegment(area ?? "default")).\(order)"
-        let existed = type.exercises.contains { $0.seedKey == seedKey || $0.name == name }
-            || existingExercise(seedKey: seedKey, in: type.modelContext) != nil
-        let exercise = CatalogSeeder.ensureExercise(
-            name,
-            in: type,
-            seedKey: seedKey,
+    ) -> CatalogExerciseSeed {
+        let seed = CatalogExerciseSeed(
+            key: explicitSeedKey ?? "\(type.key).exercise.\(stableSegment(area ?? "default")).\(order)",
+            name: name,
+            aliases: [],
+            order: order,
+            area: area,
+            exerciseDescription: description,
             reps: reps,
             duration: duration,
             sets: sets,
             rest: rest,
-            notes: notes,
-            area: area
+            notes: notes
         )
-        if !existed {
-            exercise.order = order
-            exercise.exerciseDescription = description
-        }
-        return exercise
+        type.exercises.append(seed)
+        return seed
     }
 
-    /// Upsert a BoulderCombination by name
     @discardableResult
     private static func ensureCombo(
         _ name: String,
         seedKey: String? = nil,
         desc: String? = nil,
-        in type: TrainingType,
-        deletingLegacyNames legacyNames: [String] = [],
-        context: ModelContext? = nil
-    ) -> BoulderCombination {
-        //Optionally remove legacy combos first
-        if !legacyNames.isEmpty {
-            func norm(_ s: String) -> String {
-                s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            }
-            let legacy = Set(legacyNames.map(norm))
-
-            // collect matches
-            let toDelete = type.combinations.filter { legacy.contains(norm($0.name)) }
-            if !toDelete.isEmpty {
-                // detach from relationship
-                type.combinations.removeAll { combo in
-                    toDelete.contains(where: { $0 === combo })
-                }
-                // hard-delete if context provided (SwiftData)
-                let activeContext = context ?? type.modelContext
-                if let activeContext {
-                    toDelete.forEach {
-                        recordDeletedSeed($0.seedKey, in: activeContext)
-                        activeContext.delete($0)
-                    }
-                }
-            }
-        }
-        let seedKey = seedKey ?? "\(type.seedKey ?? "type.unknown").combination.\(name.lowercased())"
-        if let c = type.combinations.first(where: { $0.seedKey == seedKey }) {
-            return c
-        }
-        if let legacy = type.combinations.first(where: { $0.name == name }) {
-            legacy.seedKey = seedKey
-            return legacy
-        }
-        let c = BoulderCombination(seedKey: seedKey, name: name, comboDescription: desc)
-        if let ctx = context ?? type.modelContext {
-            let tombstone = (try? ctx.fetch(FetchDescriptor<DeletedCatalogSeed>(predicate: #Predicate { $0.seedKey == seedKey })))?.isEmpty == false
-            if tombstone { return c }
-        }
-        type.combinations.append(c)
-        return c
+        in type: CatalogTypeSeed,
+        deletingLegacyNames legacyNames: [String] = []
+    ) -> CatalogCombinationSeed {
+        let seed = CatalogCombinationSeed(
+            key: seedKey ?? "\(type.key).combination.\(stableSegment(name))",
+            name: name,
+            aliases: legacyNames,
+            combinationDescription: desc
+        )
+        type.combinations.append(seed)
+        return seed
     }
 
-    /// Upsert an Exercise inside a BoulderCombination by name and then update fields
     @discardableResult
     private static func ensureComboEx(
         _ name: String,
-        into combo: BoulderCombination,
+        into combo: CatalogCombinationSeed,
         seedKey explicitSeedKey: String? = nil,
         order: Int,
         reps: String? = nil,
@@ -430,67 +390,23 @@ struct SeedData {
         rest: String? = nil,
         notes: String? = nil,
         description: String? = nil,
-        deletingLegacyNames legacyNames: [String] = [],
-        context: ModelContext? = nil
-    ) -> Exercise {
-        //Optionally remove legacy exercises first
-        if !legacyNames.isEmpty {
-            func norm(_ s: String) -> String {
-                s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            }
-            let legacy = Set(legacyNames.map(norm))
-            let toDelete = combo.exercises.filter { legacy.contains(norm($0.name)) }
-
-            if !toDelete.isEmpty {
-                // detach from relationship
-                combo.exercises.removeAll { ex in
-                    toDelete.contains(where: { $0 === ex })
-                }
-                // hard-delete if context provided (SwiftData)
-                let activeContext = context ?? combo.modelContext
-                if let activeContext {
-                    toDelete.forEach {
-                        recordDeletedSeed($0.seedKey, in: activeContext)
-                        activeContext.delete($0)
-                    }
-                }
-            }
-        }
-        let seedKey = explicitSeedKey ?? "\(combo.seedKey ?? "combination.unknown").exercise.\(order)"
-        if let ex = combo.exercises.first(where: { $0.seedKey == seedKey }) {
-            return ex
-        }
-        if let ex = existingExercise(seedKey: seedKey, in: context ?? combo.modelContext) {
-            return ex
-        }
-        if let legacy = combo.exercises.first(where: { $0.name == name }) {
-            legacy.seedKey = seedKey
-            return legacy
-        }
-        let ex = Exercise(
-            seedKey: seedKey, name: name, order: order, exerciseDescription: description,
-            repsText: reps, durationText: duration, setsText: sets, restText: rest, notes: notes
+        deletingLegacyNames legacyNames: [String] = []
+    ) -> CatalogExerciseSeed {
+        let seed = CatalogExerciseSeed(
+            key: explicitSeedKey ?? "\(combo.key).exercise.\(order)",
+            name: name,
+            aliases: legacyNames,
+            order: order,
+            area: nil,
+            exerciseDescription: description,
+            reps: reps,
+            duration: duration,
+            sets: sets,
+            rest: rest,
+            notes: notes
         )
-        if let ctx = context ?? combo.modelContext {
-            let tombstone = (try? ctx.fetch(FetchDescriptor<DeletedCatalogSeed>(predicate: #Predicate { $0.seedKey == seedKey })))?.isEmpty == false
-            if tombstone { return ex }
-        }
-        combo.exercises.append(ex)
-        return ex
-    }
-
-    /// Simple de-dup by name, keeping first occurrence order
-    private static func dedupPreserveOrder<T: AnyObject>(_ items: [T]) -> [T] {
-        var seen = Set<ObjectIdentifier>()
-        var out: [T] = []
-        for x in items {
-            let id = ObjectIdentifier(x)
-            if !seen.contains(id) {
-                out.append(x)
-                seen.insert(id)
-            }
-        }
-        return out
+        combo.exercises.append(seed)
+        return seed
     }
 
     private static func stableSegment(_ value: String) -> String {
@@ -502,18 +418,6 @@ struct SeedData {
             .joined(separator: "_")
     }
 
-    private static func recordDeletedSeed(_ seedKey: String?, in context: ModelContext) {
-        guard let seedKey else { return }
-        let descriptor = FetchDescriptor<DeletedCatalogSeed>(predicate: #Predicate { $0.seedKey == seedKey })
-        guard ((try? context.fetch(descriptor)) ?? []).isEmpty else { return }
-        context.insert(DeletedCatalogSeed(seedKey: seedKey))
-    }
-
-    private static func existingExercise(seedKey: String, in context: ModelContext?) -> Exercise? {
-        guard let context else { return nil }
-        let descriptor = FetchDescriptor<Exercise>(predicate: #Predicate { $0.seedKey == seedKey })
-        return try? context.fetch(descriptor).first
-    }
 }
 
 // MARK: - PlanKind seeding

@@ -81,7 +81,7 @@ enum CatalogReassignment {
             }
         }
 
-        CatalogDeletion.removeEmptyImportedContainers(in: context)
+        try CatalogDeletion.removeEmptyImportedContainers(in: context)
         try context.save()
     }
 }

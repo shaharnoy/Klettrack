@@ -1,94 +1,269 @@
-//
-//  CatalogSeeder.swift
-//  Klettrack
-//  Created by Shahar Noy on 21.08.25.
-//
-
-import Foundation
 import SwiftData
 
 struct CatalogSeeder {
-    // Find or create an Activity by immutable seed key. The name fallback is
-    // intentionally retained for existing installs created before seed keys.
-    static func ensureActivity(_ name: String, seedKey: String? = nil, in ctx: ModelContext) -> Activity {
-        let seedKey = seedKey ?? "activity.\(slug(name))"
-        let all: [Activity] = (try? ctx.fetch(FetchDescriptor<Activity>())) ?? []
-        if let found = all.first(where: { $0.seedKey == seedKey }) {
-            return found
+    static func reconcile(
+        _ manifest: CatalogSeedManifest,
+        in context: ModelContext,
+        loadTombstones: (ModelContext) throws -> Set<String> = CatalogSeedTombstoneStore.keys,
+        save: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> CatalogSeedReport {
+        var report = CatalogSeedReport()
+        let duplicateKeys = manifest.duplicateKeys()
+        guard duplicateKeys.isEmpty else {
+            report.issues.append(.init(seedKey: nil, message: "Duplicate catalog seed keys: \(duplicateKeys.joined(separator: ", "))"))
+            return report
         }
-        if let legacy = all.first(where: { $0.name == name }) {
-            legacy.seedKey = seedKey
-            return legacy
+
+        let tombstones: Set<String>
+        do {
+            tombstones = try loadTombstones(context)
+        } catch {
+            report.issues.append(.init(seedKey: nil, message: "Could not read catalog deletion markers: \(error.localizedDescription)"))
+            return report
         }
-        let a = Activity(seedKey: seedKey, name: name)
-        guard !isDeleted(seedKey, in: ctx) else { return a }
-        ctx.insert(a)
-        return a
+
+        for activitySeed in manifest.activities {
+            var activityReport = CatalogSeedReport()
+            do {
+                try reconcile(activitySeed, tombstones: tombstones, in: context, report: &activityReport)
+                try save(context)
+                report.merge(activityReport)
+            } catch {
+                context.rollback()
+                report.issues.append(.init(seedKey: activitySeed.key, message: error.localizedDescription))
+            }
+        }
+        return report
     }
 
-    // Find or create a TrainingType by immutable seed key. Existing unchanged
-    // rows are claimed by exact name once, without changing their fields.
-    static func ensureType(_ name: String, seedKey: String? = nil, area: String? = nil, typeDescription: String? = nil, in activity: Activity) -> TrainingType {
-        let seedKey = seedKey ?? "\(activity.seedKey ?? "activity.\(slug(activity.name))").type.\(slug(name))"
-        if let t = activity.types.first(where: { $0.seedKey == seedKey }) {
-            return t
+    private static func reconcile(
+        _ seed: CatalogActivitySeed,
+        tombstones: Set<String>,
+        in context: ModelContext,
+        report: inout CatalogSeedReport
+    ) throws {
+        guard !tombstones.contains(seed.key) else {
+            report.skipped += 1
+            return
         }
-        if let legacy = activity.types.first(where: { $0.name == name }) {
-            legacy.seedKey = seedKey
-            return legacy
+
+        let activities = try context.fetch(FetchDescriptor<Activity>())
+        let activity: Activity
+        if let keyed = activities.first(where: { $0.seedKey == seed.key }) {
+            activity = keyed
+        } else if let legacy = exactLegacyActivity(for: seed, in: activities)
+            ?? structuralLegacyActivity(for: seed, in: activities) {
+            legacy.seedKey = seed.key
+            report.claimed += 1
+            activity = legacy
+        } else {
+            activity = Activity(seedKey: seed.key, name: seed.name)
+            context.insert(activity)
+            report.inserted += 1
         }
-        let t = TrainingType(seedKey: seedKey, name: name, area: area, typeDescription: typeDescription)
-        guard !isDeleted(seedKey, in: activity.modelContext) else { return t }
-        activity.types.append(t)
-        return t
+
+        for typeSeed in seed.types {
+            try reconcile(typeSeed, in: activity, tombstones: tombstones, context: context, report: &report)
+        }
     }
 
-    // Find or create an Exercise by immutable seed key. Existing exercises are
-    // never overwritten; their display and training fields belong to the user.
-    static func ensureExercise(
-        _ name: String,
+    private static func reconcile(
+        _ seed: CatalogTypeSeed,
+        in activity: Activity,
+        tombstones: Set<String>,
+        context: ModelContext,
+        report: inout CatalogSeedReport
+    ) throws {
+        guard !tombstones.contains(seed.key) else {
+            report.skipped += 1
+            return
+        }
+
+        let type: TrainingType
+        if let keyed = activity.types.first(where: { $0.seedKey == seed.key }) {
+            type = keyed
+        } else if let legacy = exactLegacyType(for: seed, in: activity.types)
+            ?? structuralLegacyType(for: seed, in: activity.types) {
+            legacy.seedKey = seed.key
+            report.claimed += 1
+            type = legacy
+        } else {
+            type = TrainingType(seedKey: seed.key, name: seed.name, area: seed.area, typeDescription: seed.typeDescription)
+            activity.types.append(type)
+            report.inserted += 1
+        }
+
+        for exerciseSeed in seed.exercises {
+            try reconcile(exerciseSeed, in: type, tombstones: tombstones, context: context, report: &report)
+        }
+        for combinationSeed in seed.combinations {
+            try reconcile(combinationSeed, in: type, tombstones: tombstones, context: context, report: &report)
+        }
+    }
+
+    private static func reconcile(
+        _ seed: CatalogCombinationSeed,
         in type: TrainingType,
-        seedKey: String? = nil,
-        reps: String? = nil,
-        duration: String? = nil,
-        sets: String? = nil,
-        rest: String? = nil,
-        notes: String? = nil,
-        area: String? = nil
-    ) -> Exercise {
-        let seedKey = seedKey ?? "\(type.seedKey ?? "type.\(slug(type.name))").exercise.\(slug(name))"
-        if let found = type.exercises.first(where: { $0.seedKey == seedKey }) {
-            return found
+        tombstones: Set<String>,
+        context: ModelContext,
+        report: inout CatalogSeedReport
+    ) throws {
+        guard !tombstones.contains(seed.key) else {
+            report.skipped += 1
+            return
         }
-        if let found = existingExercise(seedKey: seedKey, in: type.modelContext) {
-            return found
+
+        let combination: BoulderCombination
+        if let keyed = type.combinations.first(where: { $0.seedKey == seed.key }) {
+            combination = keyed
+        } else if let legacy = exactLegacyCombination(for: seed, in: type.combinations)
+            ?? structuralLegacyCombination(for: seed, in: type.combinations) {
+            legacy.seedKey = seed.key
+            report.claimed += 1
+            combination = legacy
+        } else {
+            combination = BoulderCombination(seedKey: seed.key, name: seed.name, comboDescription: seed.combinationDescription)
+            type.combinations.append(combination)
+            report.inserted += 1
         }
-        if let legacy = type.exercises.first(where: { $0.name == name }) {
-            legacy.seedKey = seedKey
-            return legacy
+
+        for exerciseSeed in seed.exercises {
+            try reconcile(exerciseSeed, in: combination, tombstones: tombstones, context: context, report: &report)
         }
-        let exercise = Exercise(seedKey: seedKey, name: name, area: area, repsText: reps, durationText: duration, setsText: sets, restText: rest, notes: notes)
-        guard !isDeleted(seedKey, in: type.modelContext) else { return exercise }
-        type.exercises.append(exercise)
-        return exercise
     }
 
-    private static func isDeleted(_ seedKey: String, in context: ModelContext?) -> Bool {
-        guard let context else { return false }
-        let descriptor = FetchDescriptor<DeletedCatalogSeed>(predicate: #Predicate { $0.seedKey == seedKey })
-        return (try? context.fetch(descriptor).isEmpty == false) ?? false
+    private static func reconcile(
+        _ seed: CatalogExerciseSeed,
+        in type: TrainingType,
+        tombstones: Set<String>,
+        context: ModelContext,
+        report: inout CatalogSeedReport
+    ) throws {
+        guard !tombstones.contains(seed.key) else {
+            report.skipped += 1
+            return
+        }
+        if try existingExercise(seedKey: seed.key, in: context) != nil { return }
+
+        if let legacy = exactLegacyExercise(for: seed, in: type.exercises)
+            ?? structuralLegacyExercise(for: seed, in: type.exercises) {
+            legacy.seedKey = seed.key
+            report.claimed += 1
+            return
+        }
+
+        type.exercises.append(makeExercise(from: seed))
+        report.inserted += 1
     }
 
-    private static func existingExercise(seedKey: String, in context: ModelContext?) -> Exercise? {
-        guard let context else { return nil }
-        let descriptor = FetchDescriptor<Exercise>(predicate: #Predicate { $0.seedKey == seedKey })
-        return try? context.fetch(descriptor).first
+    private static func reconcile(
+        _ seed: CatalogExerciseSeed,
+        in combination: BoulderCombination,
+        tombstones: Set<String>,
+        context: ModelContext,
+        report: inout CatalogSeedReport
+    ) throws {
+        guard !tombstones.contains(seed.key) else {
+            report.skipped += 1
+            return
+        }
+        if try existingExercise(seedKey: seed.key, in: context) != nil { return }
+
+        if let legacy = exactLegacyExercise(for: seed, in: combination.exercises)
+            ?? structuralLegacyExercise(for: seed, in: combination.exercises) {
+            legacy.seedKey = seed.key
+            report.claimed += 1
+            return
+        }
+
+        combination.exercises.append(makeExercise(from: seed))
+        report.inserted += 1
     }
 
-    private static func slug(_ value: String) -> String {
-        let allowed = value.lowercased().unicodeScalars.map { scalar in
-            CharacterSet.alphanumerics.contains(scalar) ? String(scalar) : "_"
-        }.joined()
-        return allowed.split(separator: "_").joined(separator: "_")
+    private static func exactLegacyActivity(for seed: CatalogActivitySeed, in activities: [Activity]) -> Activity? {
+        unique(activities.filter { $0.seedKey == nil && names(for: seed.name, aliases: seed.aliases).contains($0.name) })
+    }
+
+    private static func structuralLegacyActivity(for seed: CatalogActivitySeed, in activities: [Activity]) -> Activity? {
+        guard !seed.types.isEmpty else { return nil }
+        return unique(activities.filter { activity in
+            guard activity.seedKey == nil else { return false }
+            return seed.types.allSatisfy { typeSeed in
+                activity.types.contains { names(for: typeSeed.name, aliases: typeSeed.aliases).contains($0.name) }
+            }
+        })
+    }
+
+    private static func exactLegacyType(for seed: CatalogTypeSeed, in types: [TrainingType]) -> TrainingType? {
+        unique(types.filter { $0.seedKey == nil && names(for: seed.name, aliases: seed.aliases).contains($0.name) })
+    }
+
+    private static func structuralLegacyType(for seed: CatalogTypeSeed, in types: [TrainingType]) -> TrainingType? {
+        let childNames = seed.exercises.map { names(for: $0.name, aliases: $0.aliases) }
+            + seed.combinations.map { names(for: $0.name, aliases: $0.aliases) }
+        guard !childNames.isEmpty else { return nil }
+        return unique(types.filter { type in
+            guard type.seedKey == nil else { return false }
+            let existingNames = Set(type.exercises.map(\.name) + type.combinations.map(\.name))
+            return childNames.allSatisfy { !$0.isDisjoint(with: existingNames) }
+        })
+    }
+
+    private static func exactLegacyCombination(for seed: CatalogCombinationSeed, in combinations: [BoulderCombination]) -> BoulderCombination? {
+        unique(combinations.filter { $0.seedKey == nil && names(for: seed.name, aliases: seed.aliases).contains($0.name) })
+    }
+
+    private static func structuralLegacyCombination(for seed: CatalogCombinationSeed, in combinations: [BoulderCombination]) -> BoulderCombination? {
+        guard !seed.exercises.isEmpty else { return nil }
+        return unique(combinations.filter { combination in
+            guard combination.seedKey == nil else { return false }
+            let existingNames = Set(combination.exercises.map(\.name))
+            return seed.exercises.allSatisfy { !names(for: $0.name, aliases: $0.aliases).isDisjoint(with: existingNames) }
+        })
+    }
+
+    private static func exactLegacyExercise(for seed: CatalogExerciseSeed, in exercises: [Exercise]) -> Exercise? {
+        unique(exercises.filter { $0.seedKey == nil && names(for: seed.name, aliases: seed.aliases).contains($0.name) })
+    }
+
+    private static func structuralLegacyExercise(for seed: CatalogExerciseSeed, in exercises: [Exercise]) -> Exercise? {
+        unique(exercises.filter { exercise in
+            exercise.seedKey == nil
+                && exercise.order == seed.order
+                && exercise.area == seed.area
+                && exercise.exerciseDescription == seed.exerciseDescription
+                && exercise.repsText == seed.reps
+                && exercise.durationText == seed.duration
+                && exercise.setsText == seed.sets
+                && exercise.restText == seed.rest
+                && exercise.notes == seed.notes
+        })
+    }
+
+    private static func makeExercise(from seed: CatalogExerciseSeed) -> Exercise {
+        Exercise(
+            seedKey: seed.key,
+            name: seed.name,
+            area: seed.area,
+            order: seed.order,
+            exerciseDescription: seed.exerciseDescription,
+            repsText: seed.reps,
+            durationText: seed.duration,
+            setsText: seed.sets,
+            restText: seed.rest,
+            notes: seed.notes
+        )
+    }
+
+    private static func existingExercise(seedKey: String, in context: ModelContext) throws -> Exercise? {
+        try context.fetch(FetchDescriptor<Exercise>()).first { $0.seedKey == seedKey }
+    }
+
+    private static func names(for name: String, aliases: [String]) -> Set<String> {
+        Set([name] + aliases)
+    }
+
+    private static func unique<T>(_ candidates: [T]) -> T? {
+        candidates.count == 1 ? candidates[0] : nil
     }
 }

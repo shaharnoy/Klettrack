@@ -14,46 +14,7 @@ class ClimbingProgramTestSuite: XCTestCase {
 
     override func setUp() {
         super.setUp()
-
-        // Build schema with all @Model types touched by tests/utilities
-        let schema = Schema([
-            // Catalog
-            Activity.self,
-            TrainingType.self,
-            BoulderCombination.self,
-            Exercise.self,
-            DeletedCatalogSeed.self,
-
-            // Plans
-            Plan.self, PlanKindModel.self, DayTypeModel.self, PlanExerciseDefinition.self,
-            PlanDay.self,
-
-            // Sessions (log)
-            Session.self,
-            SessionItem.self,
-            DayLog.self,
-            DayTag.self,
-
-            // Timer
-            TimerTemplate.self,
-            TimerInterval.self,
-            TimerSession.self,
-            TimerLap.self,
-
-            // Climbing log (used by CSV export/tests)
-            ClimbEntry.self,
-            ClimbStyle.self,
-            ClimbGym.self,
-            ClimbMedia.self,
-            TB2ClimbMetadata.self,
-            TB2ClimbStatsMetadata.self
-        ])
-
-        // In-memory configuration for isolation and speed
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-
-        // Create the container and a working context
-        container = try! ModelContainer(for: schema, configurations: [config])
+        container = try! TestModelContainerFactory.make()
         context = ModelContext(container)
     }
 

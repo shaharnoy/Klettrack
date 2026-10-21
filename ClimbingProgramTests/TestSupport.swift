@@ -2,6 +2,29 @@ import XCTest
 import SwiftData
 @testable import klettrack
 
+enum TestModelContainerFactory {
+    static let allTypes: [any PersistentModel.Type] = [
+        Activity.self, TrainingType.self, Exercise.self, BoulderCombination.self,
+        DeletedCatalogSeed.self,
+        Session.self, SessionItem.self,
+        DayLog.self, DayTag.self,
+        Plan.self, PlanDay.self, PlanKindModel.self, DayTypeModel.self, PlanExerciseDefinition.self,
+        TimerTemplate.self, TimerInterval.self, TimerSession.self, TimerLap.self,
+        ClimbEntry.self, ClimbStyle.self, ClimbGym.self, ClimbMedia.self,
+        TB2ClimbMetadata.self, TB2ClimbStatsMetadata.self
+    ]
+
+    static func make() throws -> ModelContainer {
+        let schema = Schema(allTypes)
+        let configuration = ModelConfiguration(
+            "test-\(UUID().uuidString)",
+            schema: schema,
+            isStoredInMemoryOnly: true
+        )
+        return try ModelContainer(for: schema, configurations: configuration)
+    }
+}
+
 @MainActor
 class BaseSwiftDataTestCase: XCTestCase {
     var container: ModelContainer!
@@ -9,19 +32,7 @@ class BaseSwiftDataTestCase: XCTestCase {
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        let types: [any PersistentModel.Type] = [
-            Activity.self, TrainingType.self, Exercise.self, BoulderCombination.self,
-            DeletedCatalogSeed.self,
-            Session.self, SessionItem.self,
-            DayLog.self, DayTag.self,
-            Plan.self, PlanDay.self, PlanKindModel.self, DayTypeModel.self, PlanExerciseDefinition.self,
-            TimerTemplate.self, TimerInterval.self, TimerSession.self, TimerLap.self,
-            ClimbEntry.self, ClimbStyle.self, ClimbGym.self, ClimbMedia.self,
-            TB2ClimbMetadata.self, TB2ClimbStatsMetadata.self
-        ]
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let schema = Schema(types)
-        container = try ModelContainer(for: schema, configurations: config)
+        container = try TestModelContainerFactory.make()
     }
 
     override func tearDownWithError() throws {

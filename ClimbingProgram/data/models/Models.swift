@@ -13,6 +13,7 @@ final class Activity {
     /// Stable identifier for app-provided catalog data. Nil for user-created categories.
     var seedKey: String?
     var name: String
+    @Relationship(deleteRule: .nullify)
     var types: [TrainingType] = []
 
     init(id: UUID = UUID(), seedKey: String? = nil, name: String) {
@@ -30,7 +31,9 @@ final class TrainingType {
     var name: String
     var area: String?
     var typeDescription: String?
+    @Relationship(deleteRule: .nullify, inverse: \Exercise.trainingTypes)
     var exercises: [Exercise] = []
+    @Relationship(deleteRule: .nullify)
     var combinations: [BoulderCombination] = []
 
     init(
@@ -55,6 +58,7 @@ final class BoulderCombination {
     var seedKey: String?
     var name: String
     var comboDescription: String?
+    @Relationship(deleteRule: .nullify, inverse: \Exercise.combinations)
     var exercises: [Exercise] = []
 
     init(id: UUID = UUID(), seedKey: String? = nil, name: String, comboDescription: String? = nil) {
@@ -79,6 +83,8 @@ final class Exercise {
     var setsText: String?
     var restText: String?
     var notes: String?
+    var trainingTypes: [TrainingType]?
+    var combinations: [BoulderCombination]?
 
     init(
         id: UUID = UUID(),
@@ -104,19 +110,10 @@ final class Exercise {
         self.setsText = setsText
         self.restText = restText
         self.notes = notes
+        self.trainingTypes = []
+        self.combinations = []
     }
 }
-
-/// Remembers that a user intentionally deleted an app-provided catalog item.
-@Model
-final class DeletedCatalogSeed {
-    var seedKey: String = ""
-
-    init(seedKey: String) {
-        self.seedKey = seedKey
-    }
-}
-
 
 // User logging (sessions & what they did)
 @Model
